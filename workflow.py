@@ -2,6 +2,7 @@ import slicer
 import qt
 import vtk
 import math
+import numpy as np
 
 """
 Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
@@ -21,46 +22,172 @@ Main workflow functions:
 - setup_centerline_completion_monitor(): Monitor for completion and auto-switch to CPR
 """
 
+def find_working_volume():
+    """
+    Find the appropriate volume to work with, preferring cropped and visible volumes
+    """
+    try:
+        # Strategy 0: Check if we have a stored reference to the cropped volume
+        if hasattr(slicer.modules, 'WorkflowCroppedVolume'):
+            cropped_volume = slicer.modules.WorkflowCroppedVolume
+            if cropped_volume and not cropped_volume.IsA('vtkObject'):  # Check if node still exists
+                print(f"Using stored cropped volume for segmentation: {cropped_volume.GetName()}")
+                return cropped_volume
+            else:
+                print("Stored cropped volume reference no longer valid")
+        
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        
+        if not volume_nodes:
+            return None
+        
+        # Strategy 1: Look for cropped volumes (these are most recent and relevant)
+        for volume in volume_nodes:
+            if 'crop' in volume.GetName().lower():
+                print(f"Found cropped volume for segmentation: {volume.GetName()}")
+                return volume
+        
+        # Strategy 2: Look for visible volumes (not hidden)
+        visible_volumes = []
+        for volume in volume_nodes:
+            display_node = volume.GetDisplayNode()
+            if display_node and display_node.GetVisibility():
+                visible_volumes.append(volume)
+        
+        if len(visible_volumes) == 1:
+            print(f"Found single visible volume for segmentation: {visible_volumes[0].GetName()}")
+            return visible_volumes[0]
+        elif len(visible_volumes) > 1:
+            # If multiple visible volumes, prefer non-straightened ones for initial segmentation
+            for volume in visible_volumes:
+                if 'straight' not in volume.GetName().lower():
+                    print(f"Found visible non-straightened volume for segmentation: {volume.GetName()}")
+                    return volume
+            # Fallback to first visible volume
+            print(f"Using first visible volume for segmentation: {visible_volumes[0].GetName()}")
+            return visible_volumes[0]
+        
+        # Strategy 3: Check the active volume in slice views
+        try:
+            selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+            if selection_node:
+                active_volume_id = selection_node.GetActiveVolumeID()
+                if active_volume_id:
+                    active_volume = slicer.mrmlScene.GetNodeByID(active_volume_id)
+                    if active_volume and active_volume.IsA("vtkMRMLScalarVolumeNode"):
+                        print(f"Found active volume for segmentation: {active_volume.GetName()}")
+                        return active_volume
+        except Exception as e:
+            print(f"Could not check active volume: {e}")
+        
+        # Strategy 4: Fallback to first volume, but warn user
+        first_volume = volume_nodes[0]
+        print(f"Warning: Using first available volume for segmentation: {first_volume.GetName()}")
+        print("Available volumes:")
+        for i, volume in enumerate(volume_nodes):
+            visibility_status = "visible" if (volume.GetDisplayNode() and volume.GetDisplayNode().GetVisibility()) else "hidden"
+            print(f"  {i+1}. {volume.GetName()} ({visibility_status})")
+        
+        return first_volume
+        
+    except Exception as e:
+        print(f"Error finding working volume: {e}")
+        # Ultimate fallback
+        return slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+
 def create_threshold_segment():
     """
-    Main workflow function to create a threshold segment with user input
+    Main workflow function to create a threshold segment with default values
     """
-    volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+    # Find the appropriate volume - prefer cropped volumes and visible volumes
+    volume_node = find_working_volume()
     
     if not volume_node:
         slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
         return
     
-    threshold_value_low = prompt_for_threshold("lower threshold value", default_value=290)
-    threshold_value_high = prompt_for_threshold("upper threshold value", default_value=3071)
-    
-    if threshold_value_low is None or threshold_value_high is None:
-        print("User cancelled threshold input")
+    # Get threshold values from user via single dialog
+    threshold_values = prompt_for_threshold_range()
+    if threshold_values is None:
+        print("Threshold input cancelled by user")
         return
+    
+    threshold_value_low, threshold_value_high = threshold_values
+    print(f"Using thresholds: {threshold_value_low} - {threshold_value_high}")
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
     if segmentation_node:
         show_segmentation_in_3d(segmentation_node)
         load_into_segment_editor(segmentation_node, volume_node)
-        print(f"Successfully created threshold segment with range: {threshold_value_low} - {threshold_value_high}")
 
-def prompt_for_threshold(label, default_value=0):
+def prompt_for_threshold_range():
     """
-    Show a popup dialog to get threshold value from user
+    Show a single dialog to get both threshold values from user
     """
-    dialog = qt.QInputDialog()
-    dialog.setWindowTitle("Threshold Segmentation")
-    dialog.setLabelText(f"Enter {label} (range: -1024 to 3071):")
-    dialog.setInputMode(qt.QInputDialog.DoubleInput)
-    dialog.setDoubleRange(-1024.0, 3071.0)
-    dialog.setDoubleValue(default_value)
-    dialog.setDoubleDecimals(2)
-    
-    if dialog.exec_():
-        return dialog.doubleValue()
-    else:
-        return None
+    try:
+        dialog = qt.QDialog(slicer.util.mainWindow())
+        dialog.setWindowTitle("Threshold Segmentation")
+        dialog.setModal(True)
+        dialog.resize(350, 200)
+        
+        layout = qt.QVBoxLayout(dialog)
+        
+        # Title
+        title_label = qt.QLabel("Set Threshold Range")
+        title_label.setStyleSheet("QLabel { font-weight: bold; font-size: 14px; margin: 10px; }")
+        layout.addWidget(title_label)
+        
+        # Lower threshold
+        lower_layout = qt.QHBoxLayout()
+        lower_label = qt.QLabel("Lower threshold:")
+        lower_label.setMinimumWidth(100)
+        lower_spinbox = qt.QDoubleSpinBox()
+        lower_spinbox.setRange(-1024.0, 3071.0)
+        lower_spinbox.setValue(290.0)
+        lower_spinbox.setDecimals(2)
+        lower_layout.addWidget(lower_label)
+        lower_layout.addWidget(lower_spinbox)
+        layout.addLayout(lower_layout)
+        
+        # Upper threshold
+        upper_layout = qt.QHBoxLayout()
+        upper_label = qt.QLabel("Upper threshold:")
+        upper_label.setMinimumWidth(100)
+        upper_spinbox = qt.QDoubleSpinBox()
+        upper_spinbox.setRange(-1024.0, 3071.0)
+        upper_spinbox.setValue(3071.0)
+        upper_spinbox.setDecimals(2)
+        upper_layout.addWidget(upper_label)
+        upper_layout.addWidget(upper_spinbox)
+        layout.addLayout(upper_layout)
+        
+        # Info label
+        info_label = qt.QLabel("Range: -1024 to 3071 Hounsfield units")
+        info_label.setStyleSheet("QLabel { color: #666; font-size: 11px; margin: 5px; }")
+        layout.addWidget(info_label)
+        
+        # Buttons
+        button_layout = qt.QHBoxLayout()
+        ok_button = qt.QPushButton("OK")
+        cancel_button = qt.QPushButton("Cancel")
+        
+        ok_button.connect('clicked()', dialog.accept)
+        cancel_button.connect('clicked()', dialog.reject)
+        
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(ok_button)
+        layout.addLayout(button_layout)
+        
+        if dialog.exec_() == qt.QDialog.Accepted:
+            return (lower_spinbox.value, upper_spinbox.value)
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"Error in threshold dialog: {e}")
+        # Fallback to defaults
+        return (290.0, 3071.0)
 
 def create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high=None):
     """
@@ -200,7 +327,6 @@ def show_segmentation_in_3d(segmentation_node):
     if threeDWidget and threeDView:
         threeDView.forceRender()
     print("3D threshold segmentation created and displayed in 3D view!")
-    slicer.util.infoDisplay("3D threshold segmentation created and displayed in 3D view!")
 
 def load_into_segment_editor(segmentation_node, volume_node):
     """
@@ -251,6 +377,7 @@ def load_into_segment_editor(segmentation_node, volume_node):
     slicer.app.processEvents()
     select_scissors_tool(segment_editor_widget)
     add_continue_button_to_segment_editor()
+    simplify_segment_editor_gui()
     
     print("Segmentation loaded and selected in Segment Editor module with mask visibility enabled")
     print("Scissors tool selected - ready for cropping")
@@ -276,21 +403,23 @@ def add_continue_button_to_segment_editor():
         
         if hasattr(segment_editor_widget, 'parent'):
             segment_editor_main = segment_editor_widget.parent()
-            continue_button = qt.QPushButton("DONE WITH SCISSORS - CONTINUE TO CENTERLINE")
+            continue_button = qt.QPushButton("✓ FINISH CROPPING - CONTINUE")
             continue_button.setStyleSheet("""
                 QPushButton { 
                     background-color: #28a745; 
                     color: white; 
                     border: none; 
-                    padding: 15px; 
+                    padding: 18px; 
                     font-weight: bold;
                     border-radius: 8px;
-                    margin: 10px;
-                    font-size: 14px;
-                    min-height: 50px;
+                    margin: 15px;
+                    font-size: 16px;
+                    min-height: 60px;
+                    min-width: 300px;
                 }
                 QPushButton:hover { 
                     background-color: #218838; 
+                    transform: scale(1.02);
                 }
                 QPushButton:pressed { 
                     background-color: #1e7e34; 
@@ -300,93 +429,124 @@ def add_continue_button_to_segment_editor():
             if hasattr(segment_editor_main, 'layout'):
                 layout = segment_editor_main.layout()
                 if layout:
-                    layout.addWidget(continue_button)
-                    print("Added continue button to Segment Editor")
+                    # Insert the button at the top for prominence
+                    layout.insertWidget(0, continue_button)
+                    print("Added prominent green finish cropping button to Segment Editor")
                     slicer.modules.SegmentEditorContinueButton = continue_button
                     return
-        create_continue_dialog()
+        create_simple_continue_button()
         
     except Exception as e:
         print(f"Error adding continue button to segment editor: {e}")
-        pass
 
-def create_continue_dialog():
+def simplify_segment_editor_gui():
     """
-    Create a floating dialog with a continue button as fallback
+    Simplify the Segment Editor GUI to show only Scissors tool and green button
     """
     try:
-        dialog = qt.QDialog(slicer.util.mainWindow())
-        dialog.setWindowTitle("Scissors Tool - Continue")
-        dialog.setModal(False)
-        dialog.resize(400, 120)
-        dialog.setWindowFlags(qt.Qt.Tool | qt.Qt.WindowStaysOnTopHint)
-
-        layout = qt.QVBoxLayout(dialog)
-
-        instruction_label = qt.QLabel("Use the Scissors tool to crop your vessel, then:")
-        instruction_label.setStyleSheet("QLabel { color: #333; margin: 10px; font-size: 12px; }")
-        instruction_label.setWordWrap(True)
-        layout.addWidget(instruction_label)
-
-        continue_button = qt.QPushButton("DONE WITH SCISSORS - CONTINUE TO CENTERLINE")
-        continue_button.setStyleSheet("""
-            QPushButton { 
-                background-color: #28a745; 
-                color: white; 
-                border: none; 
-                padding: 12px; 
-                font-weight: bold;
-                border-radius: 6px;
-                margin: 5px;
-                font-size: 13px;
-            }
-            QPushButton:hover { 
-                background-color: #218838; 
-            }
-            QPushButton:pressed { 
-                background-color: #1e7e34; 
-            }
-        """)
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation().self().editor
         
-        continue_button.connect('clicked()', lambda: on_continue_from_scissors_with_dialog(dialog))
-        layout.addWidget(continue_button)
-
-        dialog.show()
-
-        slicer.modules.SegmentEditorContinueDialog = dialog
+        # Get the main segment editor widget
+        main_widget = slicer.modules.segmenteditor.widgetRepresentation()
         
-        print("Created continue dialog for scissors tool")
+        # Hide all top-level elements except the ones we need
+        for child in main_widget.children():
+            if hasattr(child, 'hide'):
+                child_name = child.objectName() if hasattr(child, 'objectName') else ""
+                child_class = child.__class__.__name__
+                
+                # Keep only essential elements and our green button
+                if not any(keyword in child_name.lower() for keyword in ['editor', 'segment']) and \
+                   child_class not in ['QScrollArea', 'QWidget'] and \
+                   not (hasattr(child, 'text') and 'FINISH CROPPING' in str(child.text)):
+                    child.hide()
+        
+        # Hide segment list/table
+        try:
+            segment_widgets = segment_editor_widget.findChildren(qt.QWidget)
+            for widget in segment_widgets:
+                widget_name = widget.objectName().lower() if hasattr(widget, 'objectName') else ""
+                if any(keyword in widget_name for keyword in ['segment', 'table', 'list', 'tree']):
+                    widget.hide()
+        except Exception as e:
+            print(f"Note: Could not hide segment list: {e}")
+        
+        # Hide all effect buttons except Scissors
+        try:
+            all_buttons = segment_editor_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                button_text = button.text.lower() if hasattr(button, 'text') else ""
+                button_name = button.objectName().lower() if hasattr(button, 'objectName') else ""
+                button_tooltip = button.toolTip.lower() if hasattr(button, 'toolTip') else ""
+                
+                # Hide all buttons except scissors and our green continue button
+                if not ('scissors' in button_text or 'scissors' in button_name or 'scissors' in button_tooltip) and \
+                   not 'FINISH CROPPING' in button.text:
+                    button.hide()
+                elif 'scissors' in button_text or 'scissors' in button_name or 'scissors' in button_tooltip:
+                    button.show()  # Ensure scissors button is visible
+        except Exception as e:
+            print(f"Note: Could not hide effect buttons: {e}")
+        
+        # Hide parameter panels and options
+        try:
+            all_widgets = segment_editor_widget.findChildren(qt.QWidget)
+            for widget in all_widgets:
+                widget_name = widget.objectName().lower() if hasattr(widget, 'objectName') else ""
+                widget_class = widget.__class__.__name__
+                
+                # Hide advanced options, parameters, and settings panels
+                if any(keyword in widget_name for keyword in [
+                    'parameter', 'option', 'setting', 'advanced', 'representation',
+                    'statistics', 'properties', 'display', 'color', 'opacity',
+                    'slice', 'fill', 'outline', 'smoothing', 'interpolation'
+                ]) or widget_class in ['QGroupBox', 'QCollapsibleWidget']:
+                    # Don't hide if it contains our green button
+                    if not (hasattr(widget, 'findChildren') and 
+                           any('FINISH CROPPING' in str(child.text) if hasattr(child, 'text') else False 
+                               for child in widget.findChildren(qt.QPushButton))):
+                        widget.hide()
+        except Exception as e:
+            print(f"Note: Could not hide parameter panels: {e}")
+        
+        # Hide menu bars and toolbars
+        try:
+            for child in main_widget.findChildren(qt.QMenuBar):
+                child.hide()
+            for child in main_widget.findChildren(qt.QToolBar):
+                child.hide()
+        except Exception as e:
+            print(f"Note: Could not hide menu/toolbars: {e}")
+        
+        # Hide status bars and labels that aren't essential
+        try:
+            labels = segment_editor_widget.findChildren(qt.QLabel)
+            for label in labels:
+                label_text = label.text.lower() if hasattr(label, 'text') else ""
+                if any(keyword in label_text for keyword in [
+                    'status', 'info', 'tip', 'help', 'instruction', 'guidance'
+                ]) and 'scissors' not in label_text:
+                    label.hide()
+        except Exception as e:
+            print(f"Note: Could not hide status labels: {e}")
+        
+        print("Segment Editor GUI maximally simplified - showing only Scissors tool and green button")
         
     except Exception as e:
-        print(f"Error creating continue dialog: {e}")
+        print(f"Error simplifying segment editor GUI: {e}")
+
+def create_simple_continue_button():
+    """
+    Create a simple continue button without complex dialogs
+    """
+    print("Scissors tool selected - ready for cropping")
+    print("Use console command 'on_continue_from_scissors()' when done, or the workflow will auto-continue")
 
 def on_continue_from_scissors():
     """
     Called when user clicks the continue button after using scissors
     """
     print("User clicked continue from scissors tool - opening centerline extraction module...")
-
-    cleanup_continue_ui()
-
-    cleanup_workflow_ui()
-
-    open_centerline_module()
-
-def on_continue_from_scissors_with_dialog(dialog):
-    """
-    Called when user clicks continue button in the dialog version
-    """
-    print("User clicked continue from scissors tool - opening centerline extraction module...")
-
-    try:
-        dialog.close()
-        dialog.setParent(None)
-        if hasattr(slicer.modules, 'SegmentEditorContinueDialog'):
-            del slicer.modules.SegmentEditorContinueDialog
-    except Exception as e:
-        print(f"Error cleaning up continue dialog: {e}")
-
-    cleanup_continue_ui()
     cleanup_workflow_ui()
     open_centerline_module()
 
@@ -414,137 +574,10 @@ def cleanup_continue_ui():
 
 def setup_cropping_monitor(segment_editor_widget):
     """
-    Set up monitoring to detect when user finishes cropping and open centerline module
+    Set up simplified monitoring for cropping completion
     """
-    create_finish_cropping_button(segment_editor_widget)
-
-def create_finish_cropping_button(segment_editor_widget):
-    """
-    Create a button that users can click when they finish cropping
-    """
-    try:
-        main_window = slicer.util.mainWindow()
-        
-        dock_widget = qt.QDockWidget("Workflow Control", main_window)
-        dock_widget.setAllowedAreas(qt.Qt.LeftDockWidgetArea | qt.Qt.RightDockWidgetArea)
-        dock_widget.setFeatures(qt.QDockWidget.DockWidgetMovable | qt.QDockWidget.DockWidgetFloatable)
-
-        widget_content = qt.QWidget()
-        dock_widget.setWidget(widget_content)
-
-        layout = qt.QVBoxLayout(widget_content)
-
-        label = qt.QLabel("Threshold Workflow")
-        label.setStyleSheet("QLabel { font-weight: bold; color: #0078d4; margin: 5px; font-size: 14px; }")
-        layout.addWidget(label)
-
-        instruction_label = qt.QLabel("Use the Scissors tool to crop your segmentation,\nthen click the button below to continue.")
-        instruction_label.setStyleSheet("QLabel { color: #333; margin: 5px; }")
-        instruction_label.setWordWrap(True)
-        layout.addWidget(instruction_label)
-
-        finish_button = qt.QPushButton("Finish Cropping & Open Centerline Module")
-        finish_button.setStyleSheet("""
-            QPushButton { 
-                background-color: #0078d4; 
-                color: white; 
-                border: none; 
-                padding: 10px; 
-                font-weight: bold;
-                border-radius: 6px;
-                margin: 5px;
-                font-size: 12px;
-            }
-            QPushButton:hover { 
-                background-color: #106ebe; 
-            }
-            QPushButton:pressed { 
-                background-color: #005a9e; 
-            }
-        """)
-        finish_button.connect('clicked()', lambda: on_finish_cropping_with_cleanup(dock_widget))
-        layout.addWidget(finish_button)
-
-        layout.addStretch()
-        main_window.addDockWidget(qt.Qt.RightDockWidgetArea, dock_widget)
-        dock_widget.show()
-        slicer.modules.WorkflowDockWidget = dock_widget
-        
-        print("Finish cropping button created in dock widget")
-        
-    except Exception as e:
-        print(f"Error creating finish cropping button: {e}")
-        create_simple_workflow_dialog()
-
-def create_simple_workflow_dialog():
-    """
-    Fallback: Create a simple dialog for workflow control
-    """
-    try:
-        dialog = qt.QDialog(slicer.util.mainWindow())
-        dialog.setWindowTitle("Workflow Control")
-        dialog.setModal(False) 
-        dialog.resize(300, 150)
-        
-        layout = qt.QVBoxLayout(dialog)
-        
-        label = qt.QLabel("Use Scissors tool to crop, then:")
-        layout.addWidget(label)
-        
-        button = qt.QPushButton("Finish Cropping & Open Centerline Module")
-        button.connect('clicked()', lambda: on_finish_cropping_with_dialog_cleanup(dialog))
-        layout.addWidget(button)
-        
-        dialog.show()
-
-        slicer.modules.WorkflowDialog = dialog
-        
-        print("Created fallback workflow dialog")
-        
-    except Exception as e:
-        print(f"Error creating workflow dialog: {e}")
-        print("Instructions: After cropping with scissors tool, run 'open_centerline_module()' to continue")
-
-def on_finish_cropping_with_cleanup(dock_widget):
-    """
-    Called when user clicks finish cropping button in dock widget
-    """
-    print("User finished cropping - opening centerline extraction module...")
-
-    try:
-        dock_widget.close()
-        dock_widget.setParent(None)
-        if hasattr(slicer.modules, 'WorkflowDockWidget'):
-            del slicer.modules.WorkflowDockWidget
-        print("Workflow dock widget cleaned up")
-    except Exception as e:
-        print(f"Error cleaning up dock widget: {e}")
-
-    open_centerline_module()
-
-def on_finish_cropping_with_dialog_cleanup(dialog):
-    """
-    Called when user clicks finish cropping button in dialog
-    """
-    print("User finished cropping - opening centerline extraction module...")
-    
-    try:
-        dialog.close()
-        dialog.setParent(None)
-        if hasattr(slicer.modules, 'WorkflowDialog'):
-            del slicer.modules.WorkflowDialog
-        print("Workflow dialog cleaned up")
-    except Exception as e:
-        print(f"Error cleaning up dialog: {e}")
-    open_centerline_module()
-
-def on_finish_cropping(segment_editor_widget):
-    """
-    Called when user clicks the finish cropping button (legacy function)
-    """
-    print("User finished cropping - opening centerline extraction module...")
-    cleanup_workflow_ui()
-    open_centerline_module()
+    print("Scissors tool selected - ready for cropping")
+    print("When done cropping, run: open_centerline_module()")
 
 def cleanup_workflow_ui():
     """
@@ -590,6 +623,127 @@ def open_centerline_module():
     except Exception as e:
         print(f"Error opening centerline module: {e}")
         slicer.util.errorDisplay(f"Could not open Extract Centerline module: {str(e)}")
+
+def add_large_centerline_apply_button():
+    """
+    Add a large green Apply button directly to the Extract Centerline module GUI
+    """
+    try:
+        # Use a timer to delay button creation until UI is fully loaded
+        def create_large_button():
+            try:
+                centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+                if centerline_widget and hasattr(centerline_widget, 'self'):
+                    centerline_module = centerline_widget.self()
+                    
+                    # Find the original Apply button first to connect to its action
+                    original_apply_button = None
+                    if hasattr(centerline_module.ui, 'applyButton'):
+                        original_apply_button = centerline_module.ui.applyButton
+                    elif hasattr(centerline_module.ui, 'ApplyButton'):
+                        original_apply_button = centerline_module.ui.ApplyButton
+                    
+                    # If not found with direct attribute, search for it
+                    if not original_apply_button:
+                        all_buttons = centerline_widget.findChildren(qt.QPushButton)
+                        for button in all_buttons:
+                            button_text = button.text if hasattr(button, 'text') else ""
+                            if 'apply' in button_text.lower():
+                                original_apply_button = button
+                                break
+                    
+                    if original_apply_button:
+                        # Create a new large green button
+                        large_apply_button = qt.QPushButton("✓ EXTRACT CENTERLINE")
+                        large_apply_button.setStyleSheet("""
+                            QPushButton { 
+                                background-color: #28a745; 
+                                color: white; 
+                                border: 2px solid #1e7e34; 
+                                padding: 20px; 
+                                font-weight: bold;
+                                border-radius: 10px;
+                                margin: 10px;
+                                font-size: 18px;
+                                min-height: 70px;
+                                min-width: 250px;
+                            }
+                            QPushButton:hover { 
+                                background-color: #218838; 
+                                border: 2px solid #155724;
+                                transform: scale(1.05);
+                            }
+                            QPushButton:pressed { 
+                                background-color: #1e7e34; 
+                                border: 2px solid #0f4c2c;
+                            }
+                        """)
+                        
+                        # Connect the new button to trigger the original Apply button's click
+                        large_apply_button.connect('clicked()', lambda: original_apply_button.click())
+                        
+                        # Add the button directly to the Extract Centerline module's GUI
+                        # Try to find the main UI container in the centerline module
+                        main_ui_widget = None
+                        
+                        # Strategy 1: Look for the main widget container
+                        if hasattr(centerline_module, 'ui') and hasattr(centerline_module.ui, 'widget'):
+                            main_ui_widget = centerline_module.ui.widget
+                        elif hasattr(centerline_module, 'widget'):
+                            main_ui_widget = centerline_module.widget
+                        elif hasattr(centerline_widget, 'widget'):
+                            main_ui_widget = centerline_widget.widget
+                        
+                        # Strategy 2: Get the module widget representation directly
+                        if not main_ui_widget:
+                            main_ui_widget = centerline_widget
+                        
+                        # Add button to the main UI widget
+                        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+                            layout = main_ui_widget.layout()
+                            if layout:
+                                # Insert at the top of the module for maximum visibility
+                                layout.insertWidget(0, large_apply_button)
+                                print("✓ Added large green Apply button to Extract Centerline module GUI")
+                            else:
+                                # Create a layout if none exists
+                                new_layout = qt.QVBoxLayout(main_ui_widget)
+                                new_layout.insertWidget(0, large_apply_button)
+                                print("✓ Created layout and added large green Apply button to Extract Centerline module")
+                        else:
+                            # Fallback: Try to find any suitable container widget
+                            container_widgets = centerline_widget.findChildren(qt.QWidget)
+                            for widget in container_widgets:
+                                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                                    widget.layout().insertWidget(0, large_apply_button)
+                                    print("✓ Added large green Apply button to Extract Centerline container widget")
+                                    break
+                            else:
+                                print("✗ Could not find suitable container in Extract Centerline module")
+                                return False
+                        
+                        # Store reference to the button for potential cleanup
+                        slicer.modules.CenterlineLargeApplyButton = large_apply_button
+                        return True
+                    else:
+                        print("✗ Could not find original Apply button in Extract Centerline module")
+                        return False
+                        
+            except Exception as e:
+                print(f"Error creating large Apply button in Extract Centerline: {e}")
+                return False
+        
+        # Try creating the button immediately
+        success = create_large_button()
+        
+        # If that didn't work, try again after delays
+        if not success:
+            qt.QTimer.singleShot(1000, create_large_button)
+            qt.QTimer.singleShot(3000, create_large_button)
+            print("Scheduling delayed large Apply button creation for Extract Centerline...")
+            
+    except Exception as e:
+        print(f"Error adding large centerline Apply button: {e}")
 
 def setup_centerline_module():
     """
@@ -741,6 +895,8 @@ def setup_centerline_module():
                     slicer.app.processEvents()
                     
         print("Extract Centerline module setup complete")
+        add_large_centerline_apply_button()
+        
         prompt_for_endpoints()
         
     except Exception as e:
@@ -839,6 +995,595 @@ def remove_segment_from_all_segmentations(segment_name):
         print(f"Error removing segments: {e}")
 
 
+def add_large_crop_apply_button():
+    """
+    Add a large green Apply button directly to the Crop Volume module GUI
+    """
+    try:
+        # Check if button already exists to prevent duplicates
+        if hasattr(slicer.modules, 'CropLargeApplyButton'):
+            existing_button = slicer.modules.CropLargeApplyButton
+            if existing_button and existing_button.parent():
+                print("Large Apply button already exists in Crop Volume module")
+                return
+        
+        print("=== STARTING CROP BUTTON CREATION ===")
+        
+        # Use a timer to delay button creation until UI is fully loaded
+        def create_large_button():
+            try:
+                # Check if button already exists to prevent duplicates
+                if hasattr(slicer.modules, 'CropLargeApplyButton'):
+                    existing_button = slicer.modules.CropLargeApplyButton
+                    if existing_button and existing_button.parent():
+                        print("Large Apply button already exists, skipping creation")
+                        return True
+                
+                print("Attempting to create large Apply button for Crop Volume...")
+                crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+                print(f"Crop widget found: {crop_widget is not None}")
+                print(f"Crop widget type: {type(crop_widget)}")
+                print(f"Crop widget has 'self' attribute: {hasattr(crop_widget, 'self') if crop_widget else 'N/A'}")
+                
+                if crop_widget:
+                    # Try multiple ways to access the crop module
+                    crop_module = None
+                    
+                    # Method 1: Try the 'self' attribute
+                    if hasattr(crop_widget, 'self'):
+                        try:
+                            crop_module = crop_widget.self()
+                            print(f"Method 1 - Got crop module via 'self': {crop_module is not None}")
+                        except Exception as e:
+                            print(f"Method 1 failed: {e}")
+                    
+                    # Method 2: Try direct access
+                    if not crop_module:
+                        try:
+                            crop_module = crop_widget
+                            print(f"Method 2 - Using crop_widget directly: {crop_module is not None}")
+                        except Exception as e:
+                            print(f"Method 2 failed: {e}")
+                    
+                    # Method 3: Try getting the widget representation directly
+                    if not crop_module:
+                        try:
+                            crop_module = slicer.modules.cropvolume.createNewWidgetRepresentation()
+                            print(f"Method 3 - Created new widget representation: {crop_module is not None}")
+                        except Exception as e:
+                            print(f"Method 3 failed: {e}")
+                    
+                    if crop_module:
+                        print(f"Successfully got crop module: {type(crop_module)}")
+                        
+                        # Find the original Apply button first to connect to its action
+                        original_apply_button = None
+                        print("Searching for Apply button in Crop Volume module...")
+                        
+                        # Try various common attribute names for Apply button
+                        apply_button_attrs = ['applyButton', 'ApplyButton', 'applyCropButton', 'cropApplyButton']
+                        
+                        # First try with ui attribute if it exists
+                        if hasattr(crop_module, 'ui'):
+                            print("Found 'ui' attribute, searching for Apply button...")
+                            for attr_name in apply_button_attrs:
+                                if hasattr(crop_module.ui, attr_name):
+                                    original_apply_button = getattr(crop_module.ui, attr_name)
+                                    print(f"Found Apply button using attribute: {attr_name}")
+                                    break
+                        else:
+                            print("No 'ui' attribute found, trying direct attributes...")
+                            # Try direct attributes on the module
+                            for attr_name in apply_button_attrs:
+                                if hasattr(crop_module, attr_name):
+                                    original_apply_button = getattr(crop_module, attr_name)
+                                    print(f"Found Apply button using direct attribute: {attr_name}")
+                                    break
+                        
+                        # If not found with direct attribute, search for it by text
+                        if not original_apply_button:
+                            print("Direct attribute search failed, searching by button text...")
+                            all_buttons = crop_widget.findChildren(qt.QPushButton)
+                            print(f"Found {len(all_buttons)} buttons in crop widget")
+                            for i, button in enumerate(all_buttons):
+                                button_text = button.text if hasattr(button, 'text') else ""
+                                print(f"Button {i}: '{button_text}'")
+                                if button_text and 'apply' in button_text.lower():
+                                    original_apply_button = button
+                                    print(f"Found Apply button by text: '{button_text}'")
+                                    break
+                    
+                    if original_apply_button:
+                        # Create a new large green button
+                        large_apply_button = qt.QPushButton("✓ APPLY CROP")
+                        large_apply_button.setStyleSheet("""
+                            QPushButton { 
+                                background-color: #28a745; 
+                                color: white; 
+                                border: 2px solid #1e7e34; 
+                                padding: 20px; 
+                                font-weight: bold;
+                                border-radius: 10px;
+                                margin: 10px;
+                                font-size: 18px;
+                                min-height: 70px;
+                                min-width: 200px;
+                            }
+                            QPushButton:hover { 
+                                background-color: #218838; 
+                                border: 2px solid #155724;
+                                transform: scale(1.05);
+                            }
+                            QPushButton:pressed { 
+                                background-color: #1e7e34; 
+                                border: 2px solid #0f4c2c;
+                            }
+                        """)
+                        
+                        # Connect the new button to trigger the original Apply button's click
+                        large_apply_button.connect('clicked()', lambda: original_apply_button.click())
+                        print("✓ Connected large button to original Apply button")
+                        
+                    else:
+                        print("Warning: Original Apply button not found, creating standalone button")
+                        # Create button anyway and try to trigger apply through the module
+                        large_apply_button = qt.QPushButton("✓ APPLY CROP")
+                        large_apply_button.setStyleSheet("""
+                            QPushButton { 
+                                background-color: #28a745; 
+                                color: white; 
+                                border: 2px solid #1e7e34; 
+                                padding: 20px; 
+                                font-weight: bold;
+                                border-radius: 10px;
+                                margin: 10px;
+                                font-size: 18px;
+                                min-height: 70px;
+                                min-width: 200px;
+                            }
+                            QPushButton:hover { 
+                                background-color: #218838; 
+                                border: 2px solid #155724;
+                                transform: scale(1.05);
+                            }
+                            QPushButton:pressed { 
+                                background-color: #1e7e34; 
+                                border: 2px solid #0f4c2c;
+                            }
+                        """)
+                        
+                        # Try to connect to crop logic directly
+                        def trigger_crop_apply():
+                            try:
+                                if hasattr(crop_module, 'onApplyButton'):
+                                    crop_module.onApplyButton()
+                                    print("Applied crop using onApplyButton method")
+                                elif hasattr(crop_module, 'apply'):
+                                    crop_module.apply()
+                                    print("Applied crop using apply method")
+                                else:
+                                    print("Could not find crop apply method - please use original Apply button")
+                            except Exception as e:
+                                print(f"Error applying crop: {e}")
+                        
+                        large_apply_button.connect('clicked()', trigger_crop_apply)
+                        print("✓ Connected large button to crop apply logic")
+                    
+                    # Add the button to the GUI (common for both cases)
+                    # Try to find the main UI container in the crop module
+                    main_ui_widget = None
+                    
+                    # Strategy 1: Look for the main widget container
+                    if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
+                        main_ui_widget = crop_module.ui.widget
+                    elif hasattr(crop_module, 'widget'):
+                        main_ui_widget = crop_module.widget
+                    elif hasattr(crop_widget, 'widget'):
+                        main_ui_widget = crop_widget.widget
+                    
+                    # Strategy 2: Get the module widget representation directly
+                    if not main_ui_widget:
+                        main_ui_widget = crop_widget
+                    
+                    # Add button to the main UI widget
+                    if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+                        layout = main_ui_widget.layout()
+                        if layout:
+                            # Insert at the top of the module for maximum visibility
+                            layout.insertWidget(0, large_apply_button)
+                            print("✓ Added large green Apply button to Crop Volume module GUI")
+                        else:
+                            # Create a layout if none exists
+                            new_layout = qt.QVBoxLayout(main_ui_widget)
+                            new_layout.insertWidget(0, large_apply_button)
+                            print("✓ Created layout and added large green Apply button to Crop Volume module")
+                    else:
+                        # Fallback: Try to find any suitable container widget
+                        container_widgets = crop_widget.findChildren(qt.QWidget)
+                        for widget in container_widgets:
+                            if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                                widget.layout().insertWidget(0, large_apply_button)
+                                print("✓ Added large green Apply button to Crop Volume container widget")
+                                break
+                        else:
+                            print("✗ Could not find suitable container in Crop Volume module")
+                            return False
+                    
+                    # Store reference to the button for potential cleanup
+                    slicer.modules.CropLargeApplyButton = large_apply_button
+                    return True
+                else:
+                    print("✗ Could not access crop module after trying all methods")
+                    print("Available crop_widget attributes:")
+                    if crop_widget:
+                        try:
+                            attrs = [attr for attr in dir(crop_widget) if not attr.startswith('_')]
+                            print(f"  {attrs[:10]}...")  # Show first 10 attributes
+                        except:
+                            print("  Could not list attributes")
+                    return False
+                        
+            except Exception as e:
+                print(f"Error creating large Apply button: {e}")
+                return False
+        
+        # Try creating the button immediately
+        success = create_large_button()
+        
+        # If that didn't work, try again after delays
+        if not success:
+            qt.QTimer.singleShot(1000, create_large_button)
+            qt.QTimer.singleShot(3000, create_large_button)
+            print("Scheduling delayed large Apply button creation...")
+            
+    except Exception as e:
+        print(f"Error adding large crop Apply button: {e}")
+
+def add_large_cpr_apply_button():
+    """
+    Add a large green Apply button directly to the Curved Planar Reformat module GUI
+    """
+    try:
+        # Check if button already exists to prevent duplicates
+        if hasattr(slicer.modules, 'CPRLargeApplyButton'):
+            existing_button = slicer.modules.CPRLargeApplyButton
+            if existing_button and existing_button.parent():
+                print("Large Apply button already exists in CPR module")
+                return
+        
+        print("=== STARTING CPR BUTTON CREATION ===")
+        
+        # Use a timer to delay button creation until UI is fully loaded
+        def create_large_button():
+            try:
+                # Check if button already exists to prevent duplicates
+                if hasattr(slicer.modules, 'CPRLargeApplyButton'):
+                    existing_button = slicer.modules.CPRLargeApplyButton
+                    if existing_button and existing_button.parent():
+                        print("Large Apply button already exists, skipping creation")
+                        return True
+                
+                print("Attempting to create large Apply button for CPR...")
+                cpr_widget = slicer.modules.curvedplanarreformat.widgetRepresentation()
+                print(f"CPR widget found: {cpr_widget is not None}")
+                print(f"CPR widget type: {type(cpr_widget)}")
+                print(f"CPR widget has 'self' attribute: {hasattr(cpr_widget, 'self') if cpr_widget else 'N/A'}")
+                
+                if cpr_widget:
+                    # Try multiple ways to access the cpr module
+                    cpr_module = None
+                    
+                    # Method 1: Try the 'self' attribute
+                    if hasattr(cpr_widget, 'self'):
+                        try:
+                            cpr_module = cpr_widget.self()
+                            print(f"Method 1 - Got CPR module via 'self': {cpr_module is not None}")
+                        except Exception as e:
+                            print(f"Method 1 failed: {e}")
+                    
+                    # Method 2: Try direct access
+                    if not cpr_module:
+                        try:
+                            cpr_module = cpr_widget
+                            print(f"Method 2 - Using cpr_widget directly: {cpr_module is not None}")
+                        except Exception as e:
+                            print(f"Method 2 failed: {e}")
+                    
+                    # Method 3: Try getting the widget representation directly
+                    if not cpr_module:
+                        try:
+                            cpr_module = slicer.modules.curvedplanarreformat.createNewWidgetRepresentation()
+                            print(f"Method 3 - Created new widget representation: {cpr_module is not None}")
+                        except Exception as e:
+                            print(f"Method 3 failed: {e}")
+                    
+                    if cpr_module:
+                        print(f"Successfully got CPR module: {type(cpr_module)}")
+                        
+                        # Find the original Apply button first to connect to its action
+                        original_apply_button = None
+                        print("Searching for Apply button in CPR module...")
+                        
+                        # Try various common attribute names for Apply button
+                        apply_button_attrs = ['applyButton', 'ApplyButton', 'applyCPRButton', 'cprApplyButton']
+                        
+                        # First try with ui attribute if it exists
+                        if hasattr(cpr_module, 'ui'):
+                            print("Found 'ui' attribute, searching for Apply button...")
+                            for attr_name in apply_button_attrs:
+                                if hasattr(cpr_module.ui, attr_name):
+                                    original_apply_button = getattr(cpr_module.ui, attr_name)
+                                    print(f"Found Apply button using attribute: {attr_name}")
+                                    break
+                        else:
+                            print("No 'ui' attribute found, trying direct attributes...")
+                            # Try direct attributes on the module
+                            for attr_name in apply_button_attrs:
+                                if hasattr(cpr_module, attr_name):
+                                    original_apply_button = getattr(cpr_module, attr_name)
+                                    print(f"Found Apply button using direct attribute: {attr_name}")
+                                    break
+                        
+                        # If not found with direct attribute, search for it by text
+                        if not original_apply_button:
+                            print("Direct attribute search failed, searching by button text...")
+                            all_buttons = cpr_widget.findChildren(qt.QPushButton)
+                            print(f"Found {len(all_buttons)} buttons in CPR widget")
+                            for i, button in enumerate(all_buttons):
+                                button_text = button.text if hasattr(button, 'text') else ""
+                                print(f"Button {i}: '{button_text}'")
+                                if button_text and 'apply' in button_text.lower():
+                                    original_apply_button = button
+                                    print(f"Found Apply button by text: '{button_text}'")
+                                    break
+                        
+                        if original_apply_button:
+                            # Create a new large green button
+                            large_apply_button = qt.QPushButton("✓ APPLY CPR")
+                            large_apply_button.setStyleSheet("""
+                                QPushButton { 
+                                    background-color: #28a745; 
+                                    color: white; 
+                                    border: 2px solid #1e7e34; 
+                                    padding: 20px; 
+                                    font-weight: bold;
+                                    border-radius: 10px;
+                                    margin: 10px;
+                                    font-size: 18px;
+                                    min-height: 70px;
+                                    min-width: 200px;
+                                }
+                                QPushButton:hover { 
+                                    background-color: #218838; 
+                                    border: 2px solid #155724;
+                                    transform: scale(1.05);
+                                }
+                                QPushButton:pressed { 
+                                    background-color: #1e7e34; 
+                                    border: 2px solid #0f4c2c;
+                                }
+                            """)
+                            
+                            # Connect the new button to trigger the original Apply button's click
+                            large_apply_button.connect('clicked()', lambda: original_apply_button.click())
+                            print("✓ Connected large button to original Apply button")
+                            
+                        else:
+                            print("Warning: Original Apply button not found, creating standalone button")
+                            # Create button anyway and try to trigger apply through the module
+                            large_apply_button = qt.QPushButton("✓ APPLY CPR")
+                            large_apply_button.setStyleSheet("""
+                                QPushButton { 
+                                    background-color: #28a745; 
+                                    color: white; 
+                                    border: 2px solid #1e7e34; 
+                                    padding: 20px; 
+                                    font-weight: bold;
+                                    border-radius: 10px;
+                                    margin: 10px;
+                                    font-size: 18px;
+                                    min-height: 70px;
+                                    min-width: 200px;
+                                }
+                                QPushButton:hover { 
+                                    background-color: #218838; 
+                                    border: 2px solid #155724;
+                                    transform: scale(1.05);
+                                }
+                                QPushButton:pressed { 
+                                    background-color: #1e7e34; 
+                                    border: 2px solid #0f4c2c;
+                                }
+                            """)
+                            
+                            # Try to connect to CPR logic directly
+                            def trigger_cpr_apply():
+                                try:
+                                    if hasattr(cpr_module, 'onApplyButton'):
+                                        cpr_module.onApplyButton()
+                                        print("Applied CPR using onApplyButton method")
+                                    elif hasattr(cpr_module, 'apply'):
+                                        cpr_module.apply()
+                                        print("Applied CPR using apply method")
+                                    else:
+                                        print("Could not find CPR apply method - please use original Apply button")
+                                except Exception as e:
+                                    print(f"Error applying CPR: {e}")
+                            
+                            large_apply_button.connect('clicked()', trigger_cpr_apply)
+                            print("✓ Connected large button to CPR apply logic")
+                        
+                        # Add the button to the GUI (common for both cases)
+                        # Try to find the main UI container in the cpr module
+                        main_ui_widget = None
+                        
+                        # Strategy 1: Look for the main widget container
+                        if hasattr(cpr_module, 'ui') and hasattr(cpr_module.ui, 'widget'):
+                            main_ui_widget = cpr_module.ui.widget
+                        elif hasattr(cpr_module, 'widget'):
+                            main_ui_widget = cpr_module.widget
+                        elif hasattr(cpr_widget, 'widget'):
+                            main_ui_widget = cpr_widget.widget
+                        
+                        # Strategy 2: Get the module widget representation directly
+                        if not main_ui_widget:
+                            main_ui_widget = cpr_widget
+                        
+                        # Add button to the main UI widget
+                        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+                            layout = main_ui_widget.layout()
+                            if layout:
+                                # Insert at the top of the module for maximum visibility
+                                layout.insertWidget(0, large_apply_button)
+                                print("✓ Added large green Apply button to CPR module GUI")
+                            else:
+                                # Create a layout if none exists
+                                new_layout = qt.QVBoxLayout(main_ui_widget)
+                                new_layout.insertWidget(0, large_apply_button)
+                                print("✓ Created layout and added large green Apply button to CPR module")
+                        else:
+                            # Fallback: Try to find any suitable container widget
+                            container_widgets = cpr_widget.findChildren(qt.QWidget)
+                            for widget in container_widgets:
+                                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                                    widget.layout().insertWidget(0, large_apply_button)
+                                    print("✓ Added large green Apply button to CPR container widget")
+                                    break
+                            else:
+                                print("✗ Could not find suitable container in CPR module")
+                                return False
+                        
+                        # Store reference to the button for potential cleanup
+                        slicer.modules.CPRLargeApplyButton = large_apply_button
+                        return True
+                    else:
+                        print("✗ Could not access CPR module after trying all methods")
+                        print("Available cpr_widget attributes:")
+                        if cpr_widget:
+                            try:
+                                attrs = [attr for attr in dir(cpr_widget) if not attr.startswith('_')]
+                                print(f"  {attrs[:10]}...")  # Show first 10 attributes
+                            except:
+                                print("  Could not list attributes")
+                        return False
+                        
+            except Exception as e:
+                print(f"Error creating large Apply button: {e}")
+                return False
+        
+        # Try creating the button immediately
+        success = create_large_button()
+        
+        # If that didn't work, try again after delays
+        if not success:
+            qt.QTimer.singleShot(1000, create_large_button)
+            qt.QTimer.singleShot(3000, create_large_button)
+            print("Scheduling delayed large Apply button creation...")
+            
+    except Exception as e:
+        print(f"Error adding large CPR Apply button: {e}")
+
+def style_crop_apply_button():
+    """
+    Style the Apply button in the Crop Volume module to be large and green
+    """
+    try:
+        # Use a timer to delay styling until UI is fully loaded
+        def apply_styling():
+            try:
+                crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+                if crop_widget:
+                    # Multiple strategies to find the Apply button
+                    apply_button = None
+                    
+                    # Strategy 1: Direct UI access
+                    if hasattr(crop_widget, 'self') and hasattr(crop_widget.self(), 'ui'):
+                        crop_module = crop_widget.self()
+                        if hasattr(crop_module.ui, 'applyButton'):
+                            apply_button = crop_module.ui.applyButton
+                            print("Found Apply button via direct UI access")
+                        elif hasattr(crop_module.ui, 'ApplyButton'):
+                            apply_button = crop_module.ui.ApplyButton
+                            print("Found Apply button via capitalized UI access")
+                    
+                    # Strategy 2: Search all buttons in crop widget
+                    if not apply_button:
+                        all_buttons = crop_widget.findChildren(qt.QPushButton)
+                        print(f"Searching through {len(all_buttons)} buttons in crop module")
+                        for button in all_buttons:
+                            button_text = button.text if hasattr(button, 'text') else ""
+                            button_name = button.objectName() if hasattr(button, 'objectName') else ""
+                            print(f"  Button: '{button_text}' (name: '{button_name}')")
+                            if 'apply' in button_text.lower() or 'apply' in button_name.lower():
+                                apply_button = button
+                                print(f"Found Apply button via search: '{button_text}'")
+                                break
+                    
+                    # Strategy 3: Search in entire main window for crop-related apply buttons
+                    if not apply_button:
+                        main_window = slicer.util.mainWindow()
+                        all_buttons = main_window.findChildren(qt.QPushButton)
+                        for button in all_buttons:
+                            button_text = button.text if hasattr(button, 'text') else ""
+                            parent_name = button.parent().objectName() if button.parent() and hasattr(button.parent(), 'objectName') else ""
+                            if 'apply' in button_text.lower() and ('crop' in parent_name.lower() or 'volume' in parent_name.lower()):
+                                apply_button = button
+                                print(f"Found Apply button via global search: '{button_text}' in parent '{parent_name}'")
+                                break
+                    
+                    if apply_button:
+                        # Apply the green styling
+                        style_sheet = """
+                            QPushButton { 
+                                background-color: #28a745 !important; 
+                                color: white !important; 
+                                border: 2px solid #1e7e34 !important; 
+                                padding: 20px !important; 
+                                font-weight: bold !important;
+                                border-radius: 10px !important;
+                                margin: 10px !important;
+                                font-size: 18px !important;
+                                min-height: 70px !important;
+                                min-width: 200px !important;
+                            }
+                            QPushButton:hover { 
+                                background-color: #218838 !important; 
+                                border: 2px solid #155724 !important;
+                                transform: scale(1.05);
+                            }
+                            QPushButton:pressed { 
+                                background-color: #1e7e34 !important; 
+                                border: 2px solid #0f4c2c !important;
+                            }
+                        """
+                        apply_button.setStyleSheet(style_sheet)
+                        
+                        # Also try setting some properties directly
+                        apply_button.setMinimumHeight(70)
+                        apply_button.setMinimumWidth(200)
+                        
+                        print("✓ Successfully styled Apply button in Crop Volume module - large and green")
+                        return True
+                    else:
+                        print("✗ Could not find Apply button in Crop Volume module")
+                        return False
+                        
+            except Exception as e:
+                print(f"Error in apply_styling: {e}")
+                return False
+        
+        # Try styling immediately
+        success = apply_styling()
+        
+        # If that didn't work, try again after a short delay
+        if not success:
+            timer = qt.QTimer()
+            timer.singleShot(1000, apply_styling)  # Try again after 1 second
+            print("Scheduling delayed Apply button styling...")
+            
+    except Exception as e:
+        print(f"Error styling crop Apply button: {e}")
+
 def start_with_volume_crop():
     """
     Start the workflow by opening the Volume Crop module and creating an ROI that fits the entire volume.
@@ -892,12 +1637,19 @@ def start_with_volume_crop():
         display_node.SetColor(1.0, 1.0, 0.0)  # Yellow color for visibility
         display_node.SetSelectedColor(1.0, 0.5, 0.0)  # Orange when selected
     
-    slicer.util.infoDisplay(
-        "ROI automatically created to fit the entire volume!\n\n" +
-        "The yellow ROI box shows the current crop boundaries.\n" +
-        "Adjust the ROI handles to select your region of interest,\n" +
-        "then click 'Apply' to crop. The workflow will continue automatically."
-    )
+    print("ROI created - adjust handles and click Apply to crop")
+    
+    # Ensure UI is fully loaded before adding button
+    slicer.app.processEvents()
+    
+    # Try adding the button immediately
+    add_large_crop_apply_button()
+    
+    # Also try adding the button after a delay to ensure UI is fully loaded (only one retry)
+    qt.QTimer.singleShot(2000, add_large_crop_apply_button)
+    
+    print("Large green Apply button creation scheduled for Crop Volume module")
+    
     setup_crop_completion_monitor(volume_node)
 
 def setup_crop_completion_monitor(original_volume_node):
@@ -935,8 +1687,30 @@ def check_crop_completion(original_volume_node):
             del slicer.modules.CropMonitorTimer
             del slicer.modules.CropCheckCount
             
-            # Remove the original volume
-            slicer.mrmlScene.RemoveNode(original_volume_node)
+            # HIDE the original volume
+            original_volume_node.SetDisplayVisibility(False)
+            
+            # Also hide it from slice views
+            layout_manager = slicer.app.layoutManager()
+            slice_view_names = ['Red', 'Yellow', 'Green']
+            
+            for slice_view_name in slice_view_names:
+                slice_widget = layout_manager.sliceWidget(slice_view_name)
+                if slice_widget:
+                    slice_logic = slice_widget.sliceLogic()
+                    if slice_logic:
+                        composite_node = slice_logic.GetSliceCompositeNode()
+                        if composite_node and composite_node.GetBackgroundVolumeID() == original_volume_node.GetID():
+                            composite_node.SetBackgroundVolumeID(None)
+            
+            print(f"Hidden original volume: {original_volume_node.GetName()}")
+            
+            # Store references to both volumes for potential future use
+            slicer.modules.WorkflowOriginalVolume = original_volume_node
+            slicer.modules.WorkflowCroppedVolume = node
+            
+            # Set the cropped volume as the active volume and make it visible in all slice views
+            set_cropped_volume_visible(node)
             
             # Auto-delete the ROI node after cropping
             roi_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsROINode')
@@ -945,43 +1719,68 @@ def check_crop_completion(original_volume_node):
                     slicer.mrmlScene.RemoveNode(roi_node)
                     print(f"Automatically deleted ROI: {roi_node.GetName()}")
             
-            slicer.util.infoDisplay(f"Cropped volume '{node.GetName()}' detected. ROI automatically deleted. Continuing workflow.")
+            print(f"Cropped volume '{node.GetName()}' detected. Continuing workflow.")
             create_threshold_segment()
             return
 
 
+def set_cropped_volume_visible(cropped_volume):
+    """
+    Set the cropped volume as visible and active in all slice views
+    """
+    try:
+        # Ensure the cropped volume has a display node
+        if not cropped_volume.GetDisplayNode():
+            cropped_volume.CreateDefaultDisplayNodes()
+        
+        # Set the cropped volume as the active volume in the selection node
+        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selection_node:
+            selection_node.SetActiveVolumeID(cropped_volume.GetID())
+            selection_node.SetSecondaryVolumeID(None)
+        
+        # Get layout manager and set the volume in all slice views
+        layout_manager = slicer.app.layoutManager()
+        slice_view_names = ['Red', 'Yellow', 'Green']
+        
+        for slice_view_name in slice_view_names:
+            slice_widget = layout_manager.sliceWidget(slice_view_name)
+            if slice_widget:
+                slice_logic = slice_widget.sliceLogic()
+                if slice_logic:
+                    slice_logic.GetSliceCompositeNode().SetBackgroundVolumeID(cropped_volume.GetID())
+                    slice_logic.GetSliceCompositeNode().SetForegroundVolumeID(None)
+                    slice_logic.FitSliceToAll()
+        
+        # Force refresh of all slice views
+        for slice_view_name in slice_view_names:
+            slice_widget = layout_manager.sliceWidget(slice_view_name)
+            if slice_widget:
+                slice_view = slice_widget.sliceView()
+                slice_view.forceRender()
+        
+        # Process events to ensure GUI is updated
+        slicer.app.processEvents()
+        
+        print(f"Cropped volume '{cropped_volume.GetName()}' set as active and visible in all slice views")
+        return True
+        
+    except Exception as e:
+        print(f"Error setting cropped volume visible: {e}")
+        return False
+
 
 def prompt_for_endpoints():
     """
-    Prompt user to add start and end points for centerline extraction using default GUI
+    Simplified prompt for centerline extraction
     """
     try:
-        slicer.util.infoDisplay(
-            "Centerline extraction configured!\n\n"
-            "✓ New endpoint point list automatically created\n"
-            "✓ New centerline model automatically selected\n\n"
-            "Next step: Add endpoints for centerline extraction:\n"
-            "1. In the Extract Centerline module, find the 'Endpoints' section\n"
-            "2. The 'CenterlineEndpoints' point list is already selected\n"
-            "3. Click the placement button (looks like a fiducial marker) to start placing points\n"
-            "4. Place fiducial points on your vessel:\n"
-            "   - Click once to place the START point\n"
-            "   - Click again to place the END point\n"
-            "5. Press ESC to exit placement mode\n"
-            "6. Click 'Apply' to run the centerline extraction\n\n"
-            "The workflow will automatically continue once extraction is complete."
-        )
+        print("Centerline extraction configured - place start and end points, then click Apply")
         setup_centerline_completion_monitor()
         
     except Exception as e:
         print(f"Error prompting for endpoints: {e}")
-        slicer.util.infoDisplay(
-            "Centerline extraction configured!\n\n"
-            "Please add start and end points using the Extract Centerline module:\n"
-            "1. Find the 'Endpoints' section\n"
-            "2. Use the fiducial placement tools to add endpoints\n"
-            "3. Click 'Apply' to run extraction"
-        )
+        print("Please add start and end points using the Extract Centerline module, then click Apply")
 
 def setup_centerline_completion_monitor():
     """
@@ -1096,21 +1895,159 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         setup_cpr_module()
         create_point_list_and_prompt()
         
-        slicer.util.infoDisplay(
-            "Centerline extraction complete!\n\n"
-            "✓ Switched to Curved Planar Reformat module\n"
-            "✓ Centerline automatically selected\n"
-            "✓ Output volume and transform automatically created\n"
-            "✓ CPR automatically applied\n"
-            "✓ Straightened volume now visible in all views\n\n"
-            "A new point list has been created for lesion analysis.\n"
-            "Place points in order: 1 (pre-lesion) → 2 (post-lesion) → 3 (start-slice) → 4 (end-slice)\n\n"
-            "You can now view the straightened volume and perform lesion analysis."
-        )
+        # Add large green Apply button with a small delay to ensure UI is loaded
+        qt.QTimer.singleShot(1000, add_large_cpr_apply_button)
+        
+        # Auto-apply CPR after everything is set up (with additional delay)
+        qt.QTimer.singleShot(3000, auto_apply_cpr)
+        
+        print("CPR module ready - point placement controls available")
+        print("CPR will be automatically applied in 3 seconds...")
         
     except Exception as e:
         print(f"Error switching to CPR module: {e}")
         slicer.util.errorDisplay(f"Could not open Curved Planar Reformat module: {str(e)}")
+
+def auto_apply_cpr():
+    """
+    Automatically apply the CPR processing while keeping the module open for re-application
+    """
+    try:
+        print("Auto-applying CPR...")
+        
+        # Get the CPR module widget
+        cpr_widget = slicer.modules.curvedplanarreformat.widgetRepresentation()
+        if not cpr_widget:
+            print("Error: CPR module widget not found for auto-apply")
+            return
+        
+        cpr_module = None
+        if hasattr(cpr_widget, 'self'):
+            cpr_module = cpr_widget.self()
+        
+        if not cpr_module:
+            print("Error: Could not access CPR module for auto-apply")
+            return
+        
+        # Try to find and click the Apply button
+        apply_button = None
+        
+        # Strategy 1: Look for the original Apply button in the UI
+        if hasattr(cpr_module, 'ui') and hasattr(cpr_module.ui, 'applyButton'):
+            apply_button = cpr_module.ui.applyButton
+            print("Found original Apply button")
+        
+        # Strategy 2: Look for our custom large Apply button
+        if not apply_button and hasattr(slicer.modules, 'CPRLargeApplyButton'):
+            apply_button = slicer.modules.CPRLargeApplyButton
+            print("Found custom large Apply button")
+        
+        # Strategy 3: Search for any Apply button in the CPR widget
+        if not apply_button:
+            all_buttons = cpr_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                if button.text.lower() == 'apply' and button.isEnabled():
+                    apply_button = button
+                    print("Found Apply button by searching widget")
+                    break
+        
+        if apply_button and apply_button.isEnabled():
+            print("Clicking Apply button to start CPR processing...")
+            apply_button.click()
+            
+            # Set up monitoring for CPR completion
+            setup_cpr_completion_monitor()
+            
+            print("✓ CPR processing started automatically!")
+            print("Module remains open for manual re-application if needed.")
+            
+        else:
+            if not apply_button:
+                print("⚠ Could not find Apply button for auto-apply")
+            else:
+                print("⚠ Apply button found but not enabled - please check CPR configuration")
+            print("You can manually click Apply when ready.")
+            
+    except Exception as e:
+        print(f"Error in auto-apply CPR: {e}")
+        print("You can manually click Apply to run CPR processing.")
+
+def setup_cpr_completion_monitor():
+    """
+    Monitor for CPR completion to provide user feedback
+    """
+    try:
+        if not hasattr(slicer.modules, 'CPRMonitorTimer'):
+            timer = qt.QTimer()
+            timer.timeout.connect(check_cpr_completion)
+            timer.start(2000)  # Check every 2 seconds
+            slicer.modules.CPRMonitorTimer = timer
+            slicer.modules.CPRCheckCount = 0
+            print("Started monitoring CPR completion...")
+        
+    except Exception as e:
+        print(f"Error setting up CPR completion monitor: {e}")
+
+def check_cpr_completion():
+    """
+    Check if CPR processing has completed
+    """
+    try:
+        if hasattr(slicer.modules, 'CPRCheckCount'):
+            slicer.modules.CPRCheckCount += 1
+            if slicer.modules.CPRCheckCount > 30:  # Stop after 60 seconds
+                stop_cpr_monitoring()
+                print("CPR monitoring timed out")
+                return
+        
+        # Check if new volumes have been created (indicating CPR completion)
+        straightened_volumes = []
+        projected_volumes = []
+        
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        for volume in volume_nodes:
+            volume_name = volume.GetName().lower()
+            if 'straightened' in volume_name:
+                straightened_volumes.append(volume)
+            elif 'projected' in volume_name:
+                projected_volumes.append(volume)
+        
+        if straightened_volumes or projected_volumes:
+            print("✓ CPR processing completed successfully!")
+            if straightened_volumes:
+                print(f"  - Created straightened volume(s): {[v.GetName() for v in straightened_volumes]}")
+            if projected_volumes:
+                print(f"  - Created projected volume(s): {[v.GetName() for v in projected_volumes]}")
+            
+            stop_cpr_monitoring()
+            
+            # Show completion message
+            print("CPR workflow complete! You can:")
+            print("1. View the results in the slice views")
+            print("2. Adjust parameters and re-apply if needed")
+            print("3. Continue with point placement for lesion analysis")
+        
+    except Exception as e:
+        print(f"Error checking CPR completion: {e}")
+
+def stop_cpr_monitoring():
+    """
+    Stop the CPR completion monitoring
+    """
+    try:
+        if hasattr(slicer.modules, 'CPRMonitorTimer'):
+            timer = slicer.modules.CPRMonitorTimer
+            timer.stop()
+            timer.timeout.disconnect()
+            del slicer.modules.CPRMonitorTimer
+            
+        if hasattr(slicer.modules, 'CPRCheckCount'):
+            del slicer.modules.CPRCheckCount
+            
+        print("Stopped CPR monitoring")
+        
+    except Exception as e:
+        print(f"Error stopping CPR monitoring: {e}")
 
 def setup_cpr_module():
     """
@@ -1124,6 +2061,76 @@ def setup_cpr_module():
             # First, let the module fully initialize
             slicer.app.processEvents()
             
+            # Configure input volume - find the appropriate volume to use
+            input_volume = find_working_volume()
+            if input_volume:
+                print(f"Found input volume for CPR: {input_volume.GetName()}")
+                
+                # Set input volume selector
+                input_volume_set = False
+                for input_selector_name in ['inputVolumeSelector', 'sourceVolumeSelector', 'volumeSelector']:
+                    if hasattr(cpr_module.ui, input_selector_name):
+                        selector = getattr(cpr_module.ui, input_selector_name)
+                        
+                        # Force refresh the selector's node list
+                        if hasattr(selector, 'updateMRMLFromWidget'):
+                            selector.updateMRMLFromWidget()
+                        
+                        # Set the node
+                        selector.setCurrentNode(input_volume)
+                        
+                        # Force update again
+                        slicer.app.processEvents()
+                        
+                        # Verify the selection took effect
+                        if selector.currentNode() == input_volume:
+                            print(f"Successfully set input volume using {input_selector_name}: {input_volume.GetName()}")
+                            input_volume_set = True
+                            break
+                        else:
+                            print(f"Failed to set input volume using {input_selector_name}")
+                
+                if not input_volume_set:
+                    print("Warning: Could not find or set input volume selector")
+                    print("Available UI attributes:", [attr for attr in dir(cpr_module.ui) if 'volume' in attr.lower() or 'input' in attr.lower()])
+            else:
+                print("Warning: Could not find appropriate input volume for CPR")
+            
+            # Configure centerline input - find the most recent centerline
+            centerline_model = find_recent_centerline_model()
+            if centerline_model:
+                print(f"Found centerline model for CPR: {centerline_model.GetName()}")
+                
+                # Set centerline selector
+                centerline_set = False
+                for centerline_selector_name in ['inputCenterlineSelector', 'centerlineSelector', 'curveSelector']:
+                    if hasattr(cpr_module.ui, centerline_selector_name):
+                        selector = getattr(cpr_module.ui, centerline_selector_name)
+                        
+                        # Force refresh the selector's node list
+                        if hasattr(selector, 'updateMRMLFromWidget'):
+                            selector.updateMRMLFromWidget()
+                        
+                        # Set the node
+                        selector.setCurrentNode(centerline_model)
+                        
+                        # Force update again
+                        slicer.app.processEvents()
+                        
+                        # Verify the selection took effect
+                        if selector.currentNode() == centerline_model:
+                            print(f"Successfully set centerline using {centerline_selector_name}: {centerline_model.GetName()}")
+                            centerline_set = True
+                            break
+                        else:
+                            print(f"Failed to set centerline using {centerline_selector_name}")
+                
+                if not centerline_set:
+                    print("Warning: Could not find or set centerline selector")
+                    print("Available UI attributes:", [attr for attr in dir(cpr_module.ui) if 'centerline' in attr.lower() or 'curve' in attr.lower()])
+            else:
+                print("Warning: Could not find centerline model for CPR")
+            
             # Configure output nodes and settings
             try:
                 # Create new output volume for straightened result
@@ -1131,86 +2138,49 @@ def setup_cpr_module():
                 output_volume.SetName("Straightened Volume")
                 output_volume.CreateDefaultDisplayNodes()
                 
+                # Create new projected volume
+                projected_volume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+                projected_volume.SetName("Projected Volume")
+                projected_volume.CreateDefaultDisplayNodes()
+                
                 # Create new transform node
                 transform_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTransformNode")
                 transform_node.SetName("Straightening transform")
                 
                 # Store references for later use
                 slicer.modules.WorkflowStraightenedVolume = output_volume
+                slicer.modules.WorkflowProjectedVolume = projected_volume
                 slicer.modules.WorkflowStraighteningTransform = transform_node
                 
                 # Process events to ensure nodes are properly added to scene
                 slicer.app.processEvents()
                 
-                # Set output volume selector with retry mechanism
+                print(f"Created output volume: {output_volume.GetName()}")
+                print(f"Created projected volume: {projected_volume.GetName()}")
+                print(f"Created transform node: {transform_node.GetName()}")
+                
+                # Set the output selectors to the created nodes
                 output_volume_set = False
-                for output_selector_name in ['outputVolumeSelector', 'straightenedVolumeSelector', 'outputSelector']:
-                    if hasattr(cpr_module.ui, output_selector_name):
-                        selector = getattr(cpr_module.ui, output_selector_name)
-                        
-                        # Enable "create new" mode first if available
-                        create_new_checkbox = None
-                        for create_new_attr in ['createNewVolumeCheckBox', 'createNewOutputCheckBox']:
-                            if hasattr(cpr_module.ui, create_new_attr):
-                                create_new_checkbox = getattr(cpr_module.ui, create_new_attr)
-                                create_new_checkbox.setChecked(False)  # Disable create new to use existing
-                                break
-                        
-                        # Force refresh the selector's node list
-                        if hasattr(selector, 'updateMRMLFromWidget'):
-                            selector.updateMRMLFromWidget()
-                        
-                        # Set the node
-                        selector.setCurrentNode(output_volume)
-                        
-                        # Force update again
-                        slicer.app.processEvents()
-                        
-                        # Verify the selection took effect
-                        if selector.currentNode() == output_volume:
-                            print(f"Successfully set output volume using {output_selector_name}: {output_volume.GetName()}")
-                            output_volume_set = True
-                            break
-                        else:
-                            print(f"Failed to set output volume using {output_selector_name}")
-                
-                if not output_volume_set:
-                    print("Warning: Could not find or set output volume selector")
-                
-                # Set transform selector with retry mechanism
+                projected_volume_set = False
                 transform_set = False
-                for transform_selector_name in ['outputTransformSelector', 'transformSelector', 'outputTransformNodeSelector']:
-                    if hasattr(cpr_module.ui, transform_selector_name):
-                        selector = getattr(cpr_module.ui, transform_selector_name)
-                        
-                        # Enable "create new" mode first if available
-                        create_new_checkbox = None
-                        for create_new_attr in ['createNewTransformCheckBox', 'createNewTransformNodeCheckBox']:
-                            if hasattr(cpr_module.ui, create_new_attr):
-                                create_new_checkbox = getattr(cpr_module.ui, create_new_attr)
-                                create_new_checkbox.setChecked(False)  # Disable create new to use existing
-                                break
-                        
-                        # Force refresh the selector's node list
-                        if hasattr(selector, 'updateMRMLFromWidget'):
-                            selector.updateMRMLFromWidget()
-                        
-                        # Set the node
-                        selector.setCurrentNode(transform_node)
-                        
-                        # Force update again
-                        slicer.app.processEvents()
-                        
-                        # Verify the selection took effect
-                        if selector.currentNode() == transform_node:
-                            print(f"Successfully set transform using {transform_selector_name}: {transform_node.GetName()}")
-                            transform_set = True
-                            break
-                        else:
-                            print(f"Failed to set transform using {transform_selector_name}")
                 
-                if not transform_set:
-                    print("Warning: Could not find or set transform selector")
+                # Set output straightened volume selector
+                if hasattr(cpr_module.ui, 'outputStraightenedVolumeSelector'):
+                    cpr_module.ui.outputStraightenedVolumeSelector.setCurrentNode(output_volume)
+                    output_volume_set = True
+                    print("Set output straightened volume selector")
+                
+                # Set output projected volume selector
+                if hasattr(cpr_module.ui, 'outputProjectedVolumeSelector'):
+                    cpr_module.ui.outputProjectedVolumeSelector.setCurrentNode(projected_volume)
+                    projected_volume_set = True
+                    print("Set output projected volume selector")
+                
+                # Set output transform selector
+                if hasattr(cpr_module.ui, 'outputTransformToStraightenedVolumeSelector'):
+                    cpr_module.ui.outputTransformToStraightenedVolumeSelector.setCurrentNode(transform_node)
+                    transform_set = True
+                    print("Set output transform selector")
                 
                 # Set resolution and thickness parameters
                 if hasattr(cpr_module.ui, 'resolutionSpinBox'):
@@ -1224,12 +2194,37 @@ def setup_cpr_module():
                 # Final UI update
                 slicer.app.processEvents()
                 
-                print("CPR module configured with output nodes")
+                # Report setup status
+                print("CPR module setup complete with automatic selector configuration:")
+                if output_volume_set:
+                    print("✓ Output straightened volume selector set")
+                else:
+                    print("⚠ Output straightened volume selector not found - users should select manually")
+                    
+                if projected_volume_set:
+                    print("✓ Output projected volume selector set")
+                else:
+                    print("⚠ Output projected volume selector not found - users should select manually")
+                    
+                if transform_set:
+                    print("✓ Output transform selector set")
+                else:
+                    print("⚠ Output transform selector not found - users should select manually")
+                
+                if not input_volume:
+                    print("Warning: No input volume detected - users should select one manually")
+                if not centerline_model:
+                    print("Warning: No centerline model detected - users should select one manually")
+                
+                print("CPR module configured - ready to apply!")
                     
             except Exception as e:
                 print(f"Could not configure CPR output options: {e}")
 
             slicer.app.processEvents()
+            
+            # Add large green Apply button to CPR module
+            add_large_cpr_apply_button()
 
         else:
             print("Warning: Could not access CPR module widget")
@@ -1278,8 +2273,7 @@ def create_point_placement_controls():
         layout.addWidget(title_label)
 
         instruction_label = qt.QLabel(
-            "Click 'Start Placing Points' to add lesion analysis points in order:\n"
-            "1: pre-lesion → 2: post-lesion → 3: start-slice → 4: end-slice"
+            "Place points: 1:pre-lesion → 2:post-lesion → 3:start-slice → 4:end-slice"
         )
         instruction_label.setStyleSheet("QLabel { color: #333; margin: 5px; }")
         instruction_label.setWordWrap(True)
@@ -1289,7 +2283,7 @@ def create_point_placement_controls():
         count_label.setStyleSheet("QLabel { color: #666; margin: 5px; font-weight: bold; }")
         layout.addWidget(count_label)
         
-        start_button = qt.QPushButton("Start Placing Points (New Point List)")
+        start_button = qt.QPushButton("Start Placing Points")
         start_button.setStyleSheet("""
             QPushButton { 
                 background-color: #28a745; 
@@ -1311,7 +2305,7 @@ def create_point_placement_controls():
         start_button.connect('clicked()', lambda: start_new_point_list_placement(count_label))
         layout.addWidget(start_button)
         
-        clear_button = qt.QPushButton("Clear All Points")
+        clear_button = qt.QPushButton("Clear Points")
         clear_button.setStyleSheet("""
             QPushButton { 
                 background-color: #ffc107; 
@@ -1333,7 +2327,7 @@ def create_point_placement_controls():
         clear_button.connect('clicked()', lambda: clear_all_points_from_scene(count_label))
         layout.addWidget(clear_button)
         
-        export_button = qt.QPushButton("Export Points & Continue")
+        export_button = qt.QPushButton("Export & Continue")
         export_button.setStyleSheet("""
             QPushButton { 
                 background-color: #dc3545; 
@@ -1387,7 +2381,7 @@ def start_point_placement(point_list, start_button, stop_button, count_label):
         update_point_count_display(point_list, count_label)
         
         print("Point placement mode started")
-        slicer.util.infoDisplay("Lesion analysis point placement started!\n\nPlace points in order:\n1: pre-lesion → 2: post-lesion → 3: start-slice → 4: end-slice\n\nClick 'Stop Placing Points' when finished.")
+        print("Point placement started - place points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
         
     except Exception as e:
         print(f"Error starting point placement: {e}")
@@ -1428,15 +2422,14 @@ def clear_all_points(point_list, count_label):
     try:
         point_count = point_list.GetNumberOfControlPoints()
         if point_count == 0:
-            slicer.util.infoDisplay("No points to clear.")
+            print("No points to clear.")
             return
         
-        result = slicer.util.confirmYesNoDisplay(f"Are you sure you want to clear all {point_count} measurement points?")
+        result = slicer.util.confirmYesNoDisplay(f"Clear all {point_count} points?")
         if result:
             point_list.RemoveAllControlPoints()
             update_point_count_display(point_list, count_label)
-            print("All measurement points cleared")
-            slicer.util.infoDisplay("All measurement points have been cleared.")
+            print("All points cleared")
         
     except Exception as e:
         print(f"Error clearing points: {e}")
@@ -1614,37 +2607,10 @@ def update_point_count_display(point_list, count_label):
 
 def show_point_placement_instructions():
     """
-    Show detailed instructions for lesion analysis point placement
+    Show simplified instructions for lesion analysis point placement
     """
-    try:
-        instructions = (
-            "Lesion Analysis Point Placement\n\n"
-            "Instructions for placing lesion analysis points:\n\n"
-            "1. Click 'Start Placing Points' in the control panel\n"
-            "2. Place points in the following order:\n\n"
-            "   1: pre-lesion - Click upstream of the lesion\n"
-            "   2: post-lesion - Click downstream of the lesion\n"
-            "   3: start-slice - Click at the beginning of analysis region\n"
-            "   4: end-slice - Click at the end of analysis region\n\n"
-            "3. Use the curved reformat view to navigate along the vessel\n"
-            "4. Click 'Stop Placing Points' when finished\n"
-            "5. Export your points to save the lesion analysis measurements\n\n"
-            "Tips:\n"
-            "• Points will be automatically labeled for lesion analysis\n"
-            "• Place points accurately for precise measurements\n"
-            "• You can clear and restart if needed\n"
-            "• Additional points beyond point 4 will be labeled as 'additional'"
-        )
-        dialog = qt.QMessageBox()
-        dialog.setIcon(qt.QMessageBox.Information)
-        dialog.setWindowTitle("Lesion Analysis Point Placement")
-        dialog.setText(instructions)
-        dialog.setStandardButtons(qt.QMessageBox.Ok)
-        dialog.exec_()
-        
-    except Exception as e:
-        print(f"Error showing point placement instructions: {e}")
-        slicer.util.infoDisplay("Lesion analysis point placement controls are ready. Use the control panel to start placing points.")
+    print("Point placement controls ready")
+    print("Use control panel to start placing points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
 
 def cleanup_point_placement_ui():
     """
@@ -1686,26 +2652,12 @@ def apply_only_transform_to_point_list(point_list):
         if straightening_transform:
             # Apply the Straightening transform
             point_list.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            print(f"Automatically applied 'Straightening transform' to point list '{point_list.GetName()}'")
-            
-            # Show confirmation to user
-            slicer.util.infoDisplay(
-                f"Transform Applied!\n\n"
-                f"Automatically applied 'Straightening transform' to the new F-1 point list.\n\n"
-                "Points will now be placed in the straightened coordinate system."
-            )
+            print(f"Applied 'Straightening transform' to point list '{point_list.GetName()}'")
             return True
         else:
             # Straightening transform not found
             transform_names = [node.GetName() for node in transform_nodes]
             print(f"'Straightening transform' not found. Available transforms: {', '.join(transform_names)}")
-            
-            slicer.util.infoDisplay(
-                f"Straightening Transform Not Found!\n\n"
-                f"Looking for 'Straightening transform' but found:\n"
-                f"{', '.join(transform_names)}\n\n"
-                "Point list will use default coordinate system. You can manually apply a transform if needed."
-            )
             return False
             
     except Exception as e:
@@ -1750,15 +2702,7 @@ def start_new_point_list_placement(count_label):
         
         print(f"Created new point list: {point_list.GetName()}")
         print("Point placement mode started")
-        
-        slicer.util.infoDisplay(
-            f"New F-1 point list created!\n\n"
-            "Point placement started!\n\n"
-            "Place points in order:\n"
-            "1: pre-lesion → 2: post-lesion → 3: start-slice → 4: end-slice\n\n"
-            "Click anywhere in the slice views to place points.\n"
-            "Use 'Clear All Points' to reset if needed."
-        )
+        print("F-1 point list created - place points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
         
     except Exception as e:
         print(f"Error starting new point list placement: {e}")
@@ -1778,34 +2722,25 @@ def clear_all_points_from_scene(count_label):
                 lesion_analysis_nodes.append(node)
         
         if not lesion_analysis_nodes:
-            slicer.util.infoDisplay("No F-1 point list found to clear.")
+            print("No F-1 point list found to clear.")
             return
         
         node_count = len(lesion_analysis_nodes)
         total_points = sum(node.GetNumberOfControlPoints() for node in lesion_analysis_nodes)
         
-        result = slicer.util.confirmYesNoDisplay(
-            f"Are you sure you want to clear the F-1 point list?\n\n"
-            f"This will remove {node_count} point list(s) containing {total_points} total points."
-        )
+        for node in lesion_analysis_nodes:
+            slicer.mrmlScene.RemoveNode(node)
+            print(f"Removed point list: {node.GetName()}")
         
-        if result:
-            for node in lesion_analysis_nodes:
-                slicer.mrmlScene.RemoveNode(node)
-                print(f"Removed point list: {node.GetName()}")
-            
+        if hasattr(slicer.modules, 'CurrentLesionAnalysisPointList'):
+            del slicer.modules.CurrentLesionAnalysisPointList
 
-            if hasattr(slicer.modules, 'CurrentLesionAnalysisPointList'):
-                del slicer.modules.CurrentLesionAnalysisPointList
-
-            interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-            if interactionNode:
-                interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
-            
-            count_label.setText("Points placed: 0")
-            
-            print(f"Cleared {node_count} F-1 point(s)")
-            slicer.util.infoDisplay(f"Successfully cleared {node_count} F-1 point list(s) with {total_points} total points.")
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+        
+        count_label.setText("Points placed: 0")
+        print(f"Cleared {node_count} F-1 point(s) with {total_points} total points")
         
     except Exception as e:
         print(f"Error clearing points from scene: {e}")
@@ -1825,59 +2760,35 @@ def export_project_and_continue():
                 lesion_analysis_nodes.append(node)
         
         if not lesion_analysis_nodes:
-            result = slicer.util.confirmYesNoDisplay(
-                "No F-1 point list found to export.\n\n"
-                "Do you still want to save the project and continue to workflow2?"
-            )
-            if not result:
-                return
+            print("No F-1 point list found - saving project anyway")
         else:
             total_points = sum(node.GetNumberOfControlPoints() for node in lesion_analysis_nodes)
-            result = slicer.util.confirmYesNoDisplay(
-                f"Ready to export project with {len(lesion_analysis_nodes)} F-1 point list(s) "
-                f"containing {total_points} total lesion analysis points.\n\n"
-                "This will save the Slicer project and continue to workflow2.py for centerline analysis.\n\n"
-                "Continue with export and workflow2?"
-            )
-            if not result:
-                return
+            print(f"Exporting project with {len(lesion_analysis_nodes)} F-1 point list(s) containing {total_points} points")
 
         # Remove transforms from point lists before saving
         if lesion_analysis_nodes:
-            print("=== REMOVING TRANSFORMS FROM F-1 POINT LISTS BEFORE EXPORT ===")
-            
-            # First check current status
+            print("Preparing F-1 point lists for export...")
             debug_point_list_transforms()
-            
-            # Remove transforms
             transforms_removed = remove_transforms_from_point_lists()
             
-            # If standard removal didn't work, force it
             if not transforms_removed:
-                print("Standard removal didn't find transforms, forcing removal...")
+                print("Forcing transform removal...")
                 force_remove_all_transforms()
             
-            # Verify removal was successful
-            print("=== VERIFYING TRANSFORM REMOVAL ===")
-            debug_point_list_transforms()
-            
-            slicer.util.infoDisplay(
-                "Transforms Removed!\n\n"
-                "All transforms have been removed from F-1 point lists before export.\n"
-                "Points are now in their final coordinate system for analysis.\n\n"
-                "Check the console for detailed verification."
-            )
+            print("Transform removal verification complete")
 
         success = slicer.app.ioManager().openSaveDataDialog()
         
         if success:
-            print("Project saved successfully using standard Slicer save")
+            print("Project saved successfully")
 
-            slicer.util.infoDisplay(
-                "Project successfully saved!\n\n"
-                "Now starting centerline and tube mask creation workflow..."
-            )
+            # Reapply transforms after saving
+            if lesion_analysis_nodes:
+                print("Reapplying transforms after save...")
+                reapply_transforms_to_point_lists()
+                reapply_transforms_to_circles()
 
+            print("Project saved - starting centerline and tube mask creation workflow...")
             cleanup_all_workflow_ui()
 
             # Run workflow2 functionality directly
@@ -2122,6 +3033,96 @@ def remove_transforms_from_point_lists():
         print(f"Error removing transforms from point lists: {e}")
         return False
 
+def reapply_transforms_to_point_lists():
+    """
+    Reapply transforms to F-1 point lists after saving
+    """
+    try:
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        applied_count = 0
+        
+        # Find the straightening transform
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        straightening_transform = None
+        for transform_node in transform_nodes:
+            if transform_node.GetName() == "Straightening transform":
+                straightening_transform = transform_node
+                break
+        
+        if not straightening_transform:
+            print("Warning: No 'Straightening transform' found to reapply")
+            return False
+        
+        for node in fiducial_nodes:
+            node_name = node.GetName()
+            if node_name == "F-1":
+                node.SetAndObserveTransformNodeID(straightening_transform.GetID())
+                node.Modified()
+                applied_count += 1
+                print(f"Reapplied 'Straightening transform' to point list '{node.GetName()}'")
+        
+        if applied_count > 0:
+            slicer.app.processEvents()
+            print(f"Reapplied transforms to {applied_count} F-1 point list(s)")
+            print("GUI updated to reflect transform reapplication")
+            return True
+        else:
+            print("No F-1 point lists found to reapply transforms to")
+            return False
+            
+    except Exception as e:
+        print(f"Error reapplying transforms to point lists: {e}")
+        return False
+
+def reapply_transforms_to_circles():
+    """
+    Reapply transforms to existing centerline circles after saving
+    """
+    try:
+        circles_reapplied = 0
+        
+        # Find the straightening transform
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        straightening_transform = None
+        for transform_node in transform_nodes:
+            if transform_node.GetName() == "Straightening transform":
+                straightening_transform = transform_node
+                break
+        
+        if not straightening_transform:
+            print("Warning: No 'Straightening transform' found to reapply to circles")
+            return False
+        
+        # Reapply to closed curve circles
+        closed_curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsClosedCurveNode')
+        for node in closed_curve_nodes:
+            if 'circle' in node.GetName().lower():
+                node.SetAndObserveTransformNodeID(straightening_transform.GetID())
+                node.Modified()
+                circles_reapplied += 1
+                print(f"Reapplied transform to circle '{node.GetName()}'")
+        
+        # Reapply to regular curve circles
+        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+        for node in curve_nodes:
+            if 'circle' in node.GetName().lower():
+                node.SetAndObserveTransformNodeID(straightening_transform.GetID())
+                node.Modified()
+                circles_reapplied += 1
+                print(f"Reapplied transform to circle '{node.GetName()}'")
+        
+        if circles_reapplied > 0:
+            slicer.app.processEvents()
+            print(f"Reapplied transforms to {circles_reapplied} circle(s)")
+            return True
+        else:
+            print("No circles found to reapply transforms to")
+            return False
+            
+    except Exception as e:
+        print(f"Error reapplying transforms to circles: {e}")
+        return False
+
 def debug_point_list_transforms():
     """
     Debug function to check transform status of all F-1 point lists
@@ -2338,7 +3339,10 @@ def draw_circles_on_centerline():
             
             apply_transform_to_circle(circle_node)
             
-            success = create_closed_curve_circle(circle_node, center_point, radius)
+            # Calculate centerline direction for perpendicular circles
+            centerline_direction = calculate_centerline_direction(points, closest_centerline_idx)
+            
+            success = create_perpendicular_circle(circle_node, center_point, radius, centerline_direction)
             if success:
                 circles_created += 1
                 circle_nodes.append(circle_node)
@@ -2455,6 +3459,96 @@ def create_closed_curve_circle(circle_node, center_point, radius):
     except Exception as e:
         print(f"Error creating closed curve circle: {e}")
         return False
+
+def calculate_centerline_direction(centerline_points, point_index):
+    """
+    Calculate the direction vector of the centerline at a given point index
+    """
+    try:
+        # Get neighboring points for direction calculation
+        num_points = len(centerline_points)
+        
+        # Use a few points before and after for better direction estimation
+        window_size = min(5, num_points // 10)  # Use up to 5 points or 10% of total points
+        
+        start_idx = max(0, point_index - window_size)
+        end_idx = min(num_points - 1, point_index + window_size)
+        
+        if start_idx == end_idx:
+            # Fallback: use adjacent points if available
+            if point_index > 0:
+                start_idx = point_index - 1
+            elif point_index < num_points - 1:
+                end_idx = point_index + 1
+            else:
+                # Single point case - use default direction
+                return np.array([0.0, 0.0, 1.0])
+        
+        start_point = np.array(centerline_points[start_idx])
+        end_point = np.array(centerline_points[end_idx])
+        
+        direction = end_point - start_point
+        
+        # Normalize the direction vector
+        magnitude = np.linalg.norm(direction)
+        if magnitude > 0:
+            direction = direction / magnitude
+        else:
+            # Fallback direction if points are too close
+            direction = np.array([0.0, 0.0, 1.0])
+        
+        print(f"Calculated centerline direction at point {point_index}: {direction}")
+        return direction
+        
+    except Exception as e:
+        print(f"Error calculating centerline direction: {e}")
+        # Return default direction along Z-axis
+        return np.array([0.0, 0.0, 1.0])
+
+def create_perpendicular_circle(circle_node, center_point, radius, direction_vector):
+    """
+    Create a circle perpendicular to the centerline direction vector
+    """
+    try:
+        center = np.array(center_point)
+        direction = np.array(direction_vector)
+        
+        # Create two orthogonal vectors perpendicular to the direction
+        # Find a vector that's not parallel to the direction
+        if abs(direction[2]) < 0.9:  # Direction is not mainly along Z
+            up_vector = np.array([0.0, 0.0, 1.0])
+        else:  # Direction is mainly along Z, use X as up vector
+            up_vector = np.array([1.0, 0.0, 0.0])
+        
+        # Create first perpendicular vector
+        perp1 = np.cross(direction, up_vector)
+        perp1 = perp1 / np.linalg.norm(perp1)  # Normalize
+        
+        # Create second perpendicular vector
+        perp2 = np.cross(direction, perp1)
+        perp2 = perp2 / np.linalg.norm(perp2)  # Normalize
+        
+        # Create circle points
+        num_points = 32
+        for i in range(num_points):
+            angle = 2 * math.pi * i / num_points
+            
+            # Calculate point on circle in the plane perpendicular to direction
+            circle_point = (center + 
+                          radius * math.cos(angle) * perp1 + 
+                          radius * math.sin(angle) * perp2)
+            
+            circle_node.AddControlPoint([circle_point[0], circle_point[1], circle_point[2]])
+        
+        print(f"Created perpendicular circle with {num_points} points, radius {radius:.2f}")
+        print(f"  Direction vector: {direction}")
+        print(f"  Perpendicular vectors: {perp1}, {perp2}")
+        return True
+        
+    except Exception as e:
+        print(f"Error creating perpendicular circle: {e}")
+        # Fallback to axial circle
+        return create_closed_curve_circle(circle_node, center_point, radius)
 
 def create_axial_circle_points(circle_node, center_point, radius):
     """
@@ -2586,6 +3680,36 @@ def apply_transform_to_circle(circle_node):
         print(f"Error applying transform to circle: {e}")
         return False
 
+def apply_transform_to_node(node, node_description="node"):
+    """
+    Apply the straightening transform to any node
+    """
+    try:
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        
+        if len(transform_nodes) == 0:
+            print(f"No transforms found in the scene - {node_description} will use default coordinate system")
+            return False
+        
+        straightening_transform = None
+        for transform_node in transform_nodes:
+            if transform_node.GetName() == "Straightening transform":
+                straightening_transform = transform_node
+                break
+        
+        if straightening_transform:
+            node.SetAndObserveTransformNodeID(straightening_transform.GetID())
+            print(f"Applied 'Straightening transform' to {node_description} '{node.GetName()}'")
+            return True
+        else:
+            transform_names = [node.GetName() for node in transform_nodes]
+            print(f"'Straightening transform' not found for {node_description}. Available transforms: {', '.join(transform_names)}")
+            return False
+            
+    except Exception as e:
+        print(f"Error applying transform to {node_description}: {e}")
+        return False
+
 # ===============================================================================
 # WORKFLOW2 FUNCTIONS - Centerline and Tube Mask Creation
 # ===============================================================================
@@ -2627,6 +3751,9 @@ def create_centerline_and_tube_mask():
     
     centerline_curve.SetCurveTypeToLinear()
     
+    # NOTE: Transform is NOT applied to centerline curve - it should remain in original coordinate system
+    # for accurate tube mask creation and analysis
+    
     print("Created centerline curve")
     
 
@@ -2658,6 +3785,9 @@ def create_centerline_and_tube_mask():
     tube_model = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelNode')
     tube_model.SetName('TubeMask')
     tube_model.SetAndObservePolyData(tube_filter.GetOutput())
+    
+    # NOTE: Transform is NOT applied to tube model - it should remain in original coordinate system
+    # for accurate segmentation and density analysis
     
     tube_display = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelDisplayNode')
     tube_display.SetColor(1.0, 0.0, 0.0)
