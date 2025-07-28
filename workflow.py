@@ -597,6 +597,7 @@ def cleanup_workflow_ui():
             del slicer.modules.WorkflowDialog
             print("Workflow dialog cleaned up")
         cleanup_point_placement_ui()
+        cleanup_centerline_ui()  # Clean up centerline UI elements including duplicate buttons
             
     except Exception as e:
         print(f"Error cleaning up workflow UI: {e}")
@@ -618,20 +619,79 @@ def open_centerline_module():
         slicer.util.selectModule("ExtractCenterline")
         print("Switched to Extract Centerline module")
         slicer.app.processEvents()
+        
+        # Clean up any existing duplicate buttons before setting up the module
+        remove_duplicate_centerline_buttons()
+        
         setup_centerline_module()
         
     except Exception as e:
         print(f"Error opening centerline module: {e}")
         slicer.util.errorDisplay(f"Could not open Extract Centerline module: {str(e)}")
 
+def remove_duplicate_centerline_buttons():
+    """
+    Remove any duplicate large centerline apply buttons from the Extract Centerline module
+    """
+    try:
+        centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if centerline_widget:
+            # Find all buttons that match our large centerline button pattern
+            all_buttons = centerline_widget.findChildren(qt.QPushButton)
+            duplicate_buttons = []
+            
+            for button in all_buttons:
+                if hasattr(button, 'text'):
+                    button_text = button.text
+                    # Look for our specific button text or similar large buttons
+                    if ("✓ EXTRACT CENTERLINE" in button_text or 
+                        "EXTRACT CENTERLINE" in button_text or
+                        (button.styleSheet() and "#28a745" in button.styleSheet())):  # Green color check
+                        duplicate_buttons.append(button)
+            
+            # Remove all but the first one if multiple exist
+            if len(duplicate_buttons) > 1:
+                print(f"Found {len(duplicate_buttons)} duplicate centerline buttons, removing {len(duplicate_buttons) - 1}")
+                for i, button in enumerate(duplicate_buttons):
+                    if i > 0:  # Keep the first one, remove the rest
+                        if button.parent() and hasattr(button.parent(), 'layout'):
+                            button.parent().layout().removeWidget(button)
+                        button.setParent(None)
+                        button.deleteLater()
+                        print(f"Removed duplicate centerline button #{i+1}")
+            elif len(duplicate_buttons) == 1:
+                print("Found 1 centerline button (no duplicates)")
+            else:
+                print("No large centerline buttons found")
+                
+    except Exception as e:
+        print(f"Error removing duplicate centerline buttons: {e}")
+
 def add_large_centerline_apply_button():
     """
     Add a large green Apply button directly to the Extract Centerline module GUI
     """
     try:
+        # Check if button already exists to prevent duplicates
+        if hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
+            existing_button = slicer.modules.CenterlineLargeApplyButton
+            if existing_button and existing_button.parent():
+                print("Large Apply button already exists in Extract Centerline module")
+                return
+        
+        # Remove any existing duplicate buttons first
+        remove_duplicate_centerline_buttons()
+        
         # Use a timer to delay button creation until UI is fully loaded
         def create_large_button():
             try:
+                # Double-check for existing button before creating
+                if hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
+                    existing_button = slicer.modules.CenterlineLargeApplyButton
+                    if existing_button and existing_button.parent():
+                        print("Large Apply button already exists, skipping creation")
+                        return True
+                
                 centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
                 if centerline_widget and hasattr(centerline_widget, 'self'):
                     centerline_module = centerline_widget.self()
@@ -679,8 +739,15 @@ def add_large_centerline_apply_button():
                             }
                         """)
                         
-                        # Connect the new button to trigger the original Apply button's click
-                        large_apply_button.connect('clicked()', lambda: original_apply_button.click())
+                        # Connect the new button to start monitoring and trigger the original Apply button's click
+                        def on_apply_button_clicked():
+                            print("Apply button clicked - starting centerline extraction and monitoring...")
+                            # Start monitoring only when button is actually clicked
+                            setup_centerline_completion_monitor()
+                            # Trigger the original apply button
+                            original_apply_button.click()
+                        
+                        large_apply_button.connect('clicked()', on_apply_button_clicked)
                         
                         # Add the button directly to the Extract Centerline module's GUI
                         # Try to find the main UI container in the centerline module
@@ -736,14 +803,74 @@ def add_large_centerline_apply_button():
         # Try creating the button immediately
         success = create_large_button()
         
-        # If that didn't work, try again after delays
-        if not success:
-            qt.QTimer.singleShot(1000, create_large_button)
-            qt.QTimer.singleShot(3000, create_large_button)
+        # If that didn't work, try again after delays (but only if no button exists yet)
+        if not success and not hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
             print("Scheduling delayed large Apply button creation for Extract Centerline...")
+            # Use a single timer with a callback that checks for existing buttons
+            def delayed_create():
+                if not hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
+                    create_large_button()
+            
+            qt.QTimer.singleShot(1000, delayed_create)
+            qt.QTimer.singleShot(3000, delayed_create)
             
     except Exception as e:
         print(f"Error adding large centerline Apply button: {e}")
+
+def cleanup_centerline_ui():
+    """
+    Clean up centerline UI elements including duplicate buttons
+    """
+    try:
+        # Remove any duplicate buttons
+        remove_duplicate_centerline_buttons()
+        
+        # Clean up stored button reference
+        if hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
+            button = slicer.modules.CenterlineLargeApplyButton
+            if button and button.parent():
+                if hasattr(button.parent(), 'layout'):
+                    button.parent().layout().removeWidget(button)
+                button.setParent(None)
+                button.deleteLater()
+            del slicer.modules.CenterlineLargeApplyButton
+            print("Cleaned up centerline large apply button")
+            
+    except Exception as e:
+        print(f"Error cleaning up centerline UI: {e}")
+
+def clean_centerline_buttons():
+    """
+    Utility function to manually clean up duplicate centerline buttons (can be called from console)
+    """
+    print("Manually cleaning up duplicate centerline buttons...")
+    remove_duplicate_centerline_buttons()
+    print("Cleanup complete. You can now add a new button if needed.")
+
+def stop_centerline_monitoring_manually():
+    """
+    Utility function to manually stop centerline monitoring (can be called from console)
+    """
+    print("Manually stopping centerline monitoring...")
+    stop_centerline_monitoring()
+    print("Centerline monitoring stopped. You can now click the Apply button to start fresh monitoring.")
+
+def check_monitoring_status():
+    """
+    Utility function to check if centerline monitoring is currently active
+    """
+    if hasattr(slicer.modules, 'CenterlineMonitorTimer'):
+        timer = slicer.modules.CenterlineMonitorTimer
+        if timer and timer.isActive():
+            check_count = getattr(slicer.modules, 'CenterlineCheckCount', 0)
+            start_time = getattr(slicer.modules, 'CenterlineMonitoringStartTime', 0)
+            print(f"Centerline monitoring is ACTIVE - Check count: {check_count}, Started at: {start_time}")
+            print("Monitoring will automatically detect when centerline extraction completes")
+        else:
+            print("Centerline monitoring timer exists but is NOT active")
+    else:
+        print("Centerline monitoring is NOT active")
+        print("Monitoring will start automatically when you click the Extract Centerline button")
 
 def setup_centerline_module():
     """
@@ -1775,8 +1902,8 @@ def prompt_for_endpoints():
     Simplified prompt for centerline extraction
     """
     try:
-        print("Centerline extraction configured - place start and end points, then click Apply")
-        setup_centerline_completion_monitor()
+        print("Centerline extraction configured - place start and end points, then click the Extract Centerline button")
+        print("Monitoring will start automatically when you click the Apply button")
         
     except Exception as e:
         print(f"Error prompting for endpoints: {e}")
@@ -1787,13 +1914,17 @@ def setup_centerline_completion_monitor():
     Set up monitoring to detect when centerline extraction completes
     """
     try:
-        if not hasattr(slicer.modules, 'CenterlineMonitorTimer'):
-            timer = qt.QTimer()
-            timer.timeout.connect(check_centerline_completion)
-            timer.start(2000)
-            slicer.modules.CenterlineMonitorTimer = timer
-            slicer.modules.CenterlineCheckCount = 0
-            print("Started monitoring for centerline completion")
+        # Stop any existing monitoring first
+        stop_centerline_monitoring()
+        
+        # Create new timer for monitoring
+        timer = qt.QTimer()
+        timer.timeout.connect(check_centerline_completion)
+        timer.start(2000)
+        slicer.modules.CenterlineMonitorTimer = timer
+        slicer.modules.CenterlineCheckCount = 0
+        slicer.modules.CenterlineMonitoringStartTime = slicer.app.applicationUptime()  # Track when monitoring started
+        print("Started monitoring for centerline completion (triggered by Apply button)")
         
     except Exception as e:
         print(f"Error setting up centerline completion monitor: {e}")
@@ -1809,20 +1940,40 @@ def check_centerline_completion():
                 stop_centerline_monitoring()
                 print("Centerline monitoring timed out")
                 return
-        centerline_model = find_recent_centerline_model()
-        centerline_curve = find_recent_centerline_curve()
         
-        if centerline_model or centerline_curve:
-            print("Centerline extraction completed!")
+        # Get monitoring start time to avoid detecting pre-existing models
+        monitoring_start_time = getattr(slicer.modules, 'CenterlineMonitoringStartTime', 0)
+        
+        # Check for actual centerline results with meaningful data created after monitoring started
+        centerline_model = find_recent_centerline_model(created_after=monitoring_start_time)
+        centerline_curve = find_recent_centerline_curve(created_after=monitoring_start_time)
+        
+        # Only consider it complete if we have substantial centerline data
+        model_has_data = False
+        curve_has_data = False
+        
+        if centerline_model:
+            polydata = centerline_model.GetPolyData()
+            if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points for a meaningful centerline
+                model_has_data = True
+                print(f"Found centerline model with {polydata.GetNumberOfPoints()} points")
+        
+        if centerline_curve:
+            if centerline_curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
+                curve_has_data = True
+                print(f"Found centerline curve with {centerline_curve.GetNumberOfControlPoints()} control points")
+        
+        if model_has_data or curve_has_data:
+            print("Centerline extraction completed with sufficient data!")
             stop_centerline_monitoring()
             show_centerline_completion_dialog(centerline_model, centerline_curve)
         
     except Exception as e:
         print(f"Error checking centerline completion: {e}")
 
-def find_recent_centerline_model():
+def find_recent_centerline_model(created_after=0):
     """
-    Find the most recently created centerline model
+    Find the most recently created centerline model with sufficient data
     """
     try:
         model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
@@ -1830,9 +1981,14 @@ def find_recent_centerline_model():
         for model in model_nodes:
             model_name = model.GetName().lower()
             if any(keyword in model_name for keyword in ['centerline', 'tree', 'vessel']):
-                polydata = model.GetPolyData()
-                if polydata and polydata.GetNumberOfPoints() > 0:
-                    centerline_models.append(model)
+                # Check if model was created after the specified time
+                if model.GetMTime() > created_after:
+                    polydata = model.GetPolyData()
+                    # Only consider models with substantial data (more than just a few points)
+                    if polydata and polydata.GetNumberOfPoints() > 10:
+                        centerline_models.append(model)
+                        print(f"Found potential centerline model: {model.GetName()} with {polydata.GetNumberOfPoints()} points")
+        
         if centerline_models:
             centerline_models.sort(key=lambda x: x.GetMTime(), reverse=True)
             return centerline_models[0]
@@ -1843,9 +1999,31 @@ def find_recent_centerline_model():
         print(f"Error finding centerline model: {e}")
         return None
 
-def find_recent_centerline_curve():
+def find_all_centerline_models():
     """
-    Find the most recently created centerline curve
+    Find all centerline models in the scene
+    """
+    try:
+        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        centerline_models = []
+        for model in model_nodes:
+            model_name = model.GetName().lower()
+            if any(keyword in model_name for keyword in ['centerline', 'tree', 'vessel']):
+                polydata = model.GetPolyData()
+                if polydata and polydata.GetNumberOfPoints() > 0:
+                    centerline_models.append(model)
+        
+        # Sort by creation time (most recent first)
+        centerline_models.sort(key=lambda x: x.GetMTime(), reverse=True)
+        return centerline_models
+        
+    except Exception as e:
+        print(f"Error finding all centerline models: {e}")
+        return []
+
+def find_recent_centerline_curve(created_after=0):
+    """
+    Find the most recently created centerline curve with sufficient data
     """
     try:
         curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
@@ -1853,8 +2031,13 @@ def find_recent_centerline_curve():
         for curve in curve_nodes:
             curve_name = curve.GetName().lower()
             if any(keyword in curve_name for keyword in ['centerline', 'curve', 'vessel']):
-                if curve.GetNumberOfControlPoints() > 0:
-                    centerline_curves.append(curve)
+                # Check if curve was created after the specified time
+                if curve.GetMTime() > created_after:
+                    # Only consider curves with substantial data (more than just endpoint markers)
+                    if curve.GetNumberOfControlPoints() > 5:
+                        centerline_curves.append(curve)
+                        print(f"Found potential centerline curve: {curve.GetName()} with {curve.GetNumberOfControlPoints()} control points")
+        
         if centerline_curves:
             centerline_curves.sort(key=lambda x: x.GetMTime(), reverse=True)
             return centerline_curves[0]
@@ -1864,6 +2047,27 @@ def find_recent_centerline_curve():
     except Exception as e:
         print(f"Error finding centerline curve: {e}")
         return None
+
+def find_all_centerline_curves():
+    """
+    Find all centerline curves in the scene
+    """
+    try:
+        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+        centerline_curves = []
+        for curve in curve_nodes:
+            curve_name = curve.GetName().lower()
+            if any(keyword in curve_name for keyword in ['centerline', 'curve', 'vessel']):
+                if curve.GetNumberOfControlPoints() > 0:
+                    centerline_curves.append(curve)
+        
+        # Sort by creation time (most recent first)
+        centerline_curves.sort(key=lambda x: x.GetMTime(), reverse=True)
+        return centerline_curves
+        
+    except Exception as e:
+        print(f"Error finding all centerline curves: {e}")
+        return []
 
 def stop_centerline_monitoring():
     """
@@ -1878,6 +2082,35 @@ def stop_centerline_monitoring():
             
         if hasattr(slicer.modules, 'CenterlineCheckCount'):
             del slicer.modules.CenterlineCheckCount
+            
+        if hasattr(slicer.modules, 'CenterlineMonitoringStartTime'):
+            del slicer.modules.CenterlineMonitoringStartTime
+            
+        # Reset monitoring button if it exists
+        if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
+            button = slicer.modules.CenterlineMonitoringButton
+            if button:
+                button.setText("Start Auto-Monitoring")
+                button.setEnabled(True)
+                button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #6f42c1; 
+                        color: white; 
+                        border: none; 
+                        padding: 10px 15px; 
+                        font-weight: bold;
+                        border-radius: 6px;
+                        margin: 5px;
+                        font-size: 12px;
+                        min-width: 150px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #5a32a3; 
+                    }
+                    QPushButton:pressed { 
+                        background-color: #4e2a8e; 
+                    }
+                """)
             
         print("Stopped centerline monitoring")
         
@@ -2097,7 +2330,7 @@ def setup_cpr_module():
                 print("Warning: Could not find appropriate input volume for CPR")
             
             # Configure centerline input - find the most recent centerline
-            centerline_model = find_recent_centerline_model()
+            centerline_model = find_recent_centerline_model()  # Use default created_after=0 to find any existing model
             if centerline_model:
                 print(f"Found centerline model for CPR: {centerline_model.GetName()}")
                 
@@ -2183,13 +2416,22 @@ def setup_cpr_module():
                     print("Set output transform selector")
                 
                 # Set resolution and thickness parameters
+                if hasattr(cpr_module.ui, 'curveResolutionSliderWidget'):
+                    cpr_module.ui.curveResolutionSliderWidget.setValue(0.6)
+                    print("Set curve resolution to 0.6 mm")
+                
+                if hasattr(cpr_module.ui, 'sliceResolutionSliderWidget'):
+                    cpr_module.ui.sliceResolutionSliderWidget.setValue(0.6)
+                    print("Set slice resolution to 0.6 mm")
+                
+                # Legacy fallback for older parameter names
                 if hasattr(cpr_module.ui, 'resolutionSpinBox'):
-                    cpr_module.ui.resolutionSpinBox.setValue(1.0)
-                    print("Set resolution to 2.0")
+                    cpr_module.ui.resolutionSpinBox.setValue(0.6)
+                    print("Set resolution to 0.6 mm")
                 
                 if hasattr(cpr_module.ui, 'thicknessSpinBox'):
                     cpr_module.ui.thicknessSpinBox.setValue(1.0)
-                    print("Set thickness to 5.0")
+                    print("Set thickness to 1.0 mm")
                 
                 # Final UI update
                 slicer.app.processEvents()
@@ -2775,6 +3017,21 @@ def export_project_and_continue():
                 print("Forcing transform removal...")
                 force_remove_all_transforms()
             
+            # Verify that pre and post lesion points are specifically transform-free
+            print("Verifying pre and post lesion points are transform-free...")
+            verification_passed = verify_pre_post_lesion_points_transform_free()
+            
+            if not verification_passed:
+                print("ERROR: Pre and post lesion points still have transforms - attempting additional cleanup...")
+                force_remove_all_transforms()
+                # Try verification again
+                verification_passed = verify_pre_post_lesion_points_transform_free()
+                
+            if verification_passed:
+                print("Pre and post lesion points confirmed transform-free - ready for saving")
+            else:
+                print("Warning: Could not fully verify pre and post lesion points are transform-free")
+            
             print("Transform removal verification complete")
 
         success = slicer.app.ioManager().openSaveDataDialog()
@@ -2815,6 +3072,8 @@ def cleanup_all_workflow_ui():
         cleanup_point_placement_ui()
         cleanup_workflow_ui()
         cleanup_continue_ui()
+        cleanup_centerline_monitoring_button()
+        stop_apply_button_monitoring()
         
         if hasattr(slicer.modules, 'CenterlineMonitorTimer'):
             timer = slicer.modules.CenterlineMonitorTimer
@@ -2836,20 +3095,22 @@ def cleanup_all_workflow_ui():
 
 def show_centerline_completion_dialog(centerline_model=None, centerline_curve=None):
     """
-    Show a dialog asking user to retry centerline extraction or continue to CPR
+    Show a dialog asking user to retry centerline extraction, add more centerlines, or continue to CPR
     """
     try:
         dialog = qt.QDialog(slicer.util.mainWindow())
         dialog.setWindowTitle("Centerline Extraction Complete")
         dialog.setModal(True)
-        dialog.resize(450, 250)
+        dialog.resize(500, 350)
         dialog.setWindowFlags(qt.Qt.Dialog | qt.Qt.WindowTitleHint | qt.Qt.WindowCloseButtonHint)
         layout = qt.QVBoxLayout(dialog)
         title_label = qt.QLabel("Centerline Extraction Completed Successfully!")
         title_label.setStyleSheet("QLabel { font-weight: bold; color: #28a745; margin: 10px; font-size: 16px; }")
         title_label.setAlignment(qt.Qt.AlignCenter)
         layout.addWidget(title_label)
-        status_text = "Centerline extraction has completed. You can:"
+        
+        # Show current centerline info
+        status_text = "Latest centerline extraction completed:"
         if centerline_model and centerline_curve:
             status_text += f"\n\n✓ Model created: {centerline_model.GetName()}"
             status_text += f"\n✓ Curve created: {centerline_curve.GetName()}"
@@ -2862,11 +3123,27 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         status_label.setStyleSheet("QLabel { color: #333; margin: 10px; font-size: 12px; }")
         status_label.setWordWrap(True)
         layout.addWidget(status_label)
+        
+        # Show summary of all centerlines if there are multiple
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        total_centerlines = max(len(all_models), len(all_curves))
+        
+        if total_centerlines > 1:
+            summary_text = f"\nTotal centerlines in scene: {total_centerlines}"
+            summary_label = qt.QLabel(summary_text)
+            summary_label.setStyleSheet("QLabel { color: #666; margin: 5px 10px; font-size: 11px; font-weight: bold; }")
+            layout.addWidget(summary_label)
+        
         layout.addSpacing(10)
         instruction_label = qt.QLabel("Choose your next action:")
         instruction_label.setStyleSheet("QLabel { color: #555; margin: 10px; font-size: 12px; font-weight: bold; }")
         layout.addWidget(instruction_label)
-        button_layout = qt.QHBoxLayout()
+        
+        # Create two rows of buttons
+        first_row_layout = qt.QHBoxLayout()
+        second_row_layout = qt.QHBoxLayout()
+        
         retry_button = qt.QPushButton("Retry Centerline Extraction")
         retry_button.setStyleSheet("""
             QPushButton { 
@@ -2888,7 +3165,30 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
             }
         """)
         retry_button.connect('clicked()', lambda: on_retry_centerline(dialog))
-        button_layout.addWidget(retry_button)
+        first_row_layout.addWidget(retry_button)
+        
+        add_centerline_button = qt.QPushButton("+ Add More Centerlines")
+        add_centerline_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #17a2b8; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 180px;
+            }
+            QPushButton:hover { 
+                background-color: #138496; 
+            }
+            QPushButton:pressed { 
+                background-color: #117a8b; 
+            }
+        """)
+        add_centerline_button.connect('clicked()', lambda: on_add_more_centerlines(dialog))
+        first_row_layout.addWidget(add_centerline_button)
         
         continue_button = qt.QPushButton("✓ Continue to Analysis")
         continue_button.setStyleSheet("""
@@ -2901,7 +3201,7 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
                 border-radius: 6px;
                 margin: 5px;
                 font-size: 13px;
-                min-width: 180px;
+                min-width: 380px;
             }
             QPushButton:hover { 
                 background-color: #218838; 
@@ -2911,9 +3211,10 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
             }
         """)
         continue_button.connect('clicked()', lambda: on_continue_to_cpr(dialog, centerline_model, centerline_curve))
-        button_layout.addWidget(continue_button)
+        second_row_layout.addWidget(continue_button)
         
-        layout.addLayout(button_layout)
+        layout.addLayout(first_row_layout)
+        layout.addLayout(second_row_layout)
         layout.addStretch()
         dialog.exec_()
         
@@ -2960,6 +3261,558 @@ def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
     except Exception as e:
         print(f"Error continuing to CPR: {e}")
 
+def on_add_more_centerlines(dialog):
+    """
+    Called when user chooses to add more centerlines
+    """
+    try:
+        dialog.close()
+        dialog.setParent(None)
+        
+        # Create a new centerline extraction setup for additional centerlines
+        create_additional_centerline_setup()
+        
+        print("User chose to add more centerlines")
+        
+    except Exception as e:
+        print(f"Error adding more centerlines: {e}")
+
+def create_additional_centerline_setup():
+    """
+    Create new centerline model and curve nodes and set up Extract Centerline module for additional centerlines
+    """
+    try:
+        # Ensure we're in the Extract Centerline module
+        slicer.util.selectModule("ExtractCenterline")
+        slicer.app.processEvents()
+        
+        centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not centerline_widget:
+            print("Error: Could not access Extract Centerline module")
+            return
+            
+        centerline_module = centerline_widget.self()
+        
+        # Get the existing centerline count to create unique names
+        existing_centerlines = count_existing_centerlines()
+        centerline_number = existing_centerlines + 1
+        
+        # Create new centerline model node
+        new_centerline_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+        new_centerline_model.SetName(f"CenterlineModel_{centerline_number}")
+        new_centerline_model.CreateDefaultDisplayNodes()
+        
+        # Create new centerline curve node  
+        new_centerline_curve = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
+        new_centerline_curve.SetName(f"CenterlineCurve_{centerline_number}")
+        new_centerline_curve.CreateDefaultDisplayNodes()
+        
+        # Set curve properties for better visibility
+        display_node = new_centerline_curve.GetDisplayNode()
+        if display_node:
+            display_node.SetColor(0.0, 1.0, 1.0)  # Cyan color to distinguish from previous centerlines
+            display_node.SetLineWidth(3.0)
+            display_node.SetVisibility(True)
+        
+        print(f"Created new centerline model: {new_centerline_model.GetName()}")
+        print(f"Created new centerline curve: {new_centerline_curve.GetName()}")
+        
+        # Configure the Extract Centerline module with the new nodes
+        setup_centerline_for_additional_extraction(centerline_module, new_centerline_model, new_centerline_curve)
+        
+        # Clear any existing endpoint markups and prepare for new placement
+        clear_centerline_endpoints()
+        
+        # Set up automatic monitoring that waits for Apply button click
+        setup_apply_button_monitoring()
+        
+        # Show instructions for additional centerline
+        show_additional_centerline_instructions_with_auto_monitoring(centerline_number)
+        
+        return new_centerline_model, new_centerline_curve
+        
+    except Exception as e:
+        print(f"Error creating additional centerline setup: {e}")
+        return None, None
+
+def count_existing_centerlines():
+    """
+    Count the number of existing centerline models and curves to determine the next number
+    """
+    try:
+        centerline_count = 0
+        
+        # Count centerline models
+        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        for model in model_nodes:
+            model_name = model.GetName().lower()
+            if any(keyword in model_name for keyword in ['centerline', 'tree', 'vessel']):
+                centerline_count += 1
+                
+        # Count centerline curves
+        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+        for curve in curve_nodes:
+            curve_name = curve.GetName().lower()
+            if any(keyword in curve_name for keyword in ['centerline', 'curve']):
+                centerline_count += 1
+                
+        # Return the higher count (since we have both models and curves)
+        return centerline_count // 2 if centerline_count > 0 else 0
+        
+    except Exception as e:
+        print(f"Error counting existing centerlines: {e}")
+        return 0
+
+def setup_centerline_for_additional_extraction(centerline_module, new_model, new_curve):
+    """
+    Configure the Extract Centerline module for additional centerline extraction
+    """
+    try:
+        # Set the same segmentation as before
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        workflow_segmentation = None
+        for seg_node in segmentation_nodes:
+            if seg_node.GetName().startswith("ThresholdSegmentation_"):
+                workflow_segmentation = seg_node
+                break
+        
+        if workflow_segmentation:
+            print(f"Using existing segmentation: {workflow_segmentation.GetName()}")
+            
+            # Set input segmentation
+            segmentation_set = False
+            for selector_name in ['inputSegmentationSelector', 'inputSurfaceSelector', 'segmentationSelector']:
+                if hasattr(centerline_module, 'ui') and hasattr(centerline_module.ui, selector_name):
+                    getattr(centerline_module.ui, selector_name).setCurrentNode(workflow_segmentation)
+                    print(f"Set input segmentation using {selector_name}")
+                    segmentation_set = True
+                    break
+            
+            if not segmentation_set:
+                print("Warning: Could not find segmentation selector in centerline module")
+                
+        # Set output nodes for the new centerline
+        try:
+            # Set output centerline model
+            if hasattr(centerline_module.ui, 'outputCenterlineModelSelector'):
+                centerline_module.ui.outputCenterlineModelSelector.setCurrentNode(new_model)
+                print(f"Set output centerline model: {new_model.GetName()}")
+            elif hasattr(centerline_module.ui, 'centerlineModelSelector'):
+                centerline_module.ui.centerlineModelSelector.setCurrentNode(new_model)
+                print(f"Set centerline model: {new_model.GetName()}")
+                
+            # Set output centerline curve
+            if hasattr(centerline_module.ui, 'outputCenterlineCurveSelector'):
+                centerline_module.ui.outputCenterlineCurveSelector.setCurrentNode(new_curve)
+                print(f"Set output centerline curve: {new_curve.GetName()}")
+            elif hasattr(centerline_module.ui, 'centerlineCurveSelector'):
+                centerline_module.ui.centerlineCurveSelector.setCurrentNode(new_curve)
+                print(f"Set centerline curve: {new_curve.GetName()}")
+                
+        except Exception as e:
+            print(f"Error setting output selectors: {e}")
+        
+        slicer.app.processEvents()
+        
+        # Add the large Apply button again
+        add_large_centerline_apply_button()
+        
+        print("Extract Centerline module configured for additional centerline extraction")
+        
+    except Exception as e:
+        print(f"Error setting up centerline for additional extraction: {e}")
+
+def clear_centerline_endpoints():
+    """
+    Clear existing endpoint markups from the Extract Centerline module
+    """
+    try:
+        # Find and clear endpoint fiducial nodes
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        endpoints_cleared = 0
+        
+        for node in fiducial_nodes:
+            node_name = node.GetName().lower()
+            if any(keyword in node_name for keyword in ['endpoint', 'start', 'end', 'centerline']):
+                node.RemoveAllControlPoints()
+                endpoints_cleared += 1
+                print(f"Cleared endpoints from: {node.GetName()}")
+        
+        if endpoints_cleared == 0:
+            print("No endpoint nodes found to clear")
+        else:
+            print(f"Cleared endpoints from {endpoints_cleared} node(s)")
+            
+    except Exception as e:
+        print(f"Error clearing centerline endpoints: {e}")
+
+def show_additional_centerline_instructions(centerline_number):
+    """
+    Show instructions for placing additional centerline endpoints (legacy function)
+    """
+    try:
+        instruction_text = f"""Additional Centerline #{centerline_number}
+
+You can now place new start and end points for the additional centerline:
+
+1. Use the Extract Centerline module interface
+2. Place start point by clicking in the 3D view
+3. Place end point by clicking in the 3D view  
+4. Click Apply to extract the additional centerline
+
+The workflow will automatically detect when the new centerline is complete."""
+
+        slicer.util.infoDisplay(instruction_text)
+        
+        print(f"Instructions shown for additional centerline #{centerline_number}")
+        print("Ready to place endpoints for additional centerline extraction")
+        
+    except Exception as e:
+        print(f"Error showing additional centerline instructions: {e}")
+
+def show_additional_centerline_instructions_with_manual_start(centerline_number):
+    """
+    Show instructions for placing additional centerline endpoints with manual monitoring start
+    """
+    try:
+        instruction_text = f"""Additional Centerline #{centerline_number} - Ready for Setup
+
+The Extract Centerline module is now configured for your additional centerline.
+
+Setup Steps:
+1. Adjust the point list settings if needed
+2. Place start and end points in the 3D view
+3. Click Apply to extract the centerline
+
+Monitoring Options:
+• Look for the "Start Auto-Monitoring" button in the module
+• Or run this console command: start_centerline_monitoring_for_additional()
+• Monitoring will automatically detect completion and show options
+
+Take your time to configure everything exactly as you want it before starting the extraction."""
+
+        slicer.util.infoDisplay(instruction_text)
+        
+        print(f"Instructions shown for additional centerline #{centerline_number}")
+        print("User has manual control over when to start monitoring")
+        print("Available commands:")
+        print("  - start_centerline_monitoring_for_additional() : Start automatic monitoring")
+        print("  - setup_centerline_completion_monitor() : Alternative monitoring start")
+        
+    except Exception as e:
+        print(f"Error showing additional centerline instructions: {e}")
+
+def show_additional_centerline_instructions_with_auto_monitoring(centerline_number):
+    """
+    Show instructions for placing additional centerline endpoints with automatic monitoring
+    """
+    try:
+        instruction_text = f"""Additional Centerline #{centerline_number} - Ready for Setup
+
+The Extract Centerline module is now configured for your additional centerline.
+
+Setup Steps:
+1. Adjust the point list settings if needed
+2. Place start and end points in the 3D view
+3. Click Apply to extract the centerline
+
+Automatic Monitoring:
+• The workflow will automatically start monitoring when you click Apply
+• No need to press any additional buttons
+• Completion will be detected automatically and show options
+
+Take your time to configure everything exactly as you want it."""
+
+        slicer.util.infoDisplay(instruction_text)
+        
+        print(f"Instructions shown for additional centerline #{centerline_number}")
+        print("Automatic monitoring will start when Apply button is clicked")
+        print("No manual intervention required")
+        
+    except Exception as e:
+        print(f"Error showing additional centerline instructions: {e}")
+
+def setup_apply_button_monitoring():
+    """
+    Set up monitoring to detect when the Apply button is clicked in Extract Centerline module
+    """
+    try:
+        # Stop any existing Apply button monitoring
+        if hasattr(slicer.modules, 'ApplyButtonMonitorTimer'):
+            timer = slicer.modules.ApplyButtonMonitorTimer
+            timer.stop()
+            timer.timeout.disconnect()
+            del slicer.modules.ApplyButtonMonitorTimer
+        
+        # Get baseline counts before user starts
+        current_models = find_all_centerline_models()
+        current_curves = find_all_centerline_curves()
+        slicer.modules.ApplyButtonBaselineModels = len(current_models)
+        slicer.modules.ApplyButtonBaselineCurves = len(current_curves)
+        
+        # Store the IDs of existing centerlines to detect truly new ones
+        slicer.modules.ExistingModelIDs = [model.GetID() for model in current_models]
+        slicer.modules.ExistingCurveIDs = [curve.GetID() for curve in current_curves]
+        
+        # Create a timer to monitor for Apply button clicks
+        timer = qt.QTimer()
+        timer.timeout.connect(check_for_apply_button_click)
+        timer.start(2000)  # Check every 2 seconds
+        slicer.modules.ApplyButtonMonitorTimer = timer
+        slicer.modules.ApplyMonitorCheckCount = 0
+        
+        print("Apply button monitoring started - waiting for user to click Apply")
+        print(f"Baseline: {len(current_models)} models, {len(current_curves)} curves")
+        
+    except Exception as e:
+        print(f"Error setting up Apply button monitoring: {e}")
+
+def check_for_apply_button_click():
+    """
+    Check if Apply button has been clicked by monitoring for new centerline activity
+    """
+    try:
+        # Increment check count and add timeout
+        if hasattr(slicer.modules, 'ApplyMonitorCheckCount'):
+            slicer.modules.ApplyMonitorCheckCount += 1
+            if slicer.modules.ApplyMonitorCheckCount > 300:  # 10 minutes (300 * 2 seconds)
+                print("Apply button monitoring timed out after 10 minutes")
+                stop_apply_button_monitoring()
+                return
+        
+        # Get current centerlines
+        current_models = find_all_centerline_models()
+        current_curves = find_all_centerline_curves()
+        
+        # Check for truly new centerlines (not just count changes)
+        existing_model_ids = getattr(slicer.modules, 'ExistingModelIDs', [])
+        existing_curve_ids = getattr(slicer.modules, 'ExistingCurveIDs', [])
+        
+        new_models = [model for model in current_models if model.GetID() not in existing_model_ids]
+        new_curves = [curve for curve in current_curves if curve.GetID() not in existing_curve_ids]
+        
+        # If we have truly new centerlines, Apply was clicked and processing started/completed
+        if new_models or new_curves:
+            print(f"New centerlines detected! Found {len(new_models)} new models, {len(new_curves)} new curves")
+            for model in new_models:
+                print(f"  New model: {model.GetName()}")
+            for curve in new_curves:
+                print(f"  New curve: {curve.GetName()}")
+            
+            # Stop Apply button monitoring
+            stop_apply_button_monitoring()
+            
+            # Start centerline completion monitoring immediately
+            setup_centerline_completion_monitor()
+            return
+        
+        # Alternative detection: Look for recently modified nodes (processing activity)
+        for model in current_models:
+            if model.GetID() in existing_model_ids:
+                # Check if this existing model was recently modified (processing activity)
+                import time
+                current_time = time.time() * 1000  # Convert to milliseconds
+                time_since_modified = current_time - model.GetMTime()
+                if time_since_modified < 5000:  # Modified within last 5 seconds
+                    print(f"Recent processing activity detected on {model.GetName()}")
+                    stop_apply_button_monitoring()
+                    setup_centerline_completion_monitor()
+                    return
+        
+    except Exception as e:
+        print(f"Error checking for Apply button click: {e}")
+
+def stop_apply_button_monitoring():
+    """
+    Stop monitoring for Apply button clicks
+    """
+    try:
+        if hasattr(slicer.modules, 'ApplyButtonMonitorTimer'):
+            timer = slicer.modules.ApplyButtonMonitorTimer
+            timer.stop()
+            timer.timeout.disconnect()
+            del slicer.modules.ApplyButtonMonitorTimer
+            
+        # Clean up all Apply button monitoring variables
+        for attr in ['ApplyButtonBaselineModels', 'ApplyButtonBaselineCurves', 
+                    'ExistingModelIDs', 'ExistingCurveIDs', 'ApplyMonitorCheckCount']:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+            
+        print("Apply button monitoring stopped")
+        
+    except Exception as e:
+        print(f"Error stopping Apply button monitoring: {e}")
+
+def start_centerline_monitoring_for_additional():
+    """
+    Manual function to start centerline monitoring for additional centerlines
+    """
+    try:
+        setup_centerline_completion_monitor()
+        print("Centerline completion monitoring started manually")
+        print("The workflow will now automatically detect when centerline extraction completes")
+        
+        # Update button to indicate monitoring is active
+        if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
+            button = slicer.modules.CenterlineMonitoringButton
+            if button:
+                button.setText("Monitoring Active...")
+                button.setEnabled(False)
+                button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #28a745; 
+                        color: white; 
+                        border: none; 
+                        padding: 10px 15px; 
+                        font-weight: bold;
+                        border-radius: 6px;
+                        margin: 5px;
+                        font-size: 12px;
+                        min-width: 150px;
+                    }
+                """)
+        
+    except Exception as e:
+        print(f"Error starting centerline monitoring: {e}")
+
+def cleanup_centerline_monitoring_button():
+    """
+    Clean up the centerline monitoring button
+    """
+    try:
+        if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
+            button = slicer.modules.CenterlineMonitoringButton
+            if button:
+                button.close()
+                button.setParent(None)
+                del slicer.modules.CenterlineMonitoringButton
+                print("Centerline monitoring button cleaned up")
+        
+    except Exception as e:
+        print(f"Error cleaning up centerline monitoring button: {e}")
+
+def add_centerline_monitoring_button():
+    """
+    Add a monitoring control button to the Extract Centerline module
+    """
+    try:
+        centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not centerline_widget:
+            print("Could not access Extract Centerline module for monitoring button")
+            return
+            
+        # Check if button already exists to prevent duplicates
+        if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
+            existing_button = slicer.modules.CenterlineMonitoringButton
+            if existing_button and existing_button.parent():
+                print("Centerline monitoring button already exists")
+                return
+        
+        # Create the monitoring control button
+        monitoring_button = qt.QPushButton("Start Auto-Monitoring")
+        monitoring_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #6f42c1; 
+                color: white; 
+                border: none; 
+                padding: 10px 15px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 12px;
+                min-width: 150px;
+            }
+            QPushButton:hover { 
+                background-color: #5a32a3; 
+            }
+            QPushButton:pressed { 
+                background-color: #4e2a8e; 
+            }
+        """)
+        
+        monitoring_button.setToolTip("Click to start automatic monitoring for centerline completion")
+        monitoring_button.connect('clicked()', start_centerline_monitoring_for_additional)
+        
+        # Try to add the button to the centerline module
+        try:
+            # Find the main layout of the centerline widget
+            main_layout = None
+            for child in centerline_widget.children():
+                if hasattr(child, 'layout') and child.layout():
+                    main_layout = child.layout()
+                    break
+            
+            if main_layout:
+                # Add the button to the layout
+                main_layout.addWidget(monitoring_button)
+                print("Added monitoring control button to Extract Centerline module")
+            else:
+                # Fallback: add to the widget directly
+                centerline_widget.layout().addWidget(monitoring_button)
+                print("Added monitoring control button to Extract Centerline widget")
+                
+        except Exception as e:
+            print(f"Could not add monitoring button to centerline module layout: {e}")
+            # Last resort: show as standalone dialog button
+            monitoring_button.setParent(slicer.util.mainWindow())
+            monitoring_button.show()
+            print("Created standalone monitoring control button")
+        
+        # Store reference to prevent garbage collection
+        slicer.modules.CenterlineMonitoringButton = monitoring_button
+        
+        print("Centerline monitoring control button created")
+        
+    except Exception as e:
+        print(f"Error creating centerline monitoring button: {e}")
+
+def test_multiple_centerlines_functionality():
+    """
+    Test function to verify the multiple centerlines functionality works correctly
+    """
+    try:
+        print("=== Testing Multiple Centerlines Functionality ===")
+        
+        # Test finding all centerlines
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        print(f"Found {len(all_models)} centerline models")
+        print(f"Found {len(all_curves)} centerline curves")
+        
+        # Test counting existing centerlines
+        count = count_existing_centerlines()
+        print(f"Existing centerline count: {count}")
+        
+        # Test getting summary
+        summary = get_centerline_summary()
+        print("Centerline summary:")
+        print(summary)
+        
+        print("=== Multiple Centerlines Functionality Test Complete ===")
+        
+    except Exception as e:
+        print(f"Error testing multiple centerlines functionality: {e}")
+
+# Console helpers for testing
+def test_add_centerlines():
+    """Console helper to test adding centerlines"""
+    create_additional_centerline_setup()
+
+def show_centerline_info():
+    """Console helper to show centerline information"""
+    summary = get_centerline_summary()
+    print(summary)
+
+def stop_monitoring():
+    """Console helper to stop centerline monitoring"""
+    stop_centerline_monitoring()
+
+def stop_apply_monitoring():
+    """Console helper to stop Apply button monitoring"""
+    stop_apply_button_monitoring()
+
 def clear_existing_centerlines():
     """
     Clear existing centerline models and curves to prepare for retry
@@ -2997,40 +3850,148 @@ def clear_existing_centerlines():
     except Exception as e:
         print(f"Error clearing existing centerlines: {e}")
 
+def get_centerline_summary():
+    """
+    Get a summary of all existing centerlines in the scene
+    """
+    try:
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        summary = f"Centerlines in scene:\n"
+        summary += f"• Models: {len(all_models)}\n"
+        summary += f"• Curves: {len(all_curves)}\n"
+        
+        if all_models:
+            summary += "\nCenterline Models:\n"
+            for i, model in enumerate(all_models, 1):
+                polydata = model.GetPolyData()
+                point_count = polydata.GetNumberOfPoints() if polydata else 0
+                summary += f"  {i}. {model.GetName()} ({point_count} points)\n"
+                
+        if all_curves:
+            summary += "\nCenterline Curves:\n"
+            for i, curve in enumerate(all_curves, 1):
+                point_count = curve.GetNumberOfControlPoints()
+                summary += f"  {i}. {curve.GetName()} ({point_count} control points)\n"
+        
+        return summary
+        
+    except Exception as e:
+        print(f"Error getting centerline summary: {e}")
+        return "Error retrieving centerline information"
+
 
 def remove_transforms_from_point_lists():
     """
-    Remove all transforms from F-1 point lists before saving
+    Remove all transforms from F-1 point lists before saving, with special focus on pre and post lesion points
     """
     try:
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         removed_count = 0
+        pre_post_lesion_processed = 0
         
         for node in fiducial_nodes:
             node_name = node.GetName()
             if node_name == "F-1":
+                # First, ensure individual pre and post lesion points have no transforms
+                point_count = node.GetNumberOfControlPoints()
+                if point_count >= 2:  # At least pre-lesion and post-lesion points
+                    print(f"Processing F-1 point list with {point_count} points - ensuring pre and post lesion points are transform-free")
+                    
+                    # Check points 1 and 2 (pre-lesion and post-lesion)
+                    for point_index in [0, 1]:  # 0 = pre-lesion, 1 = post-lesion
+                        point_name = "pre-lesion" if point_index == 0 else "post-lesion"
+                        
+                        # Note: Individual points within a fiducial list cannot have separate transforms
+                        # The transform applies to the entire point list, but we verify the points exist
+                        if point_index < point_count:
+                            point_pos = [0.0, 0.0, 0.0]
+                            node.GetNthControlPointPosition(point_index, point_pos)
+                            print(f"  - {point_name} point position: [{point_pos[0]:.2f}, {point_pos[1]:.2f}, {point_pos[2]:.2f}]")
+                            pre_post_lesion_processed += 1
+                        else:
+                            print(f"  - Warning: {point_name} point not found (index {point_index})")
+                
+                # Remove transform from the entire point list
                 if node.GetTransformNodeID():
                     transform_name = ""
                     transform_node = node.GetTransformNode()
                     if transform_node:
                         transform_name = transform_node.GetName()
                     
+                    print(f"Removing transform '{transform_name}' from F-1 point list (affects all points including pre and post lesion)")
                     node.SetAndObserveTransformNodeID(None)
                     node.Modified()
                     removed_count += 1
-                    print(f"Removed transform '{transform_name}' from point list '{node.GetName()}'")
+                    print(f"✓ Transform removed from F-1 point list - pre and post lesion points are now in original coordinate space")
+                else:
+                    print("F-1 point list has no transform - pre and post lesion points already in original coordinate space")
         
         if removed_count > 0:
             slicer.app.processEvents()
-            print(f"Removed transforms from {removed_count} F-1 point list(s)")
-            print("GUI updated to reflect transform removal")
+            print(f"Successfully removed transforms from {removed_count} F-1 point list(s)")
+            print(f"Processed {pre_post_lesion_processed} pre and post lesion points")
+            print("All pre and post lesion points are now transform-free for saving")
             return True
         else:
-            print("No transforms found on F-1 point lists")
-            return False
+            if pre_post_lesion_processed > 0:
+                print(f"Verified {pre_post_lesion_processed} pre and post lesion points - no transforms to remove")
+                return True
+            else:
+                print("No F-1 point lists or pre/post lesion points found")
+                return False
             
     except Exception as e:
         print(f"Error removing transforms from point lists: {e}")
+        return False
+
+def verify_pre_post_lesion_points_transform_free():
+    """
+    Verify that pre and post lesion points are completely transform-free before saving
+    """
+    try:
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        verification_passed = True
+        points_checked = 0
+        
+        for node in fiducial_nodes:
+            node_name = node.GetName()
+            if node_name == "F-1":
+                # Check if the point list has any transforms
+                if node.GetTransformNodeID():
+                    transform_node = node.GetTransformNode()
+                    transform_name = transform_node.GetName() if transform_node else "Unknown"
+                    print(f"❌ ERROR: F-1 point list still has transform '{transform_name}' applied!")
+                    verification_passed = False
+                    continue
+                
+                # Verify pre and post lesion points exist and report their positions
+                point_count = node.GetNumberOfControlPoints()
+                if point_count >= 2:
+                    for point_index in [0, 1]:  # 0 = pre-lesion, 1 = post-lesion
+                        point_name = "pre-lesion" if point_index == 0 else "post-lesion"
+                        point_pos = [0.0, 0.0, 0.0]
+                        node.GetNthControlPointPosition(point_index, point_pos)
+                        print(f"✓ {point_name} point at [{point_pos[0]:.2f}, {point_pos[1]:.2f}, {point_pos[2]:.2f}] - transform-free")
+                        points_checked += 1
+                else:
+                    print(f"⚠ Warning: F-1 point list has only {point_count} points (expected at least 2 for pre/post lesion)")
+                    verification_passed = False
+        
+        if points_checked == 0:
+            print("⚠ Warning: No pre or post lesion points found for verification")
+            return False
+        
+        if verification_passed:
+            print(f"✅ Verification passed: {points_checked} pre and post lesion points are transform-free")
+            return True
+        else:
+            print(f"❌ Verification failed: Issues found with pre and post lesion point transforms")
+            return False
+            
+    except Exception as e:
+        print(f"Error verifying pre and post lesion points: {e}")
         return False
 
 def reapply_transforms_to_point_lists():
