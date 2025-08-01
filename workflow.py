@@ -2591,6 +2591,29 @@ def create_point_placement_controls():
         export_button.connect('clicked()', lambda: export_project_and_continue())
         layout.addWidget(export_button)
         
+        # Add stenosis ratio button
+        stenosis_button = qt.QPushButton("At Stenosis Ratio")
+        stenosis_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #6f42c1; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+            }
+            QPushButton:hover { 
+                background-color: #5a32a3; 
+            }
+            QPushButton:pressed { 
+                background-color: #4c2a85; 
+            }
+        """)
+        stenosis_button.connect('clicked()', lambda: create_stenosis_ratio_measurement())
+        layout.addWidget(stenosis_button)
+        
         layout.addStretch()
         
         main_window.addDockWidget(qt.Qt.RightDockWidgetArea, dock_widget)
@@ -2606,7 +2629,7 @@ def create_point_placement_controls():
 
 def start_point_placement(point_list, start_button, stop_button, count_label):
     """
-    Start interactive point placement mode
+    Start interactive point placement mode with continuous placement enabled
     """
     try:
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
@@ -2617,12 +2640,17 @@ def start_point_placement(point_list, start_button, stop_button, count_label):
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
+            interactionNode.SetPlaceModePersistence(1)
 
         start_button.setEnabled(False)
         stop_button.setEnabled(True)
         update_point_count_display(point_list, count_label)
         
-        print("Point placement mode started")
+        # Set up observer for automatic tool re-selection
+        setup_point_count_observer(point_list, count_label)
+        
+        print("Point placement mode started with continuous placement enabled")
         print("Point placement started - place points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
         
     except Exception as e:
@@ -2769,7 +2797,7 @@ def clear_all_points(point_list, count_label):
 
 def setup_point_count_observer(point_list, count_label):
     """
-    Set up observer to automatically update point count display
+    Set up observer to automatically update point count display and maintain point placement mode
     """
     try:
         if hasattr(point_list, 'PointCountObserver'):
@@ -2780,7 +2808,7 @@ def setup_point_count_observer(point_list, count_label):
         point_list.PointCountObserver = observer_id
         
         observer_id2 = point_list.AddObserver(point_list.PointAddedEvent, 
-                                            lambda caller, event: update_point_count_display_for_current_list(count_label))
+                                            lambda caller, event: on_point_added(caller, count_label))
         point_list.PointAddObserver = observer_id2
         
         observer_id3 = point_list.AddObserver(point_list.PointRemovedEvent, 
@@ -2789,6 +2817,40 @@ def setup_point_count_observer(point_list, count_label):
         
     except Exception as e:
         print(f"Error setting up point count observer: {e}")
+
+def on_point_added(point_list, count_label):
+    """
+    Handle point addition events - update display and ensure placement mode stays active
+    """
+    try:
+        # Update the display first
+        update_point_count_display_for_current_list(count_label)
+        
+        # Ensure point placement mode remains active for continued point placement
+        ensure_point_placement_mode_active(point_list)
+        
+        # Get current point count for feedback
+        point_count = point_list.GetNumberOfControlPoints()
+        
+        # Provide feedback about what point was just placed
+        point_names = ["pre-lesion", "post-lesion", "start-slice", "end-slice"]
+        if point_count <= len(point_names):
+            point_name = point_names[point_count - 1]
+            print(f"Point {point_count} placed: {point_name} point")
+            print(f"Point placement tool automatically re-selected for next point")
+        else:
+            print(f"Additional point {point_count} placed")
+            print(f"Point placement tool automatically re-selected")
+            
+        # Provide next step guidance
+        if point_count < 4:
+            next_point = point_names[point_count] if point_count < len(point_names) else f"point {point_count + 1}"
+            print(f"Ready to place {next_point}")
+        elif point_count == 4:
+            print("All 4 required points placed! Circles will be created automatically.")
+        
+    except Exception as e:
+        print(f"Error handling point addition: {e}")
 
 def update_point_count_display_for_current_list(count_label):
     """
@@ -2801,6 +2863,9 @@ def update_point_count_display_for_current_list(count_label):
         
         if current_point_list:
             update_point_count_display(current_point_list, count_label)
+            
+            # Automatically re-enable point placement mode after each point is added
+            ensure_point_placement_mode_active(current_point_list)
             
             # Check if we have all 4 points (pre-lesion, post-lesion, start-slice, end-slice) to create circles
             if current_point_list.GetNumberOfControlPoints() == 4:
@@ -2846,6 +2911,31 @@ def update_point_count_display(point_list, count_label):
         
     except Exception as e:
         print(f"Error updating point count display: {e}")
+
+def ensure_point_placement_mode_active(point_list):
+    """
+    Ensure that point placement mode remains active after each point is placed
+    """
+    try:
+        # Re-select the active point list in the selection node
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+            selectionNode.SetActivePlaceNodeID(point_list.GetID())
+
+        # Ensure interaction mode is set to placement with continuous mode enabled
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            if current_mode != interactionNode.Place:
+                interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+                print("Point placement mode automatically re-enabled")
+            
+            # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
+            interactionNode.SetPlaceModePersistence(1)
+        
+    except Exception as e:
+        print(f"Error ensuring point placement mode active: {e}")
 
 def show_point_placement_instructions():
     """
@@ -2908,7 +2998,7 @@ def apply_only_transform_to_point_list(point_list):
 
 def start_new_point_list_placement(count_label):
     """
-    Create a new point list and start placement mode
+    Create a new point list and start placement mode with continuous placement enabled
     """
     try:
         point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
@@ -2937,13 +3027,15 @@ def start_new_point_list_placement(count_label):
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
+            interactionNode.SetPlaceModePersistence(1)
         
         setup_point_count_observer(point_list, count_label)
         
         update_point_count_display(point_list, count_label)
         
         print(f"Created new point list: {point_list.GetName()}")
-        print("Point placement mode started")
+        print("Point placement mode started with continuous placement enabled")
         print("F-1 point list created - place points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
         
     except Exception as e:
@@ -2988,6 +3080,602 @@ def clear_all_points_from_scene(count_label):
         print(f"Error clearing points from scene: {e}")
         slicer.util.errorDisplay(f"Could not clear points: {str(e)}")
 
+def create_stenosis_ratio_measurement():
+    """
+    Create a single line measurement node for stenosis analysis and activate the line tool
+    """
+    try:
+        # Create line measurement node
+        line_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsLineNode")
+        existing_stenosis_count = count_existing_stenosis_measurements()
+        line_node.SetName(f"StenosisLine_{existing_stenosis_count + 1}")
+        
+        # Configure the line node
+        configure_stenosis_line_node(line_node)
+        
+        # Set the line as the active measurement node
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsLineNode")
+            selectionNode.SetActivePlaceNodeID(line_node.GetID())
+        
+        # Enable line placement mode
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            # Enable continuous placement mode for multiple measurements
+            interactionNode.SetPlaceModePersistence(1)
+        
+        # Set up observer to stop tool when line is complete
+        setup_single_stenosis_line_observer(line_node)
+        
+        print(f"Created stenosis line measurement: {line_node.GetName()}")
+        print("Line measurement tool activated - place line measurement")
+        
+        # Show instructions for stenosis measurement
+        show_single_stenosis_measurement_instructions()
+        
+        return line_node
+        
+    except Exception as e:
+        print(f"Error creating stenosis line measurements: {e}")
+        slicer.util.errorDisplay(f"Could not create stenosis line measurements: {str(e)}")
+        return None
+
+def count_existing_stenosis_measurements():
+    """
+    Count existing stenosis line measurements in the scene
+    """
+    try:
+        line_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsLineNode')
+        stenosis_count = 0
+        
+        for node in line_nodes:
+            if "StenosisLine" in node.GetName():
+                stenosis_count += 1
+        
+        return stenosis_count
+        
+    except Exception as e:
+        print(f"Error counting stenosis measurements: {e}")
+        return 0
+
+def configure_stenosis_line_node(line_node):
+    """
+    Configure the line node with appropriate display settings for stenosis measurement
+    """
+    try:
+        # Get or create display node
+        display_node = line_node.GetDisplayNode()
+        if not display_node:
+            line_node.CreateDefaultDisplayNodes()
+            display_node = line_node.GetDisplayNode()
+        
+        if display_node:
+            # Set line color to purple for stenosis line
+            display_node.SetColor(0.5, 0.0, 1.0)  # Purple color
+            display_node.SetSelectedColor(1.0, 0.5, 0.0)  # Orange when selected
+            
+            # Make line thicker and more visible
+            display_node.SetLineWidth(4.0)  # Increased line width
+            display_node.SetGlyphScale(3.0)  # Increased point size
+            
+            # Show measurement text
+            display_node.SetTextScale(2.5)  # Larger text
+            display_node.SetVisibility(True)
+            display_node.SetPointLabelsVisibility(True)
+            
+            # Enable measurement display
+            line_node.SetMeasurementEnabled(True)
+            
+            # Make sure line is interactive for placement
+            display_node.SetPointLabelsVisibility(True)
+            display_node.SetPropertiesLabelVisibility(True)
+        
+        # Set measurement units if available
+        measurement = line_node.GetMeasurement("length")
+        if measurement:
+            measurement.SetDisplayCoefficient(1.0)  # Default to mm
+            measurement.SetUnits("mm")
+            measurement.SetEnabled(True)
+        
+        # Ensure the line node is set to allow exactly 2 points
+        line_node.SetMaximumNumberOfControlPoints(2)
+        line_node.SetRequiredNumberOfControlPoints(2)
+        
+        print(f"Configured stenosis line node: {line_node.GetName()}")
+        
+    except Exception as e:
+        print(f"Error configuring stenosis line node: {e}")
+
+def setup_single_stenosis_line_observer(line_node):
+    """
+    Set up observer to detect when single stenosis line is complete and stop tool
+    """
+    try:
+        # Remove any existing observer
+        if hasattr(line_node, 'StenosisObserver'):
+            line_node.RemoveObserver(line_node.StenosisObserver)
+        
+        # Add observer for when points are added to the line
+        observer_id = line_node.AddObserver(
+            line_node.PointAddedEvent, 
+            lambda caller, event: check_single_line_completion(caller)
+        )
+        line_node.StenosisObserver = observer_id
+        
+        print("Set up single stenosis line observer (waiting for 2 points)")
+        
+    except Exception as e:
+        print(f"Error setting up single stenosis line observer: {e}")
+
+def check_single_line_completion(line_node):
+    """
+    Check if the stenosis line has exactly 2 points and distance > 0mm before stopping tool
+    """
+    try:
+        current_points = line_node.GetNumberOfControlPoints()
+        print(f"Stenosis line now has {current_points} point(s)")
+        
+        # Only stop when we have exactly 2 points AND a measurable distance > 0mm
+        if current_points == 2:
+            # Get the measurement value and check if it's > 0mm
+            measurement = line_node.GetMeasurement("length")
+            if measurement:
+                length_value = measurement.GetValue()
+                print(f"Stenosis line distance: {length_value:.2f} mm")
+                
+                if length_value > 0.0:  # Only stop if distance is greater than 0mm
+                    # Remove the observer to avoid multiple triggers
+                    if hasattr(line_node, 'StenosisObserver'):
+                        line_node.RemoveObserver(line_node.StenosisObserver)
+                        delattr(line_node, 'StenosisObserver')
+                    
+                    print(f"Stenosis line complete: {length_value:.2f} mm")
+                    
+                    # Stop the measurement tool
+                    stop_stenosis_measurement_tool()
+                else:
+                    print("Line has 2 points but distance is 0mm - waiting for proper line placement")
+                    print("Make sure you click two distinct points to create a measurable distance")
+            else:
+                print("Line has 2 points but measurement not ready - waiting...")
+        elif current_points == 1:
+            print("First point placed - click second point to complete the line")
+        
+    except Exception as e:
+        print(f"Error checking single line completion: {e}")
+
+def show_single_stenosis_measurement_instructions():
+    """
+    Show instructions for single stenosis line measurement
+    """
+    try:
+        print("STENOSIS LINE MEASUREMENT INSTRUCTIONS:")
+        print("IMPORTANT: Line needs TWO points with distance > 0mm!")
+        print("1. Click TWO points to create line measurement")
+        print("   - Click #1: Start point")
+        print("   - Click #2: End point")
+        print("   - Distance must be > 0mm to complete")
+        print("2. Tool automatically stops when line is complete")
+        print("")
+        print("TIP: Make sure to place points at distinct locations for measurable distances!")
+        print("TIP: Click the 'At Stenosis Ratio' button again to create additional measurements")
+        
+    except Exception as e:
+        print(f"Error showing stenosis measurement instructions: {e}")
+    """
+    Show instructions for stenosis line measurements
+    """
+    try:
+        instruction_text = """Stenosis Line Measurements
+
+The line measurement tool is now active for stenosis analysis.
+
+Steps:
+1. Click TWO POINTS to create the first line measurement (purple)
+   - First click: start point of line
+   - Second click: end point of line
+   - IMPORTANT: Distance must be > 0mm to proceed
+2. Second line will automatically become active (green)
+3. Click TWO POINTS to create the second line measurement
+   - First click: start point of second line
+   - Second click: end point of second line
+   - IMPORTANT: Distance must be > 0mm to complete
+4. Tool will automatically stop when both lines are complete
+
+IMPORTANT:
+• Each line needs TWO points with distance > 0mm
+• Purple line = first measurement
+• Green line = second measurement  
+• Tool automatically switches and stops
+• Make sure points are placed at distinct locations"""
+
+        print("STENOSIS LINE MEASUREMENT INSTRUCTIONS:")
+        print("IMPORTANT: Each line needs TWO points with distance > 0mm!")
+        print("1. Click TWO points for first line measurement (purple)")
+        print("   - Click #1: Start point")
+        print("   - Click #2: End point")
+        print("   - Distance must be > 0mm to proceed")
+        print("2. Tool automatically switches to second line (green)")
+        print("3. Click TWO points for second line measurement")
+        print("   - Click #1: Start point") 
+        print("   - Click #2: End point")
+        print("   - Distance must be > 0mm to complete")
+        print("4. Tool automatically stops when complete")
+        print("")
+        print("TIP: Make sure to place points at distinct locations for measurable distances!")
+        
+    except Exception as e:
+        print(f"Error showing stenosis measurement instructions: {e}")
+
+def setup_stenosis_line_sequence_observer(first_line_node, second_line_node):
+    """
+    Set up observer to automatically switch to second line when first is complete
+    """
+    try:
+        # Remove any existing observer
+        if hasattr(first_line_node, 'StenosisSequenceObserver'):
+            first_line_node.RemoveObserver(first_line_node.StenosisSequenceObserver)
+        
+        # Add observer for when points are added to the first line, but only switch when we have exactly 2 points
+        observer_id = first_line_node.AddObserver(
+            first_line_node.PointAddedEvent, 
+            lambda caller, event: check_first_line_completion_carefully(caller, second_line_node)
+        )
+        first_line_node.StenosisSequenceObserver = observer_id
+        
+        print("Set up stenosis line sequence observer (waiting for 2 points)")
+        
+    except Exception as e:
+        print(f"Error setting up stenosis line sequence observer: {e}")
+
+def check_first_line_completion_carefully(first_line_node, second_line_node):
+    """
+    Check if the first stenosis line has exactly 2 points and a distance > 0mm before switching
+    """
+    try:
+        current_points = first_line_node.GetNumberOfControlPoints()
+        print(f"First line now has {current_points} point(s)")
+        
+        # Only switch when we have exactly 2 points AND a measurable distance > 0mm
+        if current_points == 2:
+            # Get the measurement value and check if it's > 0mm
+            measurement = first_line_node.GetMeasurement("length")
+            if measurement:
+                length_value = measurement.GetValue()
+                print(f"First line distance: {length_value:.2f} mm")
+                
+                if length_value > 0.0:  # Only switch if distance is greater than 0mm
+                    # Remove the observer to avoid multiple triggers
+                    if hasattr(first_line_node, 'StenosisSequenceObserver'):
+                        first_line_node.RemoveObserver(first_line_node.StenosisSequenceObserver)
+                        delattr(first_line_node, 'StenosisSequenceObserver')
+                    
+                    print(f"First stenosis line complete: {length_value:.2f} mm")
+                    print(f"DEBUG: About to trigger switch to second line: {second_line_node.GetName()}")
+                    
+                    # Store reference to second line node and trigger switch
+                    slicer.modules.StenosisSecondLineNode = second_line_node
+                    
+                    # Try direct call first, then with timer as backup
+                    try:
+                        switch_to_second_stenosis_line(second_line_node)
+                    except Exception as e:
+                        print(f"Direct switch failed: {e}, trying with timer...")
+                        qt.QTimer.singleShot(100, lambda: switch_to_second_stenosis_line(slicer.modules.StenosisSecondLineNode))
+                else:
+                    print("First line has 2 points but distance is 0mm - waiting for proper line placement")
+                    print("Make sure you click two distinct points to create a measurable distance")
+            else:
+                print("First line has 2 points but measurement not ready - waiting...")
+        elif current_points == 1:
+            print("First point placed for first line - click second point to complete the line")
+        
+    except Exception as e:
+        print(f"Error checking first line completion: {e}")
+
+def switch_to_second_stenosis_line(second_line_node):
+    """
+    Automatically switch to the second line measurement
+    """
+    try:
+        print(f"DEBUG: Attempting to switch to second line node: {second_line_node.GetName()}")
+        print(f"DEBUG: Second line node ID: {second_line_node.GetID()}")
+        print(f"DEBUG: Second line node valid: {second_line_node is not None}")
+        
+        # Set the second line as the active measurement node
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            print("DEBUG: Setting active place node class and ID")
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsLineNode")
+            selectionNode.SetActivePlaceNodeID(second_line_node.GetID())
+            print(f"DEBUG: Active place node ID set to: {selectionNode.GetActivePlaceNodeID()}")
+        else:
+            print("ERROR: Selection node not found!")
+        
+        # Ensure line placement mode remains active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            print("DEBUG: Setting interaction mode to Place")
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)
+            print(f"DEBUG: Current interaction mode: {interactionNode.GetCurrentInteractionMode()}")
+            print(f"DEBUG: Place mode persistence: {interactionNode.GetPlaceModePersistence()}")
+        else:
+            print("ERROR: Interaction node not found!")
+        
+        print(f"Automatically switched to second line: {second_line_node.GetName()}")
+        print("Place second line measurement (green)")
+        
+        # Set up observer for when second measurement is complete
+        setup_second_line_completion_observer(second_line_node)
+        
+    except Exception as e:
+        print(f"Error switching to second stenosis line: {e}")
+
+def setup_second_line_completion_observer(second_line_node):
+    """
+    Set up observer to detect when second line is complete and prompt for next action
+    """
+    try:
+        # Add observer to second line to trigger next action when complete (only on point addition)
+        observer_id = second_line_node.AddObserver(
+            second_line_node.PointAddedEvent,
+            lambda caller, event: check_second_line_completion_carefully(caller)
+        )
+        second_line_node.StenosisSequenceObserver = observer_id
+        
+        print("Set up second line completion observer (waiting for 2 points)")
+        
+    except Exception as e:
+        print(f"Error setting up second line completion observer: {e}")
+
+def check_second_line_completion_carefully(second_line_node):
+    """
+    Check if second line has exactly 2 points and distance > 0mm before completing
+    """
+    try:
+        current_points = second_line_node.GetNumberOfControlPoints()
+        print(f"Second line now has {current_points} point(s)")
+        
+        # Only complete when we have exactly 2 points AND a measurable distance > 0mm
+        if current_points == 2:
+            # Get the measurement value and check if it's > 0mm
+            measurement = second_line_node.GetMeasurement("length")
+            if measurement:
+                length_value = measurement.GetValue()
+                print(f"Second line distance: {length_value:.2f} mm")
+                
+                if length_value > 0.0:  # Only complete if distance is greater than 0mm
+                    # Remove the observer to avoid multiple triggers
+                    if hasattr(second_line_node, 'StenosisSequenceObserver'):
+                        second_line_node.RemoveObserver(second_line_node.StenosisSequenceObserver)
+                        delattr(second_line_node, 'StenosisSequenceObserver')
+                    
+                    print(f"Second stenosis line complete: {length_value:.2f} mm")
+                    print("Both stenosis lines completed successfully")
+                    
+                    # Stop the measurement tool automatically instead of showing dialog
+                    stop_stenosis_measurement_tool()
+                    print("Stenosis measurement pair completed - tool automatically stopped")
+                else:
+                    print("Second line has 2 points but distance is 0mm - waiting for proper line placement")
+                    print("Make sure you click two distinct points to create a measurable distance")
+            else:
+                print("Second line has 2 points but measurement not ready - waiting...")
+        elif current_points == 1:
+            print("First point placed for second line - click second point to complete the line")
+        
+    except Exception as e:
+        print(f"Error checking second line completion: {e}")
+
+def show_stenosis_completion_dialog():
+    """
+    Show dialog asking user to continue with more measurements or stop
+    """
+    try:
+        dialog = qt.QDialog(slicer.util.mainWindow())
+        dialog.setWindowTitle("Stenosis Measurements Complete")
+        dialog.setModal(True)
+        dialog.resize(400, 200)
+        dialog.setWindowFlags(qt.Qt.Dialog | qt.Qt.WindowTitleHint | qt.Qt.WindowCloseButtonHint)
+        
+        layout = qt.QVBoxLayout(dialog)
+        
+        title_label = qt.QLabel("Stenosis Measurement Pair Complete!")
+        title_label.setStyleSheet("QLabel { font-weight: bold; color: #28a745; margin: 10px; font-size: 16px; }")
+        title_label.setAlignment(qt.Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        instruction_label = qt.QLabel("Would you like to create another stenosis measurement pair?")
+        instruction_label.setStyleSheet("QLabel { color: #333; margin: 10px; font-size: 12px; }")
+        instruction_label.setAlignment(qt.Qt.AlignCenter)
+        instruction_label.setWordWrap(True)
+        layout.addWidget(instruction_label)
+        
+        # Create button layout
+        button_layout = qt.QHBoxLayout()
+        
+        continue_button = qt.QPushButton("Continue Measuring")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 140px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        continue_button.connect('clicked()', lambda: on_continue_stenosis_measurements(dialog))
+        button_layout.addWidget(continue_button)
+        
+        stop_button = qt.QPushButton("Stop & Close Tool")
+        stop_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #dc3545; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 140px;
+            }
+            QPushButton:hover { 
+                background-color: #c82333; 
+            }
+            QPushButton:pressed { 
+                background-color: #bd2130; 
+            }
+        """)
+        stop_button.connect('clicked()', lambda: on_stop_stenosis_measurements(dialog))
+        button_layout.addWidget(stop_button)
+        
+        layout.addLayout(button_layout)
+        layout.addStretch()
+        
+        dialog.exec_()
+        
+    except Exception as e:
+        print(f"Error showing stenosis completion dialog: {e}")
+        # Default to stopping measurements if dialog fails
+        stop_stenosis_measurement_tool()
+
+def on_continue_stenosis_measurements(dialog):
+    """
+    Continue with another stenosis measurement pair
+    """
+    try:
+        dialog.close()
+        dialog.setParent(None)
+        
+        print("User chose to continue stenosis measurements")
+        print("Creating next stenosis measurement pair...")
+        
+        # Create another pair of stenosis measurements
+        create_stenosis_ratio_measurement()
+        
+    except Exception as e:
+        print(f"Error continuing stenosis measurements: {e}")
+
+def on_stop_stenosis_measurements(dialog):
+    """
+    Stop stenosis measurements and close the measurement tool
+    """
+    try:
+        dialog.close()
+        dialog.setParent(None)
+        
+        print("User chose to stop stenosis measurements")
+        
+        # Stop the measurement tool
+        stop_stenosis_measurement_tool()
+        
+        # Show summary of all stenosis measurements
+        show_stenosis_measurements_summary()
+        
+    except Exception as e:
+        print(f"Error stopping stenosis measurements: {e}")
+
+def stop_stenosis_measurement_tool():
+    """
+    Stop the stenosis measurement tool and return to normal interaction mode
+    """
+    try:
+        # Disable placement mode
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            interactionNode.SetPlaceModePersistence(0)
+        
+        # Clear the active placement node
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetActivePlaceNodeID(None)
+        
+        print("Stenosis measurement tool stopped")
+        print("Returned to normal interaction mode")
+        
+    except Exception as e:
+        print(f"Error stopping stenosis measurement tool: {e}")
+
+def show_stenosis_measurements_summary():
+    """
+    Show a summary of all stenosis measurements created
+    """
+    try:
+        line_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsLineNode')
+        stenosis_lines = []
+        
+        for node in line_nodes:
+            if "StenosisLine" in node.GetName() and node.GetNumberOfControlPoints() == 2:
+                measurement = node.GetMeasurement("length")
+                if measurement:
+                    length_value = measurement.GetValue()
+                    stenosis_lines.append((node.GetName(), length_value))
+        
+        if stenosis_lines:
+            print("=" * 50)
+            print("STENOSIS MEASUREMENTS SUMMARY")
+            print("=" * 50)
+            for name, length in stenosis_lines:
+                print(f"{name}: {length:.2f} mm")
+            print("=" * 50)
+            print(f"Total stenosis measurements: {len(stenosis_lines)}")
+            
+            # Show summary dialog
+            summary_text = "Stenosis Measurements Complete!\n\n"
+            summary_text += f"Created {len(stenosis_lines)} stenosis measurements:\n\n"
+            for name, length in stenosis_lines:
+                summary_text += f"• {name}: {length:.2f} mm\n"
+            summary_text += f"\nAll measurements are available in the scene for analysis."
+            
+            slicer.util.infoDisplay(summary_text)
+        else:
+            print("No completed stenosis measurements found")
+        
+    except Exception as e:
+        print(f"Error showing stenosis measurements summary: {e}")
+
+def disable_all_placement_tools():
+    """
+    Disable all placement tools and return to normal interaction mode
+    """
+    try:
+        # Disable placement mode in interaction node
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            interactionNode.SetPlaceModePersistence(0)
+            print("Set interaction mode to ViewTransform (normal mode)")
+        
+        # Clear any active placement node
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetActivePlaceNodeID(None)
+            selectionNode.SetReferenceActivePlaceNodeClassName("")
+            print("Cleared active placement node")
+        
+        # Process events to ensure UI is updated
+        slicer.app.processEvents()
+        
+        print("All placement tools disabled - returned to normal interaction mode")
+        
+    except Exception as e:
+        print(f"Error disabling placement tools: {e}")
+
 def export_project_and_continue():
     """
     Save the Slicer project using normal save functionality and continue to workflow2.py
@@ -3017,14 +3705,12 @@ def export_project_and_continue():
                 print("Forcing transform removal...")
                 force_remove_all_transforms()
             
-            # Verify that pre and post lesion points are specifically transform-free
             print("Verifying pre and post lesion points are transform-free...")
             verification_passed = verify_pre_post_lesion_points_transform_free()
             
             if not verification_passed:
                 print("ERROR: Pre and post lesion points still have transforms - attempting additional cleanup...")
                 force_remove_all_transforms()
-                # Try verification again
                 verification_passed = verify_pre_post_lesion_points_transform_free()
                 
             if verification_passed:
@@ -3038,6 +3724,10 @@ def export_project_and_continue():
         
         if success:
             print("Project saved successfully")
+            
+            # Deselect placement tools and return to normal interaction mode
+            print("Deselecting point placement tools...")
+            disable_all_placement_tools()
 
             # Reapply transforms after saving
             if lesion_analysis_nodes:
@@ -3059,6 +3749,9 @@ def export_project_and_continue():
             
         else:
             print("Save dialog was cancelled or failed")
+            # Still deselect tools even if save was cancelled
+            print("Deselecting point placement tools...")
+            disable_all_placement_tools()
         
     except Exception as e:
         print(f"Error exporting project: {e}")
@@ -4991,6 +5684,47 @@ def show_segment_statistics(stenosis_segmentation):
         except Exception as fallback_error:
             print(f"Could not open Segment Statistics module: {str(fallback_error)}")
             print("Please open the Segment Statistics module manually")
+
+# ===============================================================================
+# CONSOLE HELPER FUNCTIONS
+# ===============================================================================
+
+def test_point_placement_auto_reselection():
+    """
+    Test function to verify automatic point placement tool re-selection is working
+    """
+    try:
+        print("=== Testing Automatic Point Placement Tool Re-selection ===")
+        
+        # Check if there's a current point list
+        current_point_list = None
+        if hasattr(slicer.modules, 'CurrentLesionAnalysisPointList'):
+            current_point_list = slicer.modules.CurrentLesionAnalysisPointList
+            
+        if current_point_list:
+            print(f"Current active point list: {current_point_list.GetName()}")
+            print(f"Current point count: {current_point_list.GetNumberOfControlPoints()}")
+            
+            # Test the re-selection function
+            ensure_point_placement_mode_active(current_point_list)
+            
+            # Check interaction mode
+            interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+            if interactionNode:
+                current_mode = interactionNode.GetCurrentInteractionMode()
+                if current_mode == interactionNode.Place:
+                    print("✓ Point placement mode is active")
+                else:
+                    print("✗ Point placement mode is NOT active")
+            
+            print("✓ Automatic re-selection test completed")
+            print("Place a point to verify the tool stays selected after placement")
+        else:
+            print("No active point list found")
+            print("Start point placement first using the workflow controls")
+            
+    except Exception as e:
+        print(f"Error testing point placement auto-reselection: {e}")
 
 # ===============================================================================
 # END WORKFLOW2 FUNCTIONS
