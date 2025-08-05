@@ -146,7 +146,7 @@ def prompt_for_threshold_range():
         layout.addLayout(upper_layout)
         
         info_label = qt.QLabel("Range: -1024 to 3071 Hounsfield units")
-        info_label.setStyleSheet("QLabel { color: #666; font-size: 11px; margin: 5px; }")
+        info_label.setStyleSheet("QLabel { color: #333; font-size: 11px; margin: 5px; }")
         layout.addWidget(info_label)
         
         button_layout = qt.QHBoxLayout()
@@ -291,7 +291,7 @@ def show_segmentation_in_3d(segmentation_node):
         if segment_ids.GetNumberOfValues() > 0:
             segment_id = segment_ids.GetValue(0)
             segment = segmentation.GetSegment(segment_id)
-            segment.SetColor(0.8, 0.2, 0.2)  # Red color
+            segment.SetColor(1.0, 0.0, 0.0) 
             segment.SetTag("Segmentation.Status", "inprogress")
     segmentation_node.CreateClosedSurfaceRepresentation()
     threeDWidget = layout_manager.threeDWidget(0)
@@ -449,7 +449,7 @@ def cleanup_continue_ui():
     except Exception as e:
         print(f"Error cleaning up continue UI: {e}")
 
-def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_color=(1.0, 0.0, 0.0), volume_node=None, volume_name=None):
+def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_color=(0.0, 1.0, 1.0), volume_node=None, volume_name=None):
     """
     Create a new mask segmentation with custom name, threshold values, and RGB color.
     The segmentation is created but NOT added to the 3D scene for visualization.
@@ -584,7 +584,7 @@ def create_analysis_masks(straightened_volumes):
         segmentation = segmentation_node.GetSegmentation()
         segment_id = segmentation.AddEmptySegment("st-analysis")
         segment = segmentation.GetSegment(segment_id)
-        segment.SetColor(0.5, 0.5, 1.0)
+        segment.SetColor(0.0, 1.0, 0.0)  # Bright green color
         
         mask_definitions = [
             ("LAP", -30, 30),
@@ -608,9 +608,9 @@ def create_analysis_masks(straightened_volumes):
             
             segmentationLogic = slicer.modules.segmentations.logic()
             if segmentationLogic.ImportLabelmapToSegmentationNode(temp_labelmap, segmentation_node):
-                print(f"✓ Successfully added {mask_name} to st-analysis segment")
+                print(f"Successfully added {mask_name} to st-analysis segment")
             else:
-                print(f"✗ Failed to add {mask_name} to st-analysis segment")
+                print(f"Failed to add {mask_name} to st-analysis segment")
             
             slicer.mrmlScene.RemoveNode(temp_labelmap)
         
@@ -2907,8 +2907,8 @@ def configure_stenosis_line_node(line_node):
             display_node = line_node.GetDisplayNode()
         
         if display_node:
-            # Set line color to purple for stenosis line
-            display_node.SetColor(0.5, 0.0, 1.0)  # Purple color
+            # Set line color to bright purple for stenosis line
+            display_node.SetColor(1.0, 0.0, 1.0)  # Bright magenta/purple color
             display_node.SetSelectedColor(1.0, 0.5, 0.0)  # Orange when selected
             
             # Make line thicker and more visible
@@ -4405,10 +4405,10 @@ def draw_circles_on_centerline():
             if display_node:
                 if i == 0:
                     display_node.SetColor(0.0, 1.0, 0.0)
-                    display_node.SetSelectedColor(0.0, 0.8, 0.0)
+                    display_node.SetSelectedColor(0.0, 1.0, 0.0)  # Bright green
                 else:
                     display_node.SetColor(1.0, 0.0, 0.0)
-                    display_node.SetSelectedColor(0.8, 0.0, 0.0)
+                    display_node.SetSelectedColor(1.0, 0.0, 0.0)  # Bright red
                 
                 display_node.SetLineWidth(4.0) 
                 display_node.SetVisibility(True)
@@ -5057,7 +5057,7 @@ def create_bone_mask(volume_name=None):
     return create_mask_segmentation(
         mask_name="BoneMask",
         threshold_low=200,
-        rgb_color=(0.8, 0.8, 0.8),  # Light gray
+        rgb_color=(1.0, 1.0, 1.0),  # Bright white
         volume_name=volume_name
     )
 
