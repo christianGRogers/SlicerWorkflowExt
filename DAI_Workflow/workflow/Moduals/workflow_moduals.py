@@ -1644,6 +1644,13 @@ def start_with_volume_crop():
     slicer.util.selectModule("CropVolume")
     slicer.app.processEvents()
     
+    # Hide all UI elements except the green Apply button
+    hide_crop_volume_ui_elements()
+    
+    # Schedule additional UI hiding attempts in case the first one doesn't catch everything
+    qt.QTimer.singleShot(1000, hide_crop_volume_ui_elements)
+    qt.QTimer.singleShot(3000, hide_crop_volume_ui_elements)
+    
     roi_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode", "CropROI")
     
     bounds = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -5134,15 +5141,516 @@ def create_analysis_masks_manually(volume_name=None):
         print(f"Error creating analysis masks manually: {e}")
         return None
 
-# def main():
-#     """
-#     Main entry point for the workflow
-#     """
-#     try:
-#         start_with_volume_crop()
-#     except Exception as e:
-#         slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
-#         print(f"Error: {e}")
+def hide_crop_volume_ui_elements():
+    """
+    Hide all UI elements in the Crop Volume module except the green Apply button
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            print("Error: Could not get Crop Volume widget")
+            return False
+        
+        # Names of the collapsible buttons to hide based on the XML structure
+        collapsible_buttons_to_hide = [
+            "ParameterSetCollapsibleButton",
+            "InputOutputCollapsibleButton", 
+            "InterpolationOptionsCollapsibleButton",
+            "VolumeInformationCollapsibleButton"
+        ]
+        
+        # Hide error message elements
+        error_elements_to_hide = [
+            "InputErrorLabel",
+            "InputErrorFixButton"
+        ]
+        
+        elements_hidden = 0
+        
+        # Hide collapsible button sections
+        for button_name in collapsible_buttons_to_hide:
+            try:
+                # Find the collapsible button by object name
+                collapsible_buttons = crop_widget.findChildren(qt.QWidget, button_name)
+                for button in collapsible_buttons:
+                    button.setVisible(False)
+                    elements_hidden += 1
+                    print(f"Hidden: {button_name}")
+            except Exception as e:
+                print(f"Could not hide {button_name}: {e}")
+        
+        # Hide error message elements 
+        for element_name in error_elements_to_hide:
+            try:
+                elements = crop_widget.findChildren(qt.QWidget, element_name)
+                for element in elements:
+                    element.setVisible(False)
+                    elements_hidden += 1
+                    print(f"Hidden: {element_name}")
+            except Exception as e:
+                print(f"Could not hide {element_name}: {e}")
+        
+        # Also hide by finding ctkCollapsibleButton widgets directly
+        try:
+            collapsible_buttons = crop_widget.findChildren("ctkCollapsibleButton")
+            for button in collapsible_buttons:
+                button.setVisible(False)
+                elements_hidden += 1
+                print(f"Hidden collapsible button: {button.text if hasattr(button, 'text') else 'unnamed'}")
+        except Exception as e:
+            print(f"Could not hide collapsible buttons directly: {e}")
+        
+        # Hide the horizontal layout containing error elements
+        try:
+            horizontal_layouts = crop_widget.findChildren(qt.QHBoxLayout)
+            for layout in horizontal_layouts:
+                if layout.objectName() == "horizontalLayout":
+                    # Hide the parent widget of this layout
+                    parent_widget = layout.parent()
+                    if parent_widget:
+                        parent_widget.setVisible(False)
+                        elements_hidden += 1
+                        print("Hidden error message layout")
+        except Exception as e:
+            print(f"Could not hide error message layout: {e}")
+        
+        print(f"Successfully hidden {elements_hidden} UI elements in Crop Volume module")
+        print("Only the green Apply button should now be visible")
+        return True
+        
+    except Exception as e:
+        print(f"Error hiding Crop Volume UI elements: {e}")
+        return False
 
-# if __name__ == "__main__":
-#     main()
+def setup_minimal_crop_volume_ui():
+    """
+    Set up the Crop Volume module with minimal UI (only the green Apply button)
+    """
+    try:
+        # First ensure we're in the Crop Volume module
+        slicer.util.selectModule("CropVolume")
+        slicer.app.processEvents()
+        
+        # Hide all UI elements except the Apply button
+        hide_success = hide_crop_volume_ui_elements()
+        
+        if hide_success:
+            # Add the large green Apply button
+            add_large_crop_apply_button()
+            print("Crop Volume module configured with minimal UI")
+            return True
+        else:
+            print("Warning: Could not fully hide all UI elements")
+            return False
+            
+    except Exception as e:
+        print(f"Error setting up minimal Crop Volume UI: {e}")
+        return False
+
+# Console helper functions for testing UI modifications
+def test_hide_crop_ui():
+    """Console helper to test hiding Crop Volume UI elements"""
+    return hide_crop_volume_ui_elements()
+
+def test_minimal_crop_ui():
+    """Console helper to test setting up minimal Crop Volume UI"""
+    return setup_minimal_crop_volume_ui()
+
+def test_hide_segment_editor_ui():
+    """Console helper to test hiding Segment Editor UI elements"""
+    return hide_segment_editor_ui_elements()
+
+def test_minimal_segment_editor_ui():
+    """Console helper to test setting up minimal Segment Editor UI"""
+    return setup_minimal_segment_editor_ui()
+
+def test_segment_editor_scissors_workflow():
+    """Console helper to test the complete Segment Editor scissors workflow"""
+    return start_with_segment_editor_scissors()
+
+def restore_crop_ui():
+    """Console helper to restore all hidden Crop Volume UI elements"""
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            print("Error: Could not get Crop Volume widget")
+            return False
+        
+        # Find all widgets and make them visible
+        all_widgets = crop_widget.findChildren(qt.QWidget)
+        restored_count = 0
+        
+        for widget in all_widgets:
+            if hasattr(widget, 'setVisible'):
+                widget.setVisible(True)
+                restored_count += 1
+        
+        print(f"Restored visibility for {restored_count} widgets in Crop Volume module")
+        return True
+        
+    except Exception as e:
+        print(f"Error restoring Crop Volume UI: {e}")
+        return False
+
+def hide_segment_editor_ui_elements():
+    """
+    Hide all UI elements in the Segment Editor module except the scissors tool icon
+    """
+    try:
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        if not segment_editor_widget:
+            print("Error: Could not get Segment Editor widget")
+            return False
+        
+        # Get the segment editor widget
+        segment_editor = segment_editor_widget.self()
+        if not segment_editor:
+            print("Error: Could not get Segment Editor module")
+            return False
+        
+        elements_hidden = 0
+        
+        # Hide the parameter set section
+        try:
+            if hasattr(segment_editor, 'parameterSetCollapsibleButton'):
+                segment_editor.parameterSetCollapsibleButton.setVisible(False)
+                elements_hidden += 1
+                print("Hidden parameter set section")
+        except Exception as e:
+            print(f"Could not hide parameter set section: {e}")
+        
+        # Hide the segmentation section
+        try:
+            if hasattr(segment_editor, 'segmentationCollapsibleButton'):
+                segment_editor.segmentationCollapsibleButton.setVisible(False)
+                elements_hidden += 1
+                print("Hidden segmentation section")
+        except Exception as e:
+            print(f"Could not hide segmentation section: {e}")
+        
+        # Hide the source volume section
+        try:
+            if hasattr(segment_editor, 'sourceVolumeCollapsibleButton'):
+                segment_editor.sourceVolumeCollapsibleButton.setVisible(False)
+                elements_hidden += 1
+                print("Hidden source volume section")
+        except Exception as e:
+            print(f"Could not hide source volume section: {e}")
+        
+        # Hide segments table but keep add/remove segment buttons for scissors tool
+        try:
+            if hasattr(segment_editor, 'segmentsTableResizableFrame'):
+                # Hide the segments table frame
+                segment_editor.segmentsTableResizableFrame.setVisible(False)
+                elements_hidden += 1
+                print("Hidden segments table")
+        except Exception as e:
+            print(f"Could not hide segments table: {e}")
+        
+        # Hide all effect buttons except scissors - this is the most important part
+        try:
+            # First, try to find the effects toolbar or button group
+            effects_hidden = 0
+            scissors_found = False
+            
+            # Look for effect buttons by finding the effects widget
+            if hasattr(segment_editor, 'effectsGroupBox') or hasattr(segment_editor, 'effectsWidget'):
+                effects_widget = getattr(segment_editor, 'effectsGroupBox', None) or getattr(segment_editor, 'effectsWidget', None)
+                if effects_widget:
+                    effect_buttons = effects_widget.findChildren(qt.QPushButton)
+                    for button in effect_buttons:
+                        button_text = button.text if hasattr(button, 'text') else ""
+                        button_name = button.objectName() if hasattr(button, 'objectName') else ""
+                        button_tooltip = button.toolTip if hasattr(button, 'toolTip') else ""
+                        
+                        # Keep scissors tool button visible
+                        if ('scissors' in button_text.lower() or 
+                            'scissors' in button_name.lower() or 
+                            'scissors' in button_tooltip.lower() or
+                            'cut' in button_text.lower() or
+                            'clip' in button_text.lower()):
+                            print(f"Keeping scissors-related button visible: {button_text}")
+                            scissors_found = True
+                            # Make sure the scissors button is prominent
+                            button.setStyleSheet("""
+                                QPushButton {
+                                    background-color: #ff6b6b;
+                                    color: white;
+                                    border: 2px solid #ff5252;
+                                    padding: 12px 20px;
+                                    font-weight: bold;
+                                    border-radius: 8px;
+                                    font-size: 16px;
+                                    min-width: 150px;
+                                    min-height: 50px;
+                                }
+                                QPushButton:hover {
+                                    background-color: #ff5252;
+                                    border: 2px solid #d32f2f;
+                                    transform: scale(1.05);
+                                }
+                                QPushButton:pressed {
+                                    background-color: #d32f2f;
+                                }
+                            """)
+                            continue
+                        
+                        # Hide other effect buttons
+                        button.setVisible(False)
+                        effects_hidden += 1
+                        print(f"Hidden effect button: {button_text}")
+            
+            # Also search globally in the widget for any remaining effect buttons
+            all_buttons = segment_editor_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                button_text = button.text if hasattr(button, 'text') else ""
+                button_name = button.objectName() if hasattr(button, 'objectName') else ""
+                
+                # Skip if already processed or is scissors
+                if ('scissors' in button_text.lower() or 
+                    'scissors' in button_name.lower() or
+                    'cut' in button_text.lower() or
+                    'clip' in button_text.lower()):
+                    if not scissors_found:
+                        print(f"Found scissors button in global search: {button_text}")
+                        scissors_found = True
+                        # Style the scissors button
+                        button.setStyleSheet("""
+                            QPushButton {
+                                background-color: #ff6b6b;
+                                color: white;
+                                border: 2px solid #ff5252;
+                                padding: 12px 20px;
+                                font-weight: bold;
+                                border-radius: 8px;
+                                font-size: 16px;
+                                min-width: 150px;
+                                min-height: 50px;
+                            }
+                            QPushButton:hover {
+                                background-color: #ff5252;
+                                border: 2px solid #d32f2f;
+                            }
+                            QPushButton:pressed {
+                                background-color: #d32f2f;
+                            }
+                        """)
+                    continue
+                
+                # Hide known effect buttons
+                if (button_text and any(effect in button_text.lower() for effect in 
+                    ['paint', 'draw', 'erase', 'level', 'grow', 'fill', 'threshold', 'island', 
+                     'smooth', 'margin', 'hollow', 'wrap', 'logical', 'mask', 'split'])):
+                    if button.isVisible():
+                        button.setVisible(False)
+                        effects_hidden += 1
+                        print(f"Hidden remaining effect button: {button_text}")
+            
+            elements_hidden += effects_hidden
+            if scissors_found:
+                print(f"Hidden {effects_hidden} effect buttons, keeping scissors visible and styled")
+            else:
+                print(f"Hidden {effects_hidden} effect buttons, but scissors tool not found")
+                print("You may need to manually look for the scissors tool")
+                    
+        except Exception as e:
+            print(f"Could not hide effect buttons: {e}")
+        
+        # Hide options sections
+        try:
+            if hasattr(segment_editor, 'effectOptionsCollapsibleButton'):
+                segment_editor.effectOptionsCollapsibleButton.setVisible(False)
+                elements_hidden += 1
+                print("Hidden effect options section")
+        except Exception as e:
+            print(f"Could not hide effect options: {e}")
+        
+        # Hide masking settings
+        try:
+            if hasattr(segment_editor, 'maskingCollapsibleButton'):
+                segment_editor.maskingCollapsibleButton.setVisible(False)
+                elements_hidden += 1
+                print("Hidden masking settings")
+        except Exception as e:
+            print(f"Could not hide masking settings: {e}")
+        
+        # Try to find and hide collapsible buttons by searching for them
+        try:
+            collapsible_buttons = segment_editor_widget.findChildren("ctkCollapsibleButton")
+            for button in collapsible_buttons:
+                button_text = button.text if hasattr(button, 'text') else ""
+                # Keep only essential sections, hide others
+                if any(keyword in button_text.lower() for keyword in 
+                       ['parameter', 'segmentation', 'source', 'masking', 'options', 'display']):
+                    button.setVisible(False)
+                    elements_hidden += 1
+                    print(f"Hidden collapsible button: {button_text}")
+        except Exception as e:
+            print(f"Could not hide collapsible buttons: {e}")
+        
+        print(f"Successfully hidden {elements_hidden} UI elements in Segment Editor module")
+        print("Only the scissors tool should now be prominently visible")
+        return True
+        
+    except Exception as e:
+        print(f"Error hiding Segment Editor UI elements: {e}")
+        return False
+
+def start_with_segment_editor_scissors():
+    """
+    Start segmentation workflow by opening the Segment Editor module with only the scissors tool visible.
+    This function should be called when the workflow needs to switch to segmentation.
+    """
+    try:
+        # Get the current volume node (should be the cropped volume from previous step)
+        volume_node = None
+        volume_nodes = slicer.util.getNodesByClass("vtkMRMLScalarVolumeNode")
+        
+        # Look for cropped volume first
+        for volume in volume_nodes:
+            if 'cropped' in volume.GetName().lower():
+                volume_node = volume
+                break
+        
+        # If no cropped volume, use the first available volume
+        if not volume_node and volume_nodes:
+            volume_node = volume_nodes[0]
+        
+        if not volume_node:
+            slicer.util.errorDisplay("No volume found. Please load a volume first.")
+            return False
+        
+        # Switch to Segment Editor module
+        slicer.util.selectModule("SegmentEditor")
+        slicer.app.processEvents()
+        
+        # Hide all UI elements except scissors tool
+        hide_segment_editor_ui_elements()
+        
+        # Schedule additional UI hiding attempts in case the first one doesn't catch everything
+        qt.QTimer.singleShot(1000, hide_segment_editor_ui_elements)
+        qt.QTimer.singleShot(3000, hide_segment_editor_ui_elements)
+        
+        # Set up the segmentation
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        segment_editor = segment_editor_widget.self()
+        
+        # Create new segmentation if needed
+        segmentation_node = segment_editor.parameterSetNode.GetSegmentationNode()
+        if segmentation_node is None or segmentation_node.GetSegmentation().GetNumberOfSegments() > 0:
+            segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+            segment_editor.parameterSetNode.SetAndObserveSegmentationNode(segmentation_node)
+        
+        # Name segmentation node based on the volume
+        segmentation_node.SetName(volume_node.GetName() + "_Segmentation")
+        
+        # Set source volume
+        segment_editor.parameterSetNode.SetAndObserveSourceVolumeNode(volume_node)
+        
+        # Try to automatically select the scissors tool
+        try:
+            if hasattr(segment_editor, 'effectByName'):
+                # Try different names for the scissors tool
+                scissors_names = ['Scissors', 'Cut', 'Scissor', 'Clip']
+                for name in scissors_names:
+                    scissors_effect = segment_editor.effectByName(name)
+                    if scissors_effect:
+                        segment_editor.setActiveEffect(scissors_effect)
+                        print(f"Automatically selected {name} tool")
+                        break
+                else:
+                    print("Scissors tool not found with standard names")
+        except Exception as e:
+            print(f"Could not auto-select scissors tool: {e}")
+        
+        print("Segment Editor module configured with scissors tool only")
+        print(f"Ready to segment volume: {volume_node.GetName()}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error setting up Segment Editor with scissors: {e}")
+        return False
+
+def setup_minimal_segment_editor_ui():
+    """
+    Set up the Segment Editor module with minimal UI (only the scissors tool)
+    """
+    try:
+        # First ensure we're in the Segment Editor module
+        slicer.util.selectModule("SegmentEditor")
+        slicer.app.processEvents()
+        
+        # Hide all UI elements except the scissors tool
+        hide_success = hide_segment_editor_ui_elements()
+        
+        # Automatically select the scissors tool if available
+        try:
+            segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+            segment_editor = segment_editor_widget.self()
+            
+            # Try to activate the scissors effect
+            if hasattr(segment_editor, 'effectByName'):
+                scissors_effect = segment_editor.effectByName('Scissors')
+                if scissors_effect:
+                    segment_editor.setActiveEffect(scissors_effect)
+                    print("Automatically selected scissors tool")
+                else:
+                    print("Scissors tool not found, trying alternative names")
+                    # Try alternative names
+                    for effect_name in ['Cut', 'Scissor', 'Clip']:
+                        effect = segment_editor.effectByName(effect_name)
+                        if effect:
+                            segment_editor.setActiveEffect(effect)
+                            print(f"Selected {effect_name} tool")
+                            break
+        except Exception as e:
+            print(f"Could not auto-select scissors tool: {e}")
+        
+        if hide_success:
+            print("Segment Editor module configured with minimal UI")
+            return True
+        else:
+            print("Warning: Could not fully hide all UI elements")
+            return False
+            
+    except Exception as e:
+        print(f"Error setting up minimal Segment Editor UI: {e}")
+        return False
+
+def restore_segment_editor_ui():
+    """Console helper to restore all hidden Segment Editor UI elements"""
+    try:
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        if not segment_editor_widget:
+            print("Error: Could not get Segment Editor widget")
+            return False
+        
+        # Find all widgets and make them visible
+        all_widgets = segment_editor_widget.findChildren(qt.QWidget)
+        restored_count = 0
+        
+        for widget in all_widgets:
+            if hasattr(widget, 'setVisible'):
+                widget.setVisible(True)
+                restored_count += 1
+        
+        print(f"Restored visibility for {restored_count} widgets in Segment Editor module")
+        return True
+        
+    except Exception as e:
+        print(f"Error restoring Segment Editor UI: {e}")
+        return False
+
+def main():
+    """
+    Main entry point for the workflow
+    """
+    try:
+        start_with_volume_crop()
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
