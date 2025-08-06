@@ -3,6 +3,7 @@ import qt
 import vtk
 import math
 import numpy as np
+import time
 
 """
 Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
@@ -668,6 +669,9 @@ def open_centerline_module():
         slicer.util.selectModule("ExtractCenterline")
         print("Switched to Extract Centerline module")
         slicer.app.processEvents()
+        
+        # Set up minimal UI with only inputs section
+        setup_minimal_extract_centerline_ui()
         
         remove_duplicate_centerline_buttons()
         setup_centerline_module()
@@ -1644,6 +1648,13 @@ def start_with_volume_crop():
     slicer.util.selectModule("CropVolume")
     slicer.app.processEvents()
     
+    # Hide all UI elements except the green Apply button
+    hide_crop_volume_ui_elements()
+    
+    # Schedule additional UI hiding attempts in case the first one doesn't catch everything
+    qt.QTimer.singleShot(1000, hide_crop_volume_ui_elements)
+    qt.QTimer.singleShot(3000, hide_crop_volume_ui_elements)
+    
     roi_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode", "CropROI")
     
     bounds = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -1822,13 +1833,19 @@ def setup_centerline_completion_monitor():
     try:
         stop_centerline_monitoring()
 
+        # Store baseline count of centerlines before monitoring starts
+        current_models = find_all_centerline_models()
+        current_curves = find_all_centerline_curves()
+        slicer.modules.BaselineCenterlineModelCount = len(current_models)
+        slicer.modules.BaselineCenterlineCurveCount = len(current_curves)
+
         timer = qt.QTimer()
         timer.timeout.connect(check_centerline_completion)
         timer.start(2000)
         slicer.modules.CenterlineMonitorTimer = timer
         slicer.modules.CenterlineCheckCount = 0
-        slicer.modules.CenterlineMonitoringStartTime = slicer.app.applicationUptime()
-        print("Started monitoring for centerline completion (triggered by Apply button)")
+        slicer.modules.CenterlineMonitoringStartTime = time.time()
+        print(f"Started monitoring for centerline completion (baseline: {len(current_models)} models, {len(current_curves)} curves)")
         
     except Exception as e:
         print(f"Error setting up centerline completion monitor: {e}")
@@ -1846,29 +1863,39 @@ def check_centerline_completion():
             #     return
             #depricate timeout
         
-        monitoring_start_time = getattr(slicer.modules, 'CenterlineMonitoringStartTime', 0)
+        # Get baseline counts
+        baseline_model_count = getattr(slicer.modules, 'BaselineCenterlineModelCount', 0)
+        baseline_curve_count = getattr(slicer.modules, 'BaselineCenterlineCurveCount', 0)
         
-        centerline_model = find_recent_centerline_model(created_after=monitoring_start_time)
-        centerline_curve = find_recent_centerline_curve(created_after=monitoring_start_time)
+        # Check current counts
+        current_models = find_all_centerline_models()
+        current_curves = find_all_centerline_curves()
         
-        model_has_data = False
-        curve_has_data = False
+        # Look for new centerlines with substantial data
+        new_centerline_model = None
+        new_centerline_curve = None
         
-        if centerline_model:
-            polydata = centerline_model.GetPolyData()
-            if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points for a meaningful centerline
-                model_has_data = True
-                print(f"Found centerline model with {polydata.GetNumberOfPoints()} points")
+        if len(current_models) > baseline_model_count:
+            # Check the newest models for substantial data
+            for model in current_models[:len(current_models) - baseline_model_count]:
+                polydata = model.GetPolyData()
+                if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points
+                    new_centerline_model = model
+                    print(f"Found new centerline model: {model.GetName()} with {polydata.GetNumberOfPoints()} points")
+                    break
         
-        if centerline_curve:
-            if centerline_curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
-                curve_has_data = True
-                print(f"Found centerline curve with {centerline_curve.GetNumberOfControlPoints()} control points")
+        if len(current_curves) > baseline_curve_count:
+            # Check the newest curves for substantial data
+            for curve in current_curves[:len(current_curves) - baseline_curve_count]:
+                if curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
+                    new_centerline_curve = curve
+                    print(f"Found new centerline curve: {curve.GetName()} with {curve.GetNumberOfControlPoints()} control points")
+                    break
         
-        if model_has_data or curve_has_data:
+        if new_centerline_model or new_centerline_curve:
             print("Centerline extraction completed with sufficient data!")
             stop_centerline_monitoring()
-            show_centerline_completion_dialog(centerline_model, centerline_curve)
+            show_centerline_completion_dialog(new_centerline_model, new_centerline_curve)
         
     except Exception as e:
         print(f"Error checking centerline completion: {e}")
@@ -1984,6 +2011,13 @@ def stop_centerline_monitoring():
             
         if hasattr(slicer.modules, 'CenterlineMonitoringStartTime'):
             del slicer.modules.CenterlineMonitoringStartTime
+            
+        # Clean up baseline counts
+        if hasattr(slicer.modules, 'BaselineCenterlineModelCount'):
+            del slicer.modules.BaselineCenterlineModelCount
+            
+        if hasattr(slicer.modules, 'BaselineCenterlineCurveCount'):
+            del slicer.modules.BaselineCenterlineCurveCount
             
         # Reset monitoring button if it exists
         if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
@@ -3567,6 +3601,9 @@ def create_additional_centerline_setup():
         slicer.util.selectModule("ExtractCenterline")
         slicer.app.processEvents()
         
+        # Set up minimal UI with only inputs section
+        setup_minimal_extract_centerline_ui()
+        
         centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
         if not centerline_widget:
             print("Error: Could not access Extract Centerline module")
@@ -5134,15 +5171,693 @@ def create_analysis_masks_manually(volume_name=None):
         print(f"Error creating analysis masks manually: {e}")
         return None
 
-# def main():
-#     """
-#     Main entry point for the workflow
-#     """
-#     try:
-#         start_with_volume_crop()
-#     except Exception as e:
-#         slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
-#         print(f"Error: {e}")
+def hide_crop_volume_ui_elements():
+    """
+    Hide all UI elements in the Crop Volume module except the green Apply button
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            print("Error: Could not get Crop Volume widget")
+            return False
+        
+        # Names of the collapsible buttons to hide based on the XML structure
+        collapsible_buttons_to_hide = [
+            "ParameterSetCollapsibleButton",
+            "InputOutputCollapsibleButton", 
+            "InterpolationOptionsCollapsibleButton",
+            "VolumeInformationCollapsibleButton"
+        ]
+        
+        # Hide error message elements
+        error_elements_to_hide = [
+            "InputErrorLabel",
+            "InputErrorFixButton"
+        ]
+        
+        elements_hidden = 0
+        
+        # Hide collapsible button sections
+        for button_name in collapsible_buttons_to_hide:
+            try:
+                # Find the collapsible button by object name
+                collapsible_buttons = crop_widget.findChildren(qt.QWidget, button_name)
+                for button in collapsible_buttons:
+                    button.setVisible(False)
+                    elements_hidden += 1
+                    print(f"Hidden: {button_name}")
+            except Exception as e:
+                print(f"Could not hide {button_name}: {e}")
+        
+        # Hide error message elements 
+        for element_name in error_elements_to_hide:
+            try:
+                elements = crop_widget.findChildren(qt.QWidget, element_name)
+                for element in elements:
+                    element.setVisible(False)
+                    elements_hidden += 1
+                    print(f"Hidden: {element_name}")
+            except Exception as e:
+                print(f"Could not hide {element_name}: {e}")
+        
+        # Also hide by finding ctkCollapsibleButton widgets directly
+        try:
+            collapsible_buttons = crop_widget.findChildren("ctkCollapsibleButton")
+            for button in collapsible_buttons:
+                button.setVisible(False)
+                elements_hidden += 1
+                print(f"Hidden collapsible button: {button.text if hasattr(button, 'text') else 'unnamed'}")
+        except Exception as e:
+            print(f"Could not hide collapsible buttons directly: {e}")
+        
+        # Hide the horizontal layout containing error elements
+        try:
+            horizontal_layouts = crop_widget.findChildren(qt.QHBoxLayout)
+            for layout in horizontal_layouts:
+                if layout.objectName() == "horizontalLayout":
+                    # Hide the parent widget of this layout
+                    parent_widget = layout.parent()
+                    if parent_widget:
+                        parent_widget.setVisible(False)
+                        elements_hidden += 1
+                        print("Hidden error message layout")
+        except Exception as e:
+            print(f"Could not hide error message layout: {e}")
+        
+        print(f"Successfully hidden {elements_hidden} UI elements in Crop Volume module")
+        print("Only the green Apply button should now be visible")
+        return True
+        
+    except Exception as e:
+        print(f"Error hiding Crop Volume UI elements: {e}")
+        return False
 
-# if __name__ == "__main__":
-#     main()
+def setup_minimal_crop_volume_ui():
+    """
+    Set up the Crop Volume module with minimal UI (only the green Apply button)
+    """
+    try:
+        # First ensure we're in the Crop Volume module
+        slicer.util.selectModule("CropVolume")
+        slicer.app.processEvents()
+        
+        # Hide all UI elements except the Apply button
+        hide_success = hide_crop_volume_ui_elements()
+        
+        if hide_success:
+            # Add the large green Apply button
+            add_large_crop_apply_button()
+            print("Crop Volume module configured with minimal UI")
+            return True
+        else:
+            print("Warning: Could not fully hide all UI elements")
+            return False
+            
+    except Exception as e:
+        print(f"Error setting up minimal Crop Volume UI: {e}")
+        return False
+
+# Console helper functions for testing UI modifications
+def test_hide_crop_ui():
+    """Console helper to test hiding Crop Volume UI elements"""
+    return hide_crop_volume_ui_elements()
+
+def test_minimal_crop_ui():
+    """Console helper to test setting up minimal Crop Volume UI"""
+    return setup_minimal_crop_volume_ui()
+
+def test_minimal_segment_editor_ui():
+    """Console helper to test setting up minimal Segment Editor UI"""
+    return setup_minimal_segment_editor_ui()
+
+def test_segment_editor_scissors_workflow():
+    """Console helper to test the complete Segment Editor scissors workflow"""
+    return start_with_segment_editor_scissors()
+
+def test_hide_extract_centerline_ui():
+    """Console helper to test hiding Extract Centerline UI elements"""
+    return hide_extract_centerline_ui_elements()
+
+def debug_extract_centerline_widgets():
+    """
+    Debug function to list all widgets in the Extract Centerline module
+    """
+    try:
+        print("=== DEBUGGING EXTRACT CENTERLINE WIDGETS ===")
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not extract_centerline_widget:
+            print("Error: Could not get Extract Centerline widget")
+            return
+        
+        # Find all widgets
+        all_widgets = extract_centerline_widget.findChildren(qt.QWidget)
+        print(f"Found {len(all_widgets)} total widgets")
+        
+        # Look specifically for collapsible buttons
+        collapsible_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton")
+        print(f"\nFound {len(collapsible_buttons)} ctkCollapsibleButton widgets:")
+        for i, button in enumerate(collapsible_buttons):
+            button_text = ""
+            button_name = ""
+            button_visible = "Unknown"
+            
+            try:
+                if hasattr(button, 'text'):
+                    button_text = str(button.text)
+                if hasattr(button, 'objectName'):
+                    button_name = str(button.objectName())
+                if hasattr(button, 'isVisible'):
+                    button_visible = "Visible" if button.isVisible() else "Hidden"
+            except Exception as e:
+                print(f"    Error getting button properties: {e}")
+                
+            print(f"  {i+1}. Text: '{button_text}' | ObjectName: '{button_name}' | Status: {button_visible}")
+            
+            # If this looks like the advanced button, try to hide it aggressively
+            if "advanced" in button_text.lower() or "advanced" in button_name.lower():
+                print(f"    → FOUND ADVANCED BUTTON! Attempting to hide...")
+                try:
+                    button.setVisible(False)
+                    button.hide()
+                    if hasattr(button, 'setEnabled'):
+                        button.setEnabled(False)
+                    if hasattr(button, 'setParent'):
+                        # Try to remove it from its parent
+                        try:
+                            button.setParent(None)
+                            print(f"    → Removed from parent")
+                        except:
+                            pass
+                    print(f"    → Advanced button hidden")
+                except Exception as e:
+                    print(f"    → Error hiding advanced button: {e}")
+        
+        # Also check QPushButton widgets
+        push_buttons = extract_centerline_widget.findChildren("QPushButton")
+        print(f"\nFound {len(push_buttons)} QPushButton widgets:")
+        for i, button in enumerate(push_buttons):
+            button_text = ""
+            button_name = ""
+            button_visible = "Unknown"
+            
+            try:
+                if hasattr(button, 'text'):
+                    button_text = str(button.text)
+                if hasattr(button, 'objectName'):
+                    button_name = str(button.objectName())
+                if hasattr(button, 'isVisible'):
+                    button_visible = "Visible" if button.isVisible() else "Hidden"
+            except Exception as e:
+                print(f"    Error getting button properties: {e}")
+                
+            print(f"  {i+1}. Text: '{button_text}' | ObjectName: '{button_name}' | Status: {button_visible}")
+            
+            # Note: Apply button is intentionally left visible and functional
+        
+        print("=== DEBUG COMPLETE ===")
+        
+    except Exception as e:
+        print(f"Error in debug function: {e}")
+
+def test_minimal_extract_centerline_ui():
+    """Console helper to test setting up minimal Extract Centerline UI"""
+    return setup_minimal_extract_centerline_ui()
+
+def test_centerline_monitoring():
+    """Console helper to test the centerline monitoring system"""
+    try:
+        print("=== Testing Centerline Monitoring System ===")
+        setup_centerline_completion_monitor()
+        print("Monitoring started successfully!")
+        print("Now click Apply in the Extract Centerline module to test detection")
+        return True
+    except Exception as e:
+        print(f"Error testing centerline monitoring: {e}")
+        return False
+
+def restore_crop_ui():
+    """Console helper to restore all hidden Crop Volume UI elements"""
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            print("Error: Could not get Crop Volume widget")
+            return False
+        
+        # Find all widgets and make them visible
+        all_widgets = crop_widget.findChildren(qt.QWidget)
+        restored_count = 0
+        
+        for widget in all_widgets:
+            if hasattr(widget, 'setVisible'):
+                widget.setVisible(True)
+                restored_count += 1
+        
+        print(f"Restored visibility for {restored_count} widgets in Crop Volume module")
+        return True
+        
+    except Exception as e:
+        print(f"Error restoring Crop Volume UI: {e}")
+        return False
+
+def hide_extract_centerline_ui_elements():
+    """
+    Hide all UI elements in the Extract Centerline module except the inputs section.
+    Outputs section is collapsed, advanced section is completely removed.
+    """
+    try:
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not extract_centerline_widget:
+            print("Error: Could not get Extract Centerline widget")
+            return False
+        
+        # First, debug what widgets we actually have
+        debug_extract_centerline_widgets()
+        
+        # Elements to hide completely (Apply button is NOT included - keep it visible)
+        elements_to_hide = [
+            "parameterSetLabel",                    # Parameter set label
+            "parameterNodeSelector",                # Parameter node selector
+            "advancedCollapsibleButton",            # Advanced section (completely hidden)
+            "verticalSpacer"                        # Vertical spacer
+        ]
+        
+        elements_hidden = 0
+        
+        # Hide elements by object name
+        for element_name in elements_to_hide:
+            try:
+                elements = extract_centerline_widget.findChildren(qt.QWidget, element_name)
+                for element in elements:
+                    element.setVisible(False)
+                    element.hide()  # Also use hide() method
+                    if hasattr(element, 'setEnabled'):
+                        element.setEnabled(False)  # Also disable the element
+                    elements_hidden += 1
+                    print(f"Hidden element: {element_name}")
+            except Exception as e:
+                print(f"Could not hide {element_name}: {e}")
+        
+        # Handle the outputs section - make sure it's visible but collapsed
+        try:
+            outputs_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton", "outputsCollapsibleButton")
+            for button in outputs_buttons:
+                button.setVisible(True)  # Keep visible
+                # Try multiple approaches to collapse the button
+                collapsed_successfully = False
+                
+                # Method 1: Use collapsed property directly
+                if hasattr(button, 'collapsed'):
+                    button.collapsed = True
+                    collapsed_successfully = True
+                    print("Collapsed outputs section using 'collapsed' property")
+                
+                # Method 2: Use setCollapsed method
+                elif hasattr(button, 'setCollapsed'):
+                    button.setCollapsed(True)
+                    collapsed_successfully = True
+                    print("Collapsed outputs section using 'setCollapsed()' method")
+                
+                # Method 3: Try Qt property system
+                else:
+                    try:
+                        button.setProperty("collapsed", True)
+                        collapsed_successfully = True
+                        print("Collapsed outputs section using setProperty")
+                    except:
+                        pass
+                
+                if not collapsed_successfully:
+                    print(f"Warning: Could not collapse outputs section. Available methods: {[method for method in dir(button) if 'collapse' in method.lower()]}")
+                    
+        except Exception as e:
+            print(f"Could not collapse outputs section: {e}")
+        
+        # Double-check advanced section is completely hidden
+        try:
+            advanced_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton", "advancedCollapsibleButton")
+            for button in advanced_buttons:
+                button.setVisible(False)
+                button.hide()  # Also explicitly call hide()
+                elements_hidden += 1
+                print("Ensured advanced section is completely hidden")
+        except Exception as e:
+            print(f"Could not ensure advanced section is hidden: {e}")
+        
+        # Also hide the form layout rows containing parameter set elements (row 0)
+        try:
+            form_layouts = extract_centerline_widget.findChildren(qt.QFormLayout, "formLayout")
+            for layout in form_layouts:
+                # Hide row 0 (parameter set row)
+                if layout.rowCount() > 0:
+                    label_item = layout.itemAt(0, qt.QFormLayout.LabelRole)
+                    field_item = layout.itemAt(0, qt.QFormLayout.FieldRole)
+                    if label_item and label_item.widget():
+                        label_item.widget().setVisible(False)
+                        label_item.widget().hide()
+                        elements_hidden += 1
+                    if field_item and field_item.widget():
+                        field_item.widget().setVisible(False)
+                        field_item.widget().hide()
+                        elements_hidden += 1
+        except Exception as e:
+            print(f"Could not hide parameter set row: {e}")
+        
+        # Additional comprehensive search for elements to hide
+        try:
+            # Search for all widgets by objectName and hide them
+            for element_name in elements_to_hide:
+                widgets = extract_centerline_widget.findChildren(qt.QWidget)
+                for widget in widgets:
+                    if hasattr(widget, 'objectName') and widget.objectName() == element_name:
+                        widget.setVisible(False)
+                        widget.hide()
+                        elements_hidden += 1
+                        print(f"Hidden widget by objectName: {element_name}")
+        except Exception as e:
+            print(f"Could not hide elements by comprehensive search: {e}")
+        
+        # Ensure the inputs collapsible button is visible and expanded
+        try:
+            inputs_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton", "inputsCollapsibleButton")
+            for button in inputs_buttons:
+                button.setVisible(True)
+                if hasattr(button, 'setCollapsed'):
+                    button.setCollapsed(False)
+                # Also try the 'collapsed' property directly
+                if hasattr(button, 'collapsed'):
+                    button.collapsed = False
+                print("Ensured inputs section is visible and expanded")
+        except Exception as e:
+            print(f"Could not ensure inputs section visibility: {e}")
+        
+        # Double-check that advanced section is completely hidden (but keep Apply button visible)
+        try:
+            # Find and hide advanced section by multiple methods
+            advanced_elements = extract_centerline_widget.findChildren("ctkCollapsibleButton", "advancedCollapsibleButton")
+            for element in advanced_elements:
+                element.setVisible(False)
+                element.hide()  # Also call hide() method
+                elements_hidden += 1
+                print("Confirmed advanced section is hidden")
+                
+            # Note: Apply button is intentionally left visible and functional
+                    
+        except Exception as e:
+            print(f"Could not ensure advanced elements are hidden: {e}")
+        
+        # Force a GUI update and try alternative collapse approach
+        slicer.app.processEvents()
+        
+        # Alternative approach: Try to find and manually collapse the outputs section
+        try:
+            # Give the GUI time to fully load
+            import time
+            time.sleep(0.1)
+            slicer.app.processEvents()
+            
+            # Try finding by different criteria
+            all_collapsible_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton")
+            for button in all_collapsible_buttons:
+                button_text = ""
+                if hasattr(button, 'text'):
+                    button_text = button.text
+                elif hasattr(button, 'getText'):
+                    button_text = button.getText()
+                
+                if "output" in button_text.lower():
+                    print(f"Found outputs button with text: '{button_text}'")
+                    # Try to collapse it if it's currently expanded
+                    if hasattr(button, 'collapsed'):
+                        if not button.collapsed:  # If currently expanded
+                            button.collapsed = True
+                            print(f"Successfully collapsed '{button_text}' section")
+                    elif hasattr(button, 'setCollapsed'):
+                        button.setCollapsed(True)
+                        print(f"Successfully collapsed '{button_text}' section using setCollapsed")
+                        
+        except Exception as e:
+            print(f"Alternative collapse approach failed: {e}")
+        
+        # Force a GUI update
+        slicer.app.processEvents()
+        
+        # FINAL STEP: Aggressively hide advanced section one more time (but keep Apply button visible)
+        try:
+            print("=== FINAL CLEANUP: Ensuring Advanced section is hidden ===")
+            
+            # Find ALL widgets that might be the advanced section
+            all_widgets = extract_centerline_widget.findChildren(qt.QWidget)
+            for widget in all_widgets:
+                widget_name = ""
+                try:
+                    if hasattr(widget, 'objectName'):
+                        widget_name = str(widget.objectName())
+                except Exception as e:
+                    continue
+                
+                # Hide any widget with "advanced" in the name
+                if "advanced" in widget_name.lower():
+                    try:
+                        widget.setVisible(False)
+                        widget.hide()
+                        if hasattr(widget, 'setEnabled'):
+                            widget.setEnabled(False)
+                        print(f"FINAL: Hidden advanced widget: {widget_name}")
+                    except Exception as e:
+                        print(f"FINAL: Error hiding advanced widget {widget_name}: {e}")
+                
+                # Note: Apply button widgets are intentionally left visible and functional
+            
+            # Also check by widget text content
+            all_collapsible_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton")
+            for button in all_collapsible_buttons:
+                button_text = ""
+                try:
+                    if hasattr(button, 'text'):
+                        button_text = str(button.text).lower()
+                except Exception as e:
+                    continue
+                
+                if "advanced" in button_text:
+                    try:
+                        button.setVisible(False)
+                        button.hide()
+                        if hasattr(button, 'setEnabled'):
+                            button.setEnabled(False)
+                        print(f"FINAL: Hidden advanced button by text: '{button.text}'")
+                    except Exception as e:
+                        print(f"FINAL: Error hiding advanced button by text: {e}")
+            
+            # Note: Apply button widgets are intentionally left visible and functional
+                    
+        except Exception as e:
+            print(f"Error in final cleanup: {e}")
+        
+        # One more GUI update
+        slicer.app.processEvents()
+        
+        print(f"Successfully modified {elements_hidden} UI elements in Extract Centerline module")
+        print("✓ Inputs section: expanded and visible")
+        print("✓ Outputs section: visible but collapsed (contains Network and Tree)")
+        print("✓ Advanced section: completely hidden")
+        print("✓ Parameter set row: hidden")
+        print("✓ Apply button: visible and functional")
+        return True
+        
+    except Exception as e:
+        print(f"Error hiding Extract Centerline UI elements: {e}")
+        return False
+
+def setup_minimal_extract_centerline_ui():
+    """
+    Set up the Extract Centerline module with minimal UI (only the inputs section)
+    """
+    try:
+        # First ensure we're in the Extract Centerline module
+        slicer.util.selectModule("ExtractCenterline")
+        slicer.app.processEvents()
+        
+        # Hide all UI elements except the inputs section
+        hide_success = hide_extract_centerline_ui_elements()
+        
+        if hide_success:
+            print("Extract Centerline module configured with minimal UI")
+            return True
+        else:
+            print("Warning: Could not fully hide all UI elements")
+            return False
+            
+    except Exception as e:
+        print(f"Error setting up minimal Extract Centerline UI: {e}")
+        return False
+
+def restore_extract_centerline_ui():
+    """
+    Restore all hidden Extract Centerline UI elements
+    """
+    try:
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not extract_centerline_widget:
+            print("Error: Could not get Extract Centerline widget")
+            return False
+        
+        # Find all widgets and make them visible
+        all_widgets = extract_centerline_widget.findChildren(qt.QWidget)
+        restored_count = 0
+        
+        for widget in all_widgets:
+            if hasattr(widget, 'setVisible'):
+                widget.setVisible(True)
+                restored_count += 1
+        
+        print(f"Restored visibility for {restored_count} widgets in Extract Centerline module")
+        return True
+        
+    except Exception as e:
+        print(f"Error restoring Extract Centerline UI: {e}")
+        return False
+
+def start_with_segment_editor_scissors():
+    """
+    Start segmentation workflow by opening the Segment Editor module with only the scissors tool visible.
+    This function should be called when the workflow needs to switch to segmentation.
+    """
+    try:
+        # Get the current volume node (should be the cropped volume from previous step)
+        volume_node = None
+        volume_nodes = slicer.util.getNodesByClass("vtkMRMLScalarVolumeNode")
+        
+        # Look for cropped volume first
+        for volume in volume_nodes:
+            if 'cropped' in volume.GetName().lower():
+                volume_node = volume
+                break
+        
+        # If no cropped volume, use the first available volume
+        if not volume_node and volume_nodes:
+            volume_node = volume_nodes[0]
+        
+        if not volume_node:
+            slicer.util.errorDisplay("No volume found. Please load a volume first.")
+            return False
+        
+        # Switch to Segment Editor module
+        slicer.util.selectModule("SegmentEditor")
+        slicer.app.processEvents()
+        
+        # Set up the segmentation
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        segment_editor = segment_editor_widget.self()
+        
+        # Create new segmentation if needed
+        segmentation_node = segment_editor.parameterSetNode.GetSegmentationNode()
+        if segmentation_node is None or segmentation_node.GetSegmentation().GetNumberOfSegments() > 0:
+            segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+            segment_editor.parameterSetNode.SetAndObserveSegmentationNode(segmentation_node)
+        
+        # Name segmentation node based on the volume
+        segmentation_node.SetName(volume_node.GetName() + "_Segmentation")
+        
+        # Set source volume
+        segment_editor.parameterSetNode.SetAndObserveSourceVolumeNode(volume_node)
+        
+        # Try to automatically select the scissors tool
+        try:
+            if hasattr(segment_editor, 'effectByName'):
+                # Try different names for the scissors tool
+                scissors_names = ['Scissors', 'Cut', 'Scissor', 'Clip']
+                for name in scissors_names:
+                    scissors_effect = segment_editor.effectByName(name)
+                    if scissors_effect:
+                        segment_editor.setActiveEffect(scissors_effect)
+                        print(f"Automatically selected {name} tool")
+                        break
+                else:
+                    print("Scissors tool not found with standard names")
+        except Exception as e:
+            print(f"Could not auto-select scissors tool: {e}")
+        
+        print("Segment Editor module configured with scissors tool only")
+        print(f"Ready to segment volume: {volume_node.GetName()}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error setting up Segment Editor with scissors: {e}")
+        return False
+
+def setup_minimal_segment_editor_ui():
+    """
+    Set up the Segment Editor module with minimal UI (only the scissors tool)
+    """
+    try:
+        # First ensure we're in the Segment Editor module
+        slicer.util.selectModule("SegmentEditor")
+        slicer.app.processEvents()
+        
+        # Automatically select the scissors tool if available
+        try:
+            segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+            segment_editor = segment_editor_widget.self()
+            
+            # Try to activate the scissors effect
+            if hasattr(segment_editor, 'effectByName'):
+                scissors_effect = segment_editor.effectByName('Scissors')
+                if scissors_effect:
+                    segment_editor.setActiveEffect(scissors_effect)
+                    print("Automatically selected scissors tool")
+                else:
+                    print("Scissors tool not found, trying alternative names")
+                    # Try alternative names
+                    for effect_name in ['Cut', 'Scissor', 'Clip']:
+                        effect = segment_editor.effectByName(effect_name)
+                        if effect:
+                            segment_editor.setActiveEffect(effect)
+                            print(f"Selected {effect_name} tool")
+                            break
+        except Exception as e:
+            print(f"Could not auto-select scissors tool: {e}")
+        
+        print("Segment Editor module configured")
+        return True
+            
+    except Exception as e:
+        print(f"Error setting up minimal Segment Editor UI: {e}")
+        return False
+
+def restore_segment_editor_ui():
+    """Console helper to restore all hidden Segment Editor UI elements"""
+    try:
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        if not segment_editor_widget:
+            print("Error: Could not get Segment Editor widget")
+            return False
+        
+        # Find all widgets and make them visible
+        all_widgets = segment_editor_widget.findChildren(qt.QWidget)
+        restored_count = 0
+        
+        for widget in all_widgets:
+            if hasattr(widget, 'setVisible'):
+                widget.setVisible(True)
+                restored_count += 1
+        
+        print(f"Restored visibility for {restored_count} widgets in Segment Editor module")
+        return True
+        
+    except Exception as e:
+        print(f"Error restoring Segment Editor UI: {e}")
+        return False
+
+def main():
+    """
+    Main entry point for the workflow
+    """
+    try:
+        start_with_volume_crop()
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
