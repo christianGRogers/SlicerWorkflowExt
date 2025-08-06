@@ -12,12 +12,12 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QPushButton" name="helloButton">
+    <widget class="QPushButton" name="startWorkflowButton">
      <property name="text">
-      <string>Hello World</string>
+      <string>Start Workflow</string>
      </property>
      <property name="toolTip">
-      <string>Click to print Hello World</string>
+      <string>Start Workflow</string>
      </property>
     </widget>
    </item>
