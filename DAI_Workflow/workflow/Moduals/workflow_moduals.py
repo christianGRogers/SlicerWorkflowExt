@@ -958,16 +958,55 @@ def setup_centerline_module():
                         endpoint_point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
                         endpoint_point_list.SetName("CenterlineEndpoints")
                         
-                        endpoint_set = False
-                        for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
-                            if hasattr(centerline_module.ui, endpoint_selector_attr):
-                                getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
-                                print(f"Created new endpoint point list using {endpoint_selector_attr}")
+                        # Try to find and set the endpoint selector using the XML object name
+                        endpoints_selector = None
+                        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+                        if extract_centerline_widget:
+                            # Use the exact object name from the XML
+                            endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+                            if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
+                                endpoints_selector.setCurrentNode(endpoint_point_list)
+                                print(f"✓ Set endpoint point list using endPointsMarkupsSelector from XML")
                                 endpoint_set = True
-                                break
+                            else:
+                                print("Could not find endPointsMarkupsSelector or it lacks setCurrentNode method")
                         
-                        if not endpoint_set:
-                            print("Warning: Could not find endpoint selector in centerline module")
+                        # Fallback to old method if XML-based approach failed
+                        if not endpoints_selector:
+                            endpoint_set = False
+                            for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
+                                if hasattr(centerline_module.ui, endpoint_selector_attr):
+                                    getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
+                                    print(f"Created new endpoint point list using {endpoint_selector_attr}")
+                                    endpoint_set = True
+                                    break
+                            
+                            if not endpoint_set:
+                                print("Warning: Could not find endpoint selector in centerline module")
+                        
+                        # Set this as the active node for point placement
+                        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+                        if selectionNode:
+                            selectionNode.SetActivePlaceNodeID(endpoint_point_list.GetID())
+                            print("✓ Set CenterlineEndpoints as active place node")
+                        
+                        # Enable point placement mode with multiple points
+                        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                        if interactionNode:
+                            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+                            interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+                            print("✓ Activated point placement mode with multiple control points enabled")
+                        
+                        # Try to configure the place widget
+                        if extract_centerline_widget:
+                            place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+                            if place_widget:
+                                if hasattr(place_widget, 'setCurrentNode'):
+                                    place_widget.setCurrentNode(endpoint_point_list)
+                                    print("✓ Set point list in place widget")
+                                if hasattr(place_widget, 'setPlaceModeEnabled'):
+                                    place_widget.setPlaceModeEnabled(True)
+                                    print("✓ Enabled place mode in place widget")
                         
                         for create_new_attr in ['createNewEndpointsCheckBox', 'createNewPointListCheckBox']:
                             if hasattr(centerline_module.ui, create_new_attr):
@@ -1028,10 +1067,35 @@ def setup_centerline_module():
                                 
                     except Exception as e:
                         print(f"Could not configure tree outputs (this is normal if UI elements have different names): {e}")
+                    
+                    # Force GUI update and give time for widgets to initialize
+                    slicer.app.processEvents()
+                    time.sleep(0.2)
                     slicer.app.processEvents()
                     
         print("Extract Centerline module setup complete")
         add_large_centerline_apply_button()
+        
+        # Give GUI more time to fully initialize before verification
+        slicer.app.processEvents()
+        time.sleep(0.3)
+        
+        # Verify the setup worked correctly
+        print("\n--- Verifying Extract Centerline Setup ---")
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        
+        if not verification_results["success"]:
+            print("⚠️ Initial setup verification failed, attempting fixes...")
+            fix_extract_centerline_setup_issues()
+            # Re-verify after fixes
+            time.sleep(0.2)
+            slicer.app.processEvents()
+            verification_results = verify_extract_centerline_point_list_autoselection()
+            
+            if verification_results["success"]:
+                print("✓ Issues resolved successfully!")
+            else:
+                print("⚠️ Some issues remain - manual intervention may be needed")
         
         prompt_for_endpoints()
         
@@ -5848,6 +5912,282 @@ def restore_segment_editor_ui():
     except Exception as e:
         print(f"Error restoring Segment Editor UI: {e}")
         return False
+
+def verify_extract_centerline_point_list_autoselection():
+    """
+    Verify that once the Extract Centerline module is opened:
+    1. The newly created point list (CenterlineEndpoints) is auto-selected in the GUI
+    2. The point placement tool is auto-selected 
+    3. The "place multiple control points" option is enabled
+    
+    Returns:
+        dict: Verification results with status and details
+    """
+    try:
+        print("=== VERIFYING EXTRACT CENTERLINE POINT LIST AUTO-SELECTION ===")
+        
+        # Ensure we're in the Extract Centerline module
+        current_module = slicer.util.selectedModule()
+        if current_module != "ExtractCenterline":
+            print(f"Warning: Current module is '{current_module}', switching to ExtractCenterline")
+            slicer.util.selectModule("ExtractCenterline")
+            slicer.app.processEvents()
+        
+        # Get the Extract Centerline widget
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not extract_centerline_widget:
+            return {
+                "success": False,
+                "error": "Could not get Extract Centerline widget"
+            }
+        
+        verification_results = {
+            "success": True,
+            "point_list_selected": False,
+            "point_placement_active": False,
+            "multiple_points_enabled": False,
+            "details": []
+        }
+        
+        # 1. Check if the CenterlineEndpoints point list is auto-selected
+        print("--- Checking Point List Auto-Selection ---")
+        
+        # Look for the endpoints selector (from XML: endPointsMarkupsSelector)
+        endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+        if endpoints_selector:
+            # Check if it has a currentNode method and what's selected
+            if hasattr(endpoints_selector, 'currentNode'):
+                current_node = endpoints_selector.currentNode()
+                if current_node:
+                    node_name = current_node.GetName()
+                    print(f"✓ Point list selector found with current node: '{node_name}'")
+                    if "CenterlineEndpoints" in node_name or "Endpoints" in node_name:
+                        verification_results["point_list_selected"] = True
+                        verification_results["details"].append(f"✓ Correct point list auto-selected: {node_name}")
+                    else:
+                        verification_results["details"].append(f"✗ Wrong point list selected: {node_name}")
+                else:
+                    verification_results["details"].append("✗ No point list selected in endpoints selector")
+            else:
+                verification_results["details"].append("✗ Endpoints selector doesn't have currentNode method")
+        else:
+            verification_results["details"].append("✗ Could not find endPointsMarkupsSelector widget")
+        
+        # 2. Check if the point placement tool is auto-selected
+        print("--- Checking Point Placement Tool Activation ---")
+        
+        # Look for the place widget (from XML: endPointsMarkupsPlaceWidget)
+        place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+        if place_widget:
+            print(f"✓ Found endPointsMarkupsPlaceWidget: {type(place_widget)}")
+            verification_results["details"].append("✓ Point placement widget found")
+            
+            # Check if the place widget is in active placement mode
+            if hasattr(place_widget, 'placeModeEnabled'):
+                place_mode_enabled = place_widget.placeModeEnabled
+                print(f"Place mode enabled: {place_mode_enabled}")
+                if place_mode_enabled:
+                    verification_results["point_placement_active"] = True
+                    verification_results["details"].append("✓ Point placement tool is active")
+                else:
+                    verification_results["details"].append("✗ Point placement tool is not active")
+            else:
+                verification_results["details"].append("? Could not check if point placement tool is active")
+        else:
+            verification_results["details"].append("✗ Could not find endPointsMarkupsPlaceWidget")
+        
+        # 3. Check if "place multiple control points" option is enabled
+        print("--- Checking Multiple Points Placement Mode ---")
+        
+        # Check the interaction node for place mode persistence
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            place_mode_persistence = interactionNode.GetPlaceModePersistence()
+            print(f"Place mode persistence: {place_mode_persistence}")
+            if place_mode_persistence == 1:
+                verification_results["multiple_points_enabled"] = True
+                verification_results["details"].append("✓ Multiple control points placement is enabled")
+            else:
+                verification_results["details"].append("✗ Multiple control points placement is disabled")
+            
+            # Also check current interaction mode
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            print(f"Current interaction mode: {current_mode}")
+            if current_mode == interactionNode.Place:
+                verification_results["details"].append("✓ Interaction mode is set to Place")
+            else:
+                verification_results["details"].append(f"? Interaction mode is: {current_mode}")
+        else:
+            verification_results["details"].append("✗ Could not access interaction node")
+        
+        # 4. Additional checks - verify the point list exists and is properly configured
+        print("--- Additional Point List Verification ---")
+        
+        # Look for CenterlineEndpoints point list in the scene
+        endpoints_node = slicer.util.getNode("CenterlineEndpoints")
+        if endpoints_node:
+            print(f"✓ Found CenterlineEndpoints node: {endpoints_node.GetName()}")
+            print(f"  Current point count: {endpoints_node.GetNumberOfControlPoints()}")
+            verification_results["details"].append(f"✓ CenterlineEndpoints node exists with {endpoints_node.GetNumberOfControlPoints()} points")
+            
+            # Check if it's the active markup node
+            selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+            if selectionNode:
+                active_place_node_id = selectionNode.GetActivePlaceNodeID()
+                if active_place_node_id == endpoints_node.GetID():
+                    verification_results["details"].append("✓ CenterlineEndpoints is the active place node")
+                else:
+                    active_node = slicer.mrmlScene.GetNodeByID(active_place_node_id) if active_place_node_id else None
+                    active_node_name = active_node.GetName() if active_node else "None"
+                    verification_results["details"].append(f"✗ Different node is active for placement: {active_node_name}")
+        else:
+            verification_results["details"].append("✗ CenterlineEndpoints node not found in scene")
+        
+        # 5. Summary evaluation
+        print("--- Verification Summary ---")
+        
+        all_checks_passed = (
+            verification_results["point_list_selected"] and
+            verification_results["point_placement_active"] and
+            verification_results["multiple_points_enabled"]
+        )
+        
+        verification_results["success"] = all_checks_passed
+        
+        if all_checks_passed:
+            print("🎉 ALL VERIFICATIONS PASSED!")
+            print("✓ Point list is auto-selected")
+            print("✓ Point placement tool is active")
+            print("✓ Multiple control points mode is enabled")
+        else:
+            print("⚠️ SOME VERIFICATIONS FAILED:")
+            if not verification_results["point_list_selected"]:
+                print("✗ Point list auto-selection failed")
+            if not verification_results["point_placement_active"]:
+                print("✗ Point placement tool activation failed")
+            if not verification_results["multiple_points_enabled"]:
+                print("✗ Multiple control points mode not enabled")
+        
+        # Print all details
+        print("\nDetailed Results:")
+        for detail in verification_results["details"]:
+            print(f"  {detail}")
+        
+        return verification_results
+        
+    except Exception as e:
+        print(f"Error during verification: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def setup_extract_centerline_with_verification():
+    """
+    Set up the Extract Centerline module and verify proper auto-selection functionality
+    """
+    try:
+        print("=== SETTING UP EXTRACT CENTERLINE WITH VERIFICATION ===")
+        
+        # First set up the module as usual
+        setup_centerline_module()
+        
+        # Give the GUI time to update
+        slicer.app.processEvents()
+        time.sleep(0.5)
+        
+        # Now verify the setup worked correctly
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        
+        if verification_results["success"]:
+            print("\n🎉 Extract Centerline setup and verification completed successfully!")
+            return True
+        else:
+            print("\n⚠️ Extract Centerline setup completed but verification found issues:")
+            if "error" in verification_results:
+                print(f"Error: {verification_results['error']}")
+            
+            # Try to fix common issues
+            print("\nAttempting to fix detected issues...")
+            fix_extract_centerline_setup_issues()
+            
+            # Re-verify after fixes
+            print("\nRe-verifying after fixes...")
+            verification_results = verify_extract_centerline_point_list_autoselection()
+            
+            if verification_results["success"]:
+                print("🎉 Issues fixed successfully!")
+                return True
+            else:
+                print("⚠️ Some issues could not be automatically fixed")
+                return False
+        
+    except Exception as e:
+        print(f"Error in setup with verification: {e}")
+        return False
+
+def fix_extract_centerline_setup_issues():
+    """
+    Attempt to fix common issues with Extract Centerline module setup
+    """
+    try:
+        print("--- Attempting to Fix Extract Centerline Setup Issues ---")
+        
+        # 1. Ensure CenterlineEndpoints point list exists and is selected
+        endpoints_node = slicer.util.getNode("CenterlineEndpoints")
+        if not endpoints_node:
+            print("Creating missing CenterlineEndpoints node...")
+            endpoints_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+            endpoints_node.SetName("CenterlineEndpoints")
+        
+        # 2. Set it as the active node for placement
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode and endpoints_node:
+            selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
+            print("Set CenterlineEndpoints as active place node")
+        
+        # 3. Ensure point placement mode is active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)  # Enable multiple points placement
+            print("Activated point placement mode with multiple points enabled")
+        
+        # 4. Try to set the point list in the Extract Centerline widget
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if extract_centerline_widget:
+            endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+            if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
+                endpoints_selector.setCurrentNode(endpoints_node)
+                print("Set CenterlineEndpoints in the Extract Centerline selector")
+            
+            # Also try to activate the place widget
+            place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+            if place_widget:
+                if hasattr(place_widget, 'setCurrentNode'):
+                    place_widget.setCurrentNode(endpoints_node)
+                if hasattr(place_widget, 'setPlaceModeEnabled'):
+                    place_widget.setPlaceModeEnabled(True)
+                print("Configured place widget")
+        
+        slicer.app.processEvents()
+        print("Fix attempt completed")
+        
+    except Exception as e:
+        print(f"Error fixing Extract Centerline setup: {e}")
+
+# Console helper functions for testing the verification
+def test_extract_centerline_verification():
+    """Console helper to test the Extract Centerline verification"""
+    return verify_extract_centerline_point_list_autoselection()
+
+def test_extract_centerline_setup_with_verification():
+    """Console helper to test the full setup with verification"""
+    return setup_extract_centerline_with_verification()
+
+def fix_centerline_issues():
+    """Console helper to fix Extract Centerline issues"""
+    return fix_extract_centerline_setup_issues()
 
 def main():
     """
