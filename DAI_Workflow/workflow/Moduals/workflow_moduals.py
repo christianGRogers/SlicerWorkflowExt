@@ -1493,13 +1493,19 @@ def remove_segment_from_all_segmentations(segment_name):
 def add_large_crop_apply_button():
     """
     Add a large green Apply button directly to the Crop Volume module GUI
+    Only creates the button if scissors workflow is not active
     """
     try:
+        # Check if scissors workflow is active - if so, don't create the apply button
+        if hasattr(slicer.modules, 'WorkflowScissorsButton') or hasattr(slicer.modules, 'WorkflowFinishButton'):
+            print("Scissors workflow is active - skipping original apply button creation")
+            return True
+        
         if hasattr(slicer.modules, 'CropLargeApplyButton'):
             existing_button = slicer.modules.CropLargeApplyButton
             if existing_button and existing_button.parent():
                 print("Large Apply button already exists in Crop Volume module")
-                return
+                return True
         
         def create_large_button():
             try:
@@ -6308,6 +6314,9 @@ def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
     Add scissors and finish buttons to the Crop Volume module GUI
     """
     try:
+        # First, remove/hide the original large green "APPLY CROP" button
+        remove_original_crop_apply_button(crop_widget)
+        
         # Try to get the crop module
         crop_module = None
         if hasattr(crop_widget, 'self'):
@@ -6379,6 +6388,86 @@ def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
         
     except Exception as e:
         print(f"Error adding buttons to crop module: {e}")
+        return False
+
+def remove_original_crop_apply_button(crop_widget):
+    """
+    Remove or hide the original large green "APPLY CROP" button from the Crop Volume module
+    """
+    try:
+        removed_count = 0
+        
+        # Method 1: Remove the stored reference button
+        if hasattr(slicer.modules, 'CropLargeApplyButton'):
+            button = slicer.modules.CropLargeApplyButton
+            if button and button.parent():
+                # Remove from parent layout
+                parent = button.parent()
+                if hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+                elif hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                
+                # Hide and delete the button
+                button.hide()
+                button.setParent(None)
+                
+                # Remove the reference
+                del slicer.modules.CropLargeApplyButton
+                removed_count += 1
+                print("Removed stored CropLargeApplyButton")
+        
+        # Method 2: Search for and remove any "APPLY CROP" buttons in the crop widget
+        if crop_widget:
+            all_buttons = crop_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                try:
+                    button_text = button.text if hasattr(button, 'text') else ""
+                    if button_text and "APPLY CROP" in button_text:
+                        # Remove from parent layout
+                        parent = button.parent()
+                        if parent and hasattr(parent, 'layout') and parent.layout():
+                            parent.layout().removeWidget(button)
+                        elif parent and hasattr(parent, 'removeWidget'):
+                            parent.removeWidget(button)
+                        
+                        # Hide and delete the button
+                        button.hide()
+                        button.setParent(None)
+                        removed_count += 1
+                        print(f"Removed 'APPLY CROP' button: {button_text}")
+                except Exception as e:
+                    print(f"Error removing button: {e}")
+        
+        # Method 3: Also look for and hide any other large green buttons that might be apply buttons
+        if crop_widget:
+            all_buttons = crop_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                try:
+                    button_text = button.text if hasattr(button, 'text') else ""
+                    button_style = button.styleSheet() if hasattr(button, 'styleSheet') else ""
+                    
+                    # Check if it's a large green button (likely an apply button)
+                    if (button_text and 
+                        ("apply" in button_text.lower() or "crop" in button_text.lower()) and 
+                        ("#28a745" in button_style or "background-color: #28a745" in button_style)):
+                        
+                        # Hide the button instead of removing it completely (safer)
+                        button.hide()
+                        removed_count += 1
+                        print(f"Hidden large green apply button: {button_text}")
+                except Exception as e:
+                    print(f"Error hiding button: {e}")
+        
+        if removed_count > 0:
+            print(f"Successfully removed/hidden {removed_count} original apply button(s)")
+        else:
+            print("No original apply buttons found to remove")
+        
+        return removed_count > 0
+        
+    except Exception as e:
+        print(f"Error removing original crop apply button: {e}")
         return False
 
 def create_scissors_tool_button():
@@ -6645,7 +6734,7 @@ def toggle_scissors_tool(activated):
 
 def cleanup_scissors_tool_ui():
     """
-    Clean up scissors tool UI elements
+    Clean up scissors tool UI elements and restore original crop apply button
     """
     try:
         # Clean up button
@@ -6667,6 +6756,18 @@ def cleanup_scissors_tool_ui():
             widget.setParent(None)
             del slicer.modules.WorkflowScissorsWidget
         
+        # Clean up finish button
+        if hasattr(slicer.modules, 'WorkflowFinishButton'):
+            button = slicer.modules.WorkflowFinishButton
+            if button.parent():
+                parent = button.parent()
+                if hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                elif hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+            button.setParent(None)
+            del slicer.modules.WorkflowFinishButton
+        
         # Clean up segment editor components
         if hasattr(slicer.modules, 'WorkflowSegmentEditorNode'):
             node = slicer.modules.WorkflowSegmentEditorNode
@@ -6679,14 +6780,69 @@ def cleanup_scissors_tool_ui():
             del slicer.modules.WorkflowSegmentEditorWidget
         
         # Clean up other references
-        for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive', 'WorkflowFinishButton']:
+        for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
             if hasattr(slicer.modules, attr):
                 delattr(slicer.modules, attr)
+        
+        # Restore the original crop apply button if needed
+        restore_original_crop_apply_button()
         
         print("Cleaned up scissors tool UI and components")
         
     except Exception as e:
         print(f"Error cleaning up scissors tool UI: {e}")
+
+def restore_original_crop_apply_button():
+    """
+    Restore the original large green "APPLY CROP" button to the Crop Volume module
+    """
+    try:
+        # Check if we're still in the Crop Volume module
+        current_module = slicer.util.selectedModule()
+        if current_module != "CropVolume":
+            print("Not in Crop Volume module, skipping apply button restoration")
+            return
+        
+        # Check if the button already exists
+        if hasattr(slicer.modules, 'CropLargeApplyButton'):
+            button = slicer.modules.CropLargeApplyButton
+            if button and button.parent():
+                # Button already exists and is visible
+                button.show()
+                print("Original apply button already exists, made it visible")
+                return
+        
+        # Recreate the original apply button
+        print("Recreating original APPLY CROP button...")
+        success = add_large_crop_apply_button()
+        
+        if success:
+            print("Successfully restored original APPLY CROP button")
+        else:
+            print("Could not restore original APPLY CROP button")
+        
+    except Exception as e:
+        print(f"Error restoring original crop apply button: {e}")
+
+def remove_crop_apply_button_manually():
+    """
+    Console helper function to manually remove the original crop apply button
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if crop_widget:
+            success = remove_original_crop_apply_button(crop_widget)
+            if success:
+                print("Successfully removed original crop apply button")
+            else:
+                print("No original crop apply button found to remove")
+            return success
+        else:
+            print("Crop Volume module widget not found")
+            return False
+    except Exception as e:
+        print(f"Error manually removing crop apply button: {e}")
+        return False
         
         # Automatically select the scissors tool if available
         try:
