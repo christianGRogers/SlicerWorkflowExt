@@ -28,14 +28,14 @@ class workflow(ScriptedLoadableModule):
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
         self.parent.title = _("Workflow")
-        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Examples")]
+        self.parent.categories = [translate("qSlicerAbstractCoreModule", "Scripted Modules")]
         self.parent.dependencies = []
-        self.parent.contributors = ["Your Name (Your Organization)"]
+        self.parent.contributors = ["Christian Rogers (Lawson Research Institute and Western University (So Lab))"]
         self.parent.helpText = _("""
-This is a workflow module for automated processing.
+This is a workflow module for automated vessel processing.
 """)
         self.parent.acknowledgementText = _("""
-This file was originally developed by Your Name.
+This file was originally developed by Christian Rogers (Lawson Research Institute and Western University (So Lab)).
 """)
 
 
