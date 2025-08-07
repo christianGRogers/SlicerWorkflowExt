@@ -5,8 +5,8 @@ project(DAI_Workflow)
 #-----------------------------------------------------------------------------
 # Extension meta-information
 set(EXTENSION_HOMEPAGE "https://www.slicer.org/wiki/Documentation/Nightly/Extensions/DAI_Workflow")
-set(EXTENSION_CONTRIBUTORS "John Doe (AnyWare Corp.)")
-set(EXTENSION_DESCRIPTION "This is an example of a simple extension")
+set(EXTENSION_CONTRIBUTORS "Christian Rogers (Lawson Research Institute and Western University (So Lab))")
+set(EXTENSION_DESCRIPTION "This is a workflow module for automated vessel processing.")
 set(EXTENSION_ICONURL "https://www.example.com/Slicer/Extensions/DAI_Workflow.png")
 set(EXTENSION_SCREENSHOTURLS "https://www.example.com/Slicer/Extensions/DAI_Workflow/Screenshots/1.png")
 set(EXTENSION_DEPENDS "NA") # Specified as a list or "NA" if no dependencies

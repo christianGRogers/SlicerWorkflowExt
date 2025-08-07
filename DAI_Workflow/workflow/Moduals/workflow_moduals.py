@@ -2462,6 +2462,11 @@ def setup_centerline_completion_monitor():
     try:
         stop_centerline_monitoring()
 
+        # Clear the dialog shown flag for new extraction cycle
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            del slicer.modules.CenterlineDialogShown
+            print("Cleared dialog shown flag for new extraction cycle")
+
         # Store baseline count of centerlines before monitoring starts
         current_models = find_all_centerline_models()
         current_curves = find_all_centerline_curves()
@@ -2478,6 +2483,94 @@ def setup_centerline_completion_monitor():
         
     except Exception as e:
         print(f"Error setting up centerline completion monitor: {e}")
+
+def setup_centerline_completion_monitor_without_reset(target_models=None, target_curves=None):
+    """
+    Set up monitoring to detect when specific centerlines have sufficient data without resetting baseline
+    """
+    try:
+        stop_centerline_monitoring()
+
+        # Do NOT clear the dialog flag - we want to show dialog when these centerlines get sufficient data
+        # Do NOT reset baseline - keep existing baseline from apply button monitoring
+
+        # Store the target centerlines to monitor
+        if target_models:
+            slicer.modules.TargetCenterlineModels = [model.GetID() for model in target_models]
+        if target_curves:
+            slicer.modules.TargetCenterlineCurves = [curve.GetID() for curve in target_curves]
+
+        timer = qt.QTimer()
+        timer.timeout.connect(check_specific_centerline_completion)
+        timer.start(2000)
+        slicer.modules.CenterlineMonitorTimer = timer
+        slicer.modules.CenterlineCheckCount = 0
+        slicer.modules.CenterlineMonitoringStartTime = time.time()
+        print(f"Started monitoring for specific centerline completion (tracking {len(target_models or [])} models, {len(target_curves or [])} curves)")
+        
+    except Exception as e:
+        print(f"Error setting up specific centerline completion monitor: {e}")
+
+def check_specific_centerline_completion():
+    """
+    Check if specific target centerlines now have sufficient data for dialog
+    """
+    try:
+        if hasattr(slicer.modules, 'CenterlineCheckCount'):
+            slicer.modules.CenterlineCheckCount += 1
+        
+        # Check if a dialog has already been shown for this extraction cycle
+        if hasattr(slicer.modules, 'CenterlineDialogShown') and slicer.modules.CenterlineDialogShown:
+            print("Dialog already shown for this extraction cycle - stopping specific monitoring")
+            stop_centerline_monitoring()
+            return
+        
+        # Get target centerlines to check
+        target_model_ids = getattr(slicer.modules, 'TargetCenterlineModels', [])
+        target_curve_ids = getattr(slicer.modules, 'TargetCenterlineCurves', [])
+        
+        if not target_model_ids and not target_curve_ids:
+            print("No target centerlines to monitor - stopping")
+            stop_centerline_monitoring()
+            return
+        
+        # Find the target nodes
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        target_models = [model for model in all_models if model.GetID() in target_model_ids]
+        target_curves = [curve for curve in all_curves if curve.GetID() in target_curve_ids]
+        
+        print(f"Checking specific centerlines: {len(target_models)} models, {len(target_curves)} curves")
+        
+        # Check if any target centerlines now have sufficient data
+        best_model = None
+        best_curve = None
+        
+        for model in target_models:
+            polydata = model.GetPolyData()
+            if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points
+                if not best_model or polydata.GetNumberOfPoints() > best_model.GetPolyData().GetNumberOfPoints():
+                    best_model = model
+                    print(f"Target model {model.GetName()} now has sufficient data: {polydata.GetNumberOfPoints()} points")
+        
+        for curve in target_curves:
+            if curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
+                if not best_curve or curve.GetNumberOfControlPoints() > best_curve.GetNumberOfControlPoints():
+                    best_curve = curve
+                    print(f"Target curve {curve.GetName()} now has sufficient data: {curve.GetNumberOfControlPoints()} control points")
+        
+        if best_model or best_curve:
+            print("Target centerlines now have sufficient data - showing completion dialog")
+            
+            # Mark that we're showing a dialog for this extraction cycle
+            slicer.modules.CenterlineDialogShown = True
+            
+            stop_centerline_monitoring()
+            show_centerline_completion_dialog(best_model, best_curve)
+        
+    except Exception as e:
+        print(f"Error checking specific centerline completion: {e}")
 
 def check_centerline_completion():
     """
@@ -2500,13 +2593,17 @@ def check_centerline_completion():
         current_models = find_all_centerline_models()
         current_curves = find_all_centerline_curves()
         
+        # Debug information
+        print(f"Checking centerline completion: baseline models={baseline_model_count}, current models={len(current_models)}, baseline curves={baseline_curve_count}, current curves={len(current_curves)}")
+        
         # Look for new centerlines with substantial data
         new_centerline_model = None
         new_centerline_curve = None
         
         if len(current_models) > baseline_model_count:
-            # Check the newest models for substantial data
-            for model in current_models[:len(current_models) - baseline_model_count]:
+            # Check the newest models for substantial data - slice from the end to get new ones
+            new_models_slice = current_models[baseline_model_count:]
+            for model in new_models_slice:
                 polydata = model.GetPolyData()
                 if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points
                     new_centerline_model = model
@@ -2514,8 +2611,9 @@ def check_centerline_completion():
                     break
         
         if len(current_curves) > baseline_curve_count:
-            # Check the newest curves for substantial data
-            for curve in current_curves[:len(current_curves) - baseline_curve_count]:
+            # Check the newest curves for substantial data - slice from the end to get new ones
+            new_curves_slice = current_curves[baseline_curve_count:]
+            for curve in new_curves_slice:
                 if curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
                     new_centerline_curve = curve
                     print(f"Found new centerline curve: {curve.GetName()} with {curve.GetNumberOfControlPoints()} control points")
@@ -2523,6 +2621,16 @@ def check_centerline_completion():
         
         if new_centerline_model or new_centerline_curve:
             print("Centerline extraction completed with sufficient data!")
+            
+            # Check if a dialog has already been shown for this extraction cycle
+            if hasattr(slicer.modules, 'CenterlineDialogShown') and slicer.modules.CenterlineDialogShown:
+                print("Dialog already shown for this extraction cycle - skipping duplicate")
+                stop_centerline_monitoring()
+                return
+            
+            # Mark that we're showing a dialog for this extraction cycle
+            slicer.modules.CenterlineDialogShown = True
+            
             stop_centerline_monitoring()
             show_centerline_completion_dialog(new_centerline_model, new_centerline_curve)
         
@@ -2647,6 +2755,13 @@ def stop_centerline_monitoring():
             
         if hasattr(slicer.modules, 'BaselineCenterlineCurveCount'):
             del slicer.modules.BaselineCenterlineCurveCount
+        
+        # Clean up target centerline tracking
+        if hasattr(slicer.modules, 'TargetCenterlineModels'):
+            del slicer.modules.TargetCenterlineModels
+            
+        if hasattr(slicer.modules, 'TargetCenterlineCurves'):
+            del slicer.modules.TargetCenterlineCurves
             
         # Reset monitoring button if it exists
         if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
@@ -4402,6 +4517,11 @@ def setup_apply_button_monitoring():
             timer.timeout.disconnect()
             del slicer.modules.ApplyButtonMonitorTimer
         
+        # Clear the dialog shown flag for new extraction cycle
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            del slicer.modules.CenterlineDialogShown
+            print("Cleared dialog shown flag for new extraction cycle")
+        
         # Get baseline counts before user starts
         current_models = find_all_centerline_models()
         current_curves = find_all_centerline_curves()
@@ -4461,9 +4581,46 @@ def check_for_apply_button_click():
             # Stop Apply button monitoring
             stop_apply_button_monitoring()
             
-            # Start centerline completion monitoring immediately
-            setup_centerline_completion_monitor()
-            return
+            # Check if any of the new centerlines have sufficient data
+            best_model = None
+            best_curve = None
+            
+            # Find the best new model (one with most points)
+            for model in new_models:
+                polydata = model.GetPolyData()
+                if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points
+                    if not best_model or polydata.GetNumberOfPoints() > best_model.GetPolyData().GetNumberOfPoints():
+                        best_model = model
+            
+            # Find the best new curve (one with most control points)
+            for curve in new_curves:
+                if curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
+                    if not best_curve or curve.GetNumberOfControlPoints() > best_curve.GetNumberOfControlPoints():
+                        best_curve = curve
+            
+            # If we have sufficient data, show dialog immediately
+            if best_model or best_curve:
+                print(f"Found centerlines with sufficient data - showing completion dialog")
+                if best_model:
+                    print(f"  Best model: {best_model.GetName()} with {best_model.GetPolyData().GetNumberOfPoints()} points")
+                if best_curve:
+                    print(f"  Best curve: {best_curve.GetName()} with {best_curve.GetNumberOfControlPoints()} control points")
+                
+                # Stop any existing centerline monitoring to prevent duplicate dialogs
+                stop_centerline_monitoring()
+                
+                # Mark that we're showing a dialog for this extraction cycle
+                slicer.modules.CenterlineDialogShown = True
+                
+                show_centerline_completion_dialog(best_model, best_curve)
+                return
+            else:
+                # No sufficient data yet, continue monitoring for completion
+                print("New centerlines detected but insufficient data - continuing to monitor for completion")
+                # Don't clear the dialog flag - we still want to show dialog when sufficient data is available
+                # Set up monitoring but don't reset baseline (keep existing baseline)
+                setup_centerline_completion_monitor_without_reset(new_models, new_curves)
+                return
         
         # Alternative detection: Look for recently modified nodes (processing activity)
         for model in current_models:
@@ -4551,33 +4708,299 @@ def cleanup_centerline_monitoring_button():
     except Exception as e:
         print(f"Error cleaning up centerline monitoring button: {e}")
 
-def test_multiple_centerlines_functionality():
+def test_centerline_completion_dialog():
     """
-    Test function to verify the multiple centerlines functionality works correctly
+    Console helper to manually test the centerline completion dialog
     """
     try:
-        print("=== Testing Multiple Centerlines Functionality ===")
+        print("=== Testing Centerline Completion Dialog ===")
         
-        # Test finding all centerlines
+        # Find the most recent centerlines
         all_models = find_all_centerline_models()
         all_curves = find_all_centerline_curves()
         
-        print(f"Found {len(all_models)} centerline models")
-        print(f"Found {len(all_curves)} centerline curves")
+        latest_model = all_models[-1] if all_models else None
+        latest_curve = all_curves[-1] if all_curves else None
         
-        # Test counting existing centerlines
-        count = count_existing_centerlines()
-        print(f"Existing centerline count: {count}")
-        
-        # Test getting summary
-        summary = get_centerline_summary()
-        print("Centerline summary:")
-        print(summary)
-        
-        print("=== Multiple Centerlines Functionality Test Complete ===")
+        if latest_model or latest_curve:
+            print(f"Showing dialog with latest centerlines:")
+            if latest_model:
+                print(f"  Model: {latest_model.GetName()}")
+            if latest_curve:
+                print(f"  Curve: {latest_curve.GetName()}")
+            
+            show_centerline_completion_dialog(latest_model, latest_curve)
+        else:
+            print("No centerlines found - creating test dialog anyway")
+            show_centerline_completion_dialog(None, None)
+            
+        return True
         
     except Exception as e:
-        print(f"Error testing multiple centerlines functionality: {e}")
+        print(f"Error testing centerline completion dialog: {e}")
+        return False
+
+def test_multiple_centerlines_workflow():
+    """
+    Console helper to test the multiple centerlines workflow and dialog showing
+    """
+    try:
+        print("=== Testing Multiple Centerlines Workflow ===")
+        
+        # Check current state
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        print(f"Current state: {len(all_models)} models, {len(all_curves)} curves")
+        for model in all_models:
+            polydata = model.GetPolyData()
+            points = polydata.GetNumberOfPoints() if polydata else 0
+            print(f"  Model: {model.GetName()} ({points} points)")
+        for curve in all_curves:
+            print(f"  Curve: {curve.GetName()} ({curve.GetNumberOfControlPoints()} control points)")
+        
+        # Check if monitoring is active
+        if hasattr(slicer.modules, 'ApplyButtonMonitorTimer'):
+            print("Apply button monitoring is ACTIVE")
+        else:
+            print("Apply button monitoring is NOT active")
+            
+        if hasattr(slicer.modules, 'CenterlineMonitorTimer'):
+            print("Centerline completion monitoring is ACTIVE")
+        else:
+            print("Centerline completion monitoring is NOT active")
+        
+        # Test the add more centerlines function
+        print("\nTesting add more centerlines setup...")
+        create_additional_centerline_setup()
+        
+        print("=== Test Complete ===")
+        print("Now extract a centerline to test the dialog showing")
+        
+    except Exception as e:
+        print(f"Error testing multiple centerlines workflow: {e}")
+
+def test_centerline_completion_dialog():
+    """
+    Console helper to manually test the centerline completion dialog
+    """
+    try:
+        print("=== Testing Centerline Completion Dialog ===")
+        
+        # Find the most recent centerlines
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        latest_model = all_models[-1] if all_models else None
+        latest_curve = all_curves[-1] if all_curves else None
+        
+        if latest_model or latest_curve:
+            print(f"Showing dialog with latest centerlines:")
+            if latest_model:
+                print(f"  Model: {latest_model.GetName()}")
+            if latest_curve:
+                print(f"  Curve: {latest_curve.GetName()}")
+            
+            show_centerline_completion_dialog(latest_model, latest_curve)
+        else:
+            print("No centerlines found - creating test dialog anyway")
+            show_centerline_completion_dialog(None, None)
+            
+        return True
+        
+    except Exception as e:
+        print(f"Error testing centerline completion dialog: {e}")
+        return False
+
+def force_show_completion_dialog():
+    """
+    Console helper to force show the completion dialog regardless of state
+    """
+    try:
+        # Stop any existing monitoring
+        stop_apply_button_monitoring()
+        stop_centerline_monitoring()
+        
+        # Get latest centerlines
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        latest_model = all_models[-1] if all_models else None
+        latest_curve = all_curves[-1] if all_curves else None
+        
+        print(f"Forcing completion dialog with latest centerlines...")
+        show_centerline_completion_dialog(latest_model, latest_curve)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error forcing completion dialog: {e}")
+        return False
+
+def test_specific_centerline_monitoring():
+    """
+    Console helper to test the specific centerline monitoring system
+    """
+    try:
+        print("=== Testing Specific Centerline Monitoring ===")
+        
+        # Find some existing centerlines to test with
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        if not all_models and not all_curves:
+            print("No centerlines found to test with")
+            return False
+        
+        # Use last centerlines as test targets
+        test_models = all_models[-1:] if all_models else []
+        test_curves = all_curves[-1:] if all_curves else []
+        
+        print(f"Testing with {len(test_models)} models and {len(test_curves)} curves")
+        
+        # Set up specific monitoring
+        setup_centerline_completion_monitor_without_reset(test_models, test_curves)
+        
+        print("Specific monitoring started - it should detect sufficient data and show dialog")
+        return True
+        
+    except Exception as e:
+        print(f"Error testing specific centerline monitoring: {e}")
+        return False
+
+def test_duplicate_dialog_prevention():
+    """
+    Console helper to test that duplicate dialogs are prevented
+    """
+    try:
+        print("=== Testing Duplicate Dialog Prevention ===")
+        
+        # Check current flag state
+        dialog_shown = getattr(slicer.modules, 'CenterlineDialogShown', 'Not set')
+        print(f"Current CenterlineDialogShown flag: {dialog_shown}")
+        
+        # Check monitoring states
+        apply_timer_active = hasattr(slicer.modules, 'ApplyButtonMonitorTimer')
+        completion_timer_active = hasattr(slicer.modules, 'CenterlineMonitorTimer')
+        
+        print(f"Apply button monitoring active: {apply_timer_active}")
+        print(f"Centerline completion monitoring active: {completion_timer_active}")
+        
+        if apply_timer_active and completion_timer_active:
+            print("WARNING: Both monitoring systems are active - this could cause duplicate dialogs!")
+        elif apply_timer_active:
+            print("Only apply button monitoring is active - good for additional centerlines")
+        elif completion_timer_active:
+            print("Only centerline completion monitoring is active - good for initial centerlines")
+        else:
+            print("No monitoring is active")
+        
+        # Test clearing the flag
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            del slicer.modules.CenterlineDialogShown
+            print("Cleared CenterlineDialogShown flag for testing")
+        
+        print("=== Test Complete ===")
+        return True
+        
+    except Exception as e:
+        print(f"Error testing duplicate dialog prevention: {e}")
+        return False
+
+def debug_centerline_monitoring():
+    """
+    Console helper to debug centerline monitoring state
+    """
+    try:
+        print("=== Centerline Monitoring Debug Info ===")
+        
+        # Check monitoring timers
+        apply_timer_active = hasattr(slicer.modules, 'ApplyButtonMonitorTimer')
+        completion_timer_active = hasattr(slicer.modules, 'CenterlineMonitorTimer')
+        
+        print(f"Apply button monitoring active: {apply_timer_active}")
+        print(f"Centerline completion monitoring active: {completion_timer_active}")
+        
+        # Check the dialog flag
+        dialog_shown = getattr(slicer.modules, 'CenterlineDialogShown', 'Not set')
+        print(f"Dialog shown flag: {dialog_shown}")
+        
+        # Check baseline counts
+        baseline_models = getattr(slicer.modules, 'BaselineCenterlineModelCount', 'Not set')
+        baseline_curves = getattr(slicer.modules, 'BaselineCenterlineCurveCount', 'Not set')
+        apply_baseline_models = getattr(slicer.modules, 'ApplyButtonBaselineModels', 'Not set')
+        apply_baseline_curves = getattr(slicer.modules, 'ApplyButtonBaselineCurves', 'Not set')
+        
+        print(f"Centerline monitoring baseline - Models: {baseline_models}, Curves: {baseline_curves}")
+        print(f"Apply monitoring baseline - Models: {apply_baseline_models}, Curves: {apply_baseline_curves}")
+        
+        # Check current counts
+        current_models = find_all_centerline_models()
+        current_curves = find_all_centerline_curves()
+        print(f"Current centerlines - Models: {len(current_models)}, Curves: {len(current_curves)}")
+        
+        # Check existing IDs for apply monitoring
+        existing_model_ids = getattr(slicer.modules, 'ExistingModelIDs', [])
+        existing_curve_ids = getattr(slicer.modules, 'ExistingCurveIDs', [])
+        print(f"Tracked existing IDs - Models: {len(existing_model_ids)}, Curves: {len(existing_curve_ids)}")
+        
+        # Check target centerline tracking
+        target_model_ids = getattr(slicer.modules, 'TargetCenterlineModels', [])
+        target_curve_ids = getattr(slicer.modules, 'TargetCenterlineCurves', [])
+        print(f"Target centerlines being monitored - Models: {len(target_model_ids)}, Curves: {len(target_curve_ids)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error debugging centerline monitoring: {e}")
+        return False
+
+def show_centerline_workflow_help():
+    """
+    Console helper to show help for centerline workflow and testing functions
+    """
+    help_text = """
+=== CENTERLINE WORKFLOW HELP ===
+
+The workflow supports multiple centerlines with automatic dialog showing after each extraction.
+
+WORKFLOW STEPS:
+1. Extract first centerline using Extract Centerline module
+2. After completion, dialog appears with options to retry, add more, or continue
+3. Choose "Add More Centerlines" to extract additional centerlines
+4. New centerline extraction setup is prepared automatically
+5. Repeat steps 1-4 for each additional centerline
+
+CONSOLE HELPER FUNCTIONS:
+• test_multiple_centerlines_workflow() - Test the multiple centerlines workflow
+• test_centerline_completion_dialog() - Test the completion dialog manually
+• force_show_completion_dialog() - Force show dialog with latest centerlines
+• debug_centerline_monitoring() - Debug monitoring state and baseline counts
+• test_duplicate_dialog_prevention() - Test that duplicate dialogs are prevented
+• test_specific_centerline_monitoring() - Test the specific centerline monitoring system
+• show_centerline_info() - Show information about all centerlines in scene
+• stop_monitoring() - Stop centerline completion monitoring
+• stop_apply_monitoring() - Stop apply button monitoring
+• show_centerline_workflow_help() - Show this help message
+
+TROUBLESHOOTING:
+• If dialog doesn't show after second centerline, use debug_centerline_monitoring()
+• If seeing duplicate dialogs, use test_duplicate_dialog_prevention()
+• Use force_show_completion_dialog() to manually show the dialog
+• Check console output for monitoring status and baseline count changes
+• Ensure sufficient centerline data (>10 points for models, >5 for curves)
+
+FEATURES:
+• Automatic detection of centerline extraction completion
+• Support for multiple centerlines with proper baseline tracking
+• Visual progress indication and status updates
+• Ability to retry, add more, or continue to next step
+• Robust monitoring system with fallback detection methods
+
+For more help, see the workflow module documentation.
+"""
+    print(help_text)
+    return True
 
 # Console helpers for testing
 def test_add_centerlines():
@@ -5805,7 +6228,6 @@ def test_mask_segmentation(volume_name=None):
         volume_name (str, optional): Name of the volume to use for the test
     """
     try:
-        # Example: Create a calcification mask (high density threshold)
         mask_node = create_mask_segmentation(
             mask_name="CalcificationMask",
             threshold_low=130,        # Typical calcification threshold
