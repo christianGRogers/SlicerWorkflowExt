@@ -6482,7 +6482,7 @@ def create_scissors_tool_button():
             return False
         
         # Create scissors tool button
-        scissors_button = qt.QPushButton("✂️ SCISSORS (ERASE)")
+        scissors_button = qt.QPushButton("SCISSORS (ERASE)")
         scissors_button.setCheckable(True)
         scissors_button.setChecked(False)
         scissors_button.setStyleSheet("""
@@ -6519,7 +6519,7 @@ def create_scissors_tool_button():
             crop_widget = slicer.modules.cropvolume.widgetRepresentation()
             if crop_widget:
                 # Create finish cropping button for crop module
-                finish_button = qt.QPushButton("✅ FINISH CROPPING")
+                finish_button = qt.QPushButton("FINISH CROPPING")
                 finish_button.setStyleSheet("""
                     QPushButton { 
                         background-color: #28a745; 
