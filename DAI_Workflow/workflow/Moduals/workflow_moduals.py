@@ -502,6 +502,75 @@ def on_continue_from_scissors():
     cleanup_workflow_ui()
     open_centerline_module()
 
+def on_finish_cropping():
+    """
+    Called when user clicks the finish cropping button after using scissors tool
+    """
+    try:
+        print("User clicked finish cropping - proceeding to next workflow step...")
+        
+        # First collapse/hide the crop volume GUI completely
+        collapse_crop_volume_gui()
+        
+        # Clean up scissors tool UI
+        cleanup_scissors_tool_ui()
+        
+        # Continue to the next step in the workflow
+        cleanup_workflow_ui()
+        open_centerline_module()
+        
+        print("Successfully transitioned from cropping to centerline extraction")
+        
+    except Exception as e:
+        print(f"Error in finish cropping transition: {e}")
+
+def collapse_crop_volume_gui():
+    """
+    Completely collapse/hide the Crop Volume module GUI when cropping is finished
+    """
+    try:
+        print("Collapsing Crop Volume GUI...")
+        
+        # First try to hide all UI elements
+        hide_crop_volume_ui_elements()
+        
+        # Additionally, try to collapse the entire module widget
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if crop_widget:
+            # Try to find and collapse the main collapsible sections
+            all_collapsible_buttons = crop_widget.findChildren("ctkCollapsibleButton")
+            collapsed_count = 0
+            
+            for button in all_collapsible_buttons:
+                try:
+                    if hasattr(button, 'setCollapsed'):
+                        button.setCollapsed(True)
+                        collapsed_count += 1
+                    elif hasattr(button, 'collapsed') and hasattr(button, 'setProperty'):
+                        button.setProperty('collapsed', True)
+                        collapsed_count += 1
+                except Exception as e:
+                    continue
+            
+            # Also try to minimize the main widget if possible
+            try:
+                if hasattr(crop_widget, 'setVisible'):
+                    # Don't make completely invisible, but minimize visibility
+                    crop_widget.setMaximumHeight(50)  # Minimize height
+                    print(f"Minimized Crop Volume widget height")
+            except Exception as e:
+                print(f"Could not minimize widget: {e}")
+            
+            print(f"Collapsed {collapsed_count} sections in Crop Volume module")
+            
+        # Force GUI update
+        slicer.app.processEvents()
+        
+        print("✓ Crop Volume GUI collapsed - workflow continuing to next step")
+        
+    except Exception as e:
+        print(f"Error collapsing Crop Volume GUI: {e}")
+
 def cleanup_continue_ui():
     """
     Clean up continue button UI elements
@@ -6115,7 +6184,7 @@ def create_scissors_tool_button():
             return False
         
         # Create scissors tool button
-        scissors_button = qt.QPushButton("✂️ SCISSORS TOOL")
+        scissors_button = qt.QPushButton("✂️ SCISSORS (ERASE)")
         scissors_button.setCheckable(True)
         scissors_button.setChecked(False)
         scissors_button.setStyleSheet("""
@@ -6151,8 +6220,38 @@ def create_scissors_tool_button():
             # Try to add to main toolbar
             toolbar = main_window.findChild("QToolBar", "MainToolBar")
             if toolbar:
+                # Create finish cropping button for toolbar
+                finish_button = qt.QPushButton("✅ FINISH CROPPING")
+                finish_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #28a745; 
+                        color: white; 
+                        border: none; 
+                        padding: 12px 20px; 
+                        font-weight: bold;
+                        border-radius: 6px;
+                        margin: 5px;
+                        font-size: 14px;
+                        min-height: 40px;
+                        min-width: 150px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #218838; 
+                    }
+                    QPushButton:pressed { 
+                        background-color: #1e7e34; 
+                    }
+                """)
+                finish_button.connect('clicked()', lambda: on_finish_cropping())
+                
+                # Add both buttons to toolbar
                 toolbar.addWidget(scissors_button)
-                print("Added scissors button to main toolbar")
+                toolbar.addWidget(finish_button)
+                
+                # Store finish button reference
+                slicer.modules.WorkflowFinishButton = finish_button
+                
+                print("Added scissors and finish cropping buttons to main toolbar")
             else:
                 # Create floating widget
                 create_floating_scissors_widget(scissors_button)
@@ -6173,26 +6272,55 @@ def create_scissors_tool_button():
 
 def create_floating_scissors_widget(scissors_button):
     """
-    Create a floating widget for the scissors button
+    Create a floating widget for the scissors button and finish cropping button
     """
     try:
         # Create floating widget
         floating_widget = qt.QWidget()
-        floating_widget.setWindowTitle("Workflow Scissors Tool")
+        floating_widget.setWindowTitle("Workflow Tools")
         floating_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
         
         # Set layout
         layout = qt.QVBoxLayout()
+        
+        # Add scissors button
         layout.addWidget(scissors_button)
         
+        # Create finish cropping button
+        finish_button = qt.QPushButton("✅ FINISH CROPPING")
+        finish_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 14px;
+                min-height: 40px;
+                min-width: 150px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        
+        # Connect finish button to continue workflow
+        finish_button.connect('clicked()', lambda: on_finish_cropping())
+        layout.addWidget(finish_button)
+        
         # Add instructions
-        instructions = qt.QLabel("Click to activate/deactivate scissors tool for segmentation")
+        instructions = qt.QLabel("Use scissors tool to ERASE/SUBTRACT from segmentation, then click Finish Cropping to continue")
         instructions.setWordWrap(True)
         instructions.setStyleSheet("color: #666; font-size: 12px; padding: 10px;")
         layout.addWidget(instructions)
         
         floating_widget.setLayout(layout)
-        floating_widget.resize(250, 120)
+        floating_widget.resize(250, 180)
         
         # Position in top-right corner
         main_window = slicer.util.mainWindow()
@@ -6202,10 +6330,11 @@ def create_floating_scissors_widget(scissors_button):
         
         floating_widget.show()
         
-        # Store reference
+        # Store references
         slicer.modules.WorkflowScissorsWidget = floating_widget
+        slicer.modules.WorkflowFinishButton = finish_button
         
-        print("Created floating scissors tool widget")
+        print("Created floating scissors tool widget with finish cropping button")
         
     except Exception as e:
         print(f"Error creating floating scissors widget: {e}")
@@ -6227,9 +6356,9 @@ def toggle_scissors_tool(activated):
             effect = segmentEditorWidget.activeEffect()
             
             if effect:
-                # Configure scissors tool for workflow use
+                # Configure scissors tool for workflow use - set to ERASE/SUBTRACT mode
                 if hasattr(effect, 'setParameter'):
-                    effect.setParameter("Operation", "FillInside")  # Fill inside by default
+                    effect.setParameter("Operation", "EraseInside")  # Erase inside (subtract/cut)
                 
                 # Enable slice view interactions for scissors
                 interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
@@ -6237,14 +6366,14 @@ def toggle_scissors_tool(activated):
                     interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
                 
                 slicer.modules.WorkflowScissorsActive = True
-                print("✂️ Scissors tool ACTIVATED - Ready for segmentation")
-                print("   • Click and drag in slice views to cut/fill segments")
+                print("Scissors tool ACTIVATED - Ready for ERASING/SUBTRACTING")
+                print("   • Click and drag in slice views to ERASE/CUT segments")
                 print("   • Right-click for tool options")
                 
                 # Update button appearance
                 if hasattr(slicer.modules, 'WorkflowScissorsButton'):
                     button = slicer.modules.WorkflowScissorsButton
-                    button.setText("✂️ SCISSORS ACTIVE")
+                    button.setText("✂️ SCISSORS ACTIVE (ERASE)")
                 
             else:
                 print("Error: Could not activate scissors effect")
@@ -6265,7 +6394,7 @@ def toggle_scissors_tool(activated):
             # Update button appearance
             if hasattr(slicer.modules, 'WorkflowScissorsButton'):
                 button = slicer.modules.WorkflowScissorsButton
-                button.setText("✂️ SCISSORS TOOL")
+                button.setText("✂️ SCISSORS (ERASE)")
         
         return True
         
@@ -6309,7 +6438,7 @@ def cleanup_scissors_tool_ui():
             del slicer.modules.WorkflowSegmentEditorWidget
         
         # Clean up other references
-        for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
+        for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive', 'WorkflowFinishButton']:
             if hasattr(slicer.modules, attr):
                 delattr(slicer.modules, attr)
         
@@ -6647,6 +6776,43 @@ def test_extract_centerline_setup_with_verification():
 def fix_centerline_issues():
     """Console helper to fix Extract Centerline issues"""
     return fix_extract_centerline_setup_issues()
+
+def test_scissors_and_finish_buttons():
+    """Console helper to test the scissors tool and finish cropping buttons"""
+    try:
+        print("=== Testing Scissors Tool and Finish Cropping Buttons ===")
+        
+        # Test the scissors tool setup
+        success = start_with_segment_editor_scissors()
+        
+        if success:
+            print("✓ Scissors tool and finish cropping buttons created successfully")
+            print("✓ Both buttons should be visible in the floating widget")
+            print("✓ Scissors button: Toggle ERASE/SUBTRACT segmentation tool")
+            print("✓ Finish Cropping button: Continue to next workflow step + collapse crop GUI")
+            print("")
+            print("Key Features:")
+            print("  • Scissors tool is configured for ERASING/SUBTRACTING (not adding)")
+            print("  • When Finish Cropping is clicked, Crop Volume GUI will collapse")
+            print("  • Workflow automatically transitions to centerline extraction")
+            return True
+        else:
+            print("✗ Failed to create scissors tool buttons")
+            return False
+            
+    except Exception as e:
+        print(f"Error testing scissors and finish buttons: {e}")
+        return False
+
+def test_crop_volume_collapse():
+    """Console helper to test the crop volume GUI collapse functionality"""
+    try:
+        print("=== Testing Crop Volume GUI Collapse ===")
+        collapse_crop_volume_gui()
+        return True
+    except Exception as e:
+        print(f"Error testing crop volume collapse: {e}")
+        return False
 
 def main():
     """
