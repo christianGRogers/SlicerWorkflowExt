@@ -154,7 +154,7 @@ class workflowLogic(ScriptedLoadableModuleLogic):
     def startWorkflow(self) -> None:
         #main entry point
         try:
-            workflow_mod.start_with_volume_crop()
+            workflow_mod.start_with_dicom_data()
         except Exception as e:
             slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
             print(f"Error: {e}")
