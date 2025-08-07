@@ -11,6 +11,13 @@ Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
 Christian Rogers - So Lab - Lawson - UWO (2025)
 
 I apoligise in advance for the code you are about to read but there was a bit of a time crunch
+
+UPDATE: Programmatic Segment Editor Integration
+- Replaced GUI-based Segment Editor with programmatic API
+- Added scissors tool toggle button for user control
+- No Segment Editor GUI is opened - all operations are programmatic
+- Floating UI elements for scissors control and workflow continuation
+- Scissors tool can be activated/deactivated as needed by user
 """
 
 def find_working_volume():
@@ -313,112 +320,179 @@ def show_segmentation_in_3d(segmentation_node):
 
 def load_into_segment_editor(segmentation_node, volume_node):
     """
-    Load the segmentation into the Segment Editor module and ensure proper selection
+    Load the segmentation using programmatic API instead of opening GUI
     """
-    slicer.util.selectModule("SegmentEditor")
-    remove_segment_from_all_segmentations("Segment_1")
-    slicer.app.processEvents()
-    segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation().self().editor
-    segment_editor_widget.setSegmentationNode(segmentation_node)
-    segment_editor_widget.setSourceVolumeNode(volume_node)
-    slicer.app.processEvents()
-    segmentation = segmentation_node.GetSegmentation()
-    workflow_segment_id = segmentation_node.GetAttribute("WorkflowCreatedSegmentID")
-    
-    if workflow_segment_id:
-        segment = segmentation.GetSegment(workflow_segment_id)
-        if segment:
-            segment_editor_widget.setCurrentSegmentID(workflow_segment_id)
-            print(f"Selected workflow segment (Segment_1): {workflow_segment_id}")
+    try:
+        print("Setting up programmatic segmentation workflow...")
+        
+        # Remove any existing segment from all segmentations if needed
+        remove_segment_from_all_segmentations("Segment_1")
+        
+        # Use the new programmatic approach
+        success = start_with_segment_editor_scissors()
+        
+        if not success:
+            print("Error: Could not set up programmatic segment editor")
+            return False
+        
+        # If a specific segmentation was provided, use it
+        if segmentation_node and hasattr(slicer.modules, 'WorkflowSegmentationNode'):
+            # Replace the default segmentation with the provided one
+            slicer.modules.WorkflowSegmentationNode = segmentation_node
             
+            # Update the segment editor node
+            if hasattr(slicer.modules, 'WorkflowSegmentEditorNode'):
+                segmentEditorNode = slicer.modules.WorkflowSegmentEditorNode
+                segmentEditorNode.SetAndObserveSegmentationNode(segmentation_node)
+                segmentEditorNode.SetAndObserveSourceVolumeNode(volume_node)
+                
+                # Select the first segment
+                segmentation = segmentation_node.GetSegmentation()
+                segment_ids = vtk.vtkStringArray()
+                segmentation.GetSegmentIDs(segment_ids)
+                if segment_ids.GetNumberOfValues() > 0:
+                    segment_id = segment_ids.GetValue(0)
+                    segmentEditorNode.SetSelectedSegmentID(segment_id)
+                    print(f"Selected segment: {segment_id}")
+        
+        # Enable segmentation visibility
+        if segmentation_node:
             display_node = segmentation_node.GetDisplayNode()
             if display_node:
                 display_node.SetAllSegmentsVisibility(True)
-                display_node.SetSegmentVisibility(workflow_segment_id, True)
                 display_node.SetVisibility2DOutline(True)
                 display_node.SetVisibility2DFill(True)
-        else:
-            print(f"Warning: Workflow segment {workflow_segment_id} not found, falling back to first segment")
-            segment_ids = vtk.vtkStringArray()
-            segmentation.GetSegmentIDs(segment_ids)
-            if segment_ids.GetNumberOfValues() > 0:
-                fallback_segment_id = segment_ids.GetValue(0)
-                segment_editor_widget.setCurrentSegmentID(fallback_segment_id)
-    else:
-        print("Warning: No workflow segment ID found, selecting first available segment")
-        segment_ids = vtk.vtkStringArray()
-        segmentation.GetSegmentIDs(segment_ids)
-        if segment_ids.GetNumberOfValues() > 0:
-            fallback_segment_id = segment_ids.GetValue(0)
-            segment_editor_widget.setCurrentSegmentID(fallback_segment_id)
+                print("Segmentation visibility enabled")
+        
+        # Force refresh slice views
         layout_manager = slicer.app.layoutManager()
         for sliceViewName in ['Red', 'Yellow', 'Green']:
             slice_widget = layout_manager.sliceWidget(sliceViewName)
             if slice_widget:
                 slice_view = slice_widget.sliceView()
                 slice_view.forceRender()
-    slicer.app.processEvents()
-    select_scissors_tool(segment_editor_widget)
-    add_continue_button_to_segment_editor()
-    
-    
-    print("Segmentation loaded and selected in Segment Editor module with mask visibility enabled")
-    print("Scissors tool selected - ready for cropping")
+        
+        print("Programmatic segmentation loaded - Use scissors button to activate tool")
+        print("No GUI opened - scissors tool available via workflow controls")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error loading into programmatic segment editor: {e}")
+        return False
 
-def select_scissors_tool(segment_editor_widget):
+def select_scissors_tool(segment_editor_widget=None):
     """
-    Select the Scissors tool in the Segment Editor
+    Select the Scissors tool programmatically (no GUI needed)
     """
-    scissors_effect = segment_editor_widget.effectByName("Scissors")
-    if scissors_effect:
-        segment_editor_widget.setActiveEffect(scissors_effect)
-        print("Scissors tool selected")
-    else:
-        print("Warning: Scissors tool not found")
+    try:
+        # Use the workflow's programmatic segment editor if available
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+            
+            # Activate scissors effect
+            segmentEditorWidget.setActiveEffectByName("Scissors")
+            effect = segmentEditorWidget.activeEffect()
+            
+            if effect:
+                print("Scissors tool activated programmatically")
+                
+                # Set the scissors button to active state if it exists
+                if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                    button = slicer.modules.WorkflowScissorsButton
+                    button.setChecked(True)
+                    slicer.modules.WorkflowScissorsActive = True
+                
+                return True
+            else:
+                print("Warning: Could not activate scissors effect")
+                return False
+        else:
+            print("Warning: Programmatic segment editor not available")
+            return False
+            
+    except Exception as e:
+        print(f"Error selecting scissors tool: {e}")
+        return False
 
 def add_continue_button_to_segment_editor():
     """
-    Add a prominent continue button directly to the Segment Editor interface
+    Add a continue button to the workflow (not to Segment Editor GUI since we're not using it)
     """
     try:
-        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation().self().editor
-        
-        if hasattr(segment_editor_widget, 'parent'):
-            segment_editor_main = segment_editor_widget.parent()
-            continue_button = qt.QPushButton("FINISH CROPPING - CONTINUE")
-            continue_button.setStyleSheet("""
-                QPushButton { 
-                    background-color: #28a745; 
-                    color: white; 
-                    border: none; 
-                    padding: 18px; 
-                    font-weight: bold;
-                    border-radius: 8px;
-                    margin: 15px;
-                    font-size: 16px;
-                    min-height: 60px;
-                    min-width: 300px;
-                }
-                QPushButton:hover { 
-                    background-color: #218838; 
-                    transform: scale(1.02);
-                }
-                QPushButton:pressed { 
-                    background-color: #1e7e34; 
-                }
-            """)
-            continue_button.connect('clicked()', lambda: on_continue_from_scissors())
-            if hasattr(segment_editor_main, 'layout'):
-                layout = segment_editor_main.layout()
-                if layout:
-                    # Insert the button at the top for prominence
-                    layout.insertWidget(0, continue_button)
-                    print("Added prominent green finish cropping button to Segment Editor")
-                    slicer.modules.SegmentEditorContinueButton = continue_button
-                    return
+        # Create a floating continue button since we're not using the Segment Editor GUI
+        create_continue_workflow_button()
+        print("Added continue workflow button")
         
     except Exception as e:
-        print(f"Error adding continue button to segment editor: {e}")
+        print(f"Error adding continue button: {e}")
+
+def create_continue_workflow_button():
+    """
+    Create a floating continue button for the workflow
+    """
+    try:
+        # Create continue button
+        continue_button = qt.QPushButton("FINISH SEGMENTATION - CONTINUE")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 18px; 
+                font-weight: bold;
+                border-radius: 8px;
+                margin: 15px;
+                font-size: 16px;
+                min-height: 60px;
+                min-width: 300px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+                transform: scale(1.02);
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        
+        # Connect to continue function
+        continue_button.connect('clicked()', lambda: on_continue_from_scissors())
+        
+        # Create floating widget for continue button
+        continue_widget = qt.QWidget()
+        continue_widget.setWindowTitle("Workflow Progress")
+        continue_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        
+        # Set layout
+        layout = qt.QVBoxLayout()
+        
+        # Add status label
+        status_label = qt.QLabel("Segmentation tools active. Use scissors button to edit segments.")
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet("color: #333; font-size: 14px; padding: 10px;")
+        layout.addWidget(status_label)
+        
+        layout.addWidget(continue_button)
+        continue_widget.setLayout(layout)
+        continue_widget.resize(350, 150)
+        
+        # Position in bottom-right corner
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            main_geometry = main_window.geometry()
+            continue_widget.move(main_geometry.right() - 370, main_geometry.bottom() - 200)
+        
+        continue_widget.show()
+        
+        # Store references
+        slicer.modules.WorkflowContinueButton = continue_button
+        slicer.modules.WorkflowContinueWidget = continue_widget
+        
+        print("Created continue workflow button")
+        
+    except Exception as e:
+        print(f"Error creating continue workflow button: {e}")
 
 def on_continue_from_scissors():
     """
@@ -433,21 +507,42 @@ def cleanup_continue_ui():
     Clean up continue button UI elements
     """
     try:
+        # Clean up old segment editor button if it exists
         if hasattr(slicer.modules, 'SegmentEditorContinueButton'):
             button = slicer.modules.SegmentEditorContinueButton
             if button.parent():
                 button.parent().layout().removeWidget(button)
             button.setParent(None)
             del slicer.modules.SegmentEditorContinueButton
-            print("Cleaned up continue button")
+            print("Cleaned up old continue button")
+        
+        # Clean up old dialog if it exists
         if hasattr(slicer.modules, 'SegmentEditorContinueDialog'):
             dialog = slicer.modules.SegmentEditorContinueDialog
             dialog.close()
             dialog.setParent(None)
             del slicer.modules.SegmentEditorContinueDialog
-            print("Cleaned up continue dialog")
+            print("Cleaned up old continue dialog")
+        
+        # Clean up new workflow continue button
+        if hasattr(slicer.modules, 'WorkflowContinueButton'):
+            button = slicer.modules.WorkflowContinueButton
+            button.setParent(None)
+            del slicer.modules.WorkflowContinueButton
+        
+        # Clean up new workflow continue widget
+        if hasattr(slicer.modules, 'WorkflowContinueWidget'):
+            widget = slicer.modules.WorkflowContinueWidget
+            widget.close()
+            widget.setParent(None)
+            del slicer.modules.WorkflowContinueWidget
+            print("Cleaned up workflow continue UI")
+            
+        # Also clean up scissors tool UI
+        cleanup_scissors_tool_ui()
             
     except Exception as e:
+        print(f"Error cleaning up continue UI: {e}")
         print(f"Error cleaning up continue UI: {e}")
 
 def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_color=(0.0, 1.0, 1.0), volume_node=None, volume_name=None):
@@ -5354,9 +5449,96 @@ def test_minimal_segment_editor_ui():
     """Console helper to test setting up minimal Segment Editor UI"""
     return setup_minimal_segment_editor_ui()
 
+def test_programmatic_scissors():
+    """Console helper to test the new programmatic scissors workflow"""
+    try:
+        print("=== Testing New Programmatic Scissors Workflow ===")
+        print("This test demonstrates the updated workflow that uses Segment Editor API")
+        print("without opening the GUI, and provides a scissors tool button.")
+        print("")
+        
+        # Run the main test
+        success = test_segment_editor_scissors_workflow()
+        
+        if success:
+            print("")
+            print("🎉 SUCCESS! The programmatic scissors workflow is working.")
+            print("")
+            print("What you should see:")
+            print("• A floating scissors tool button (✂️ SCISSORS TOOL)")
+            print("• A floating continue workflow button")
+            print("• No Segment Editor GUI opened")
+            print("")
+            print("How to use:")
+            print("1. Click the scissors button to activate the tool")
+            print("2. Draw in slice views to edit segmentation")
+            print("3. Click scissors button again to deactivate")
+            print("4. Click 'FINISH SEGMENTATION - CONTINUE' when done")
+            print("")
+            print("To clean up: run cleanup_all_workflow_scissors_ui()")
+        
+        return success
+        
+    except Exception as e:
+        print(f"Error in programmatic scissors test: {e}")
+        return False
+
 def test_segment_editor_scissors_workflow():
     """Console helper to test the complete Segment Editor scissors workflow"""
-    return start_with_segment_editor_scissors()
+    try:
+        print("=== Testing Programmatic Segment Editor Scissors Workflow ===")
+        
+        # Test the main function
+        success = start_with_segment_editor_scissors()
+        
+        if success:
+            print("✓ Programmatic segment editor setup successful")
+            print("✓ Scissors tool button should be visible")
+            print("✓ Continue workflow button should be visible")
+            print("")
+            print("Next steps:")
+            print("1. Click the scissors tool button to activate/deactivate")
+            print("2. Use slice views to edit segmentation")
+            print("3. Click 'FINISH SEGMENTATION - CONTINUE' when done")
+        else:
+            print("✗ Failed to set up programmatic segment editor")
+        
+        return success
+        
+    except Exception as e:
+        print(f"Error testing scissors workflow: {e}")
+        return False
+
+def test_scissors_toggle():
+    """Console helper to test scissors tool toggle"""
+    try:
+        if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+            button = slicer.modules.WorkflowScissorsButton
+            current_state = button.isChecked()
+            print(f"Current scissors state: {'ACTIVE' if current_state else 'INACTIVE'}")
+            
+            # Toggle the state
+            button.setChecked(not current_state)
+            print(f"Toggled scissors to: {'ACTIVE' if not current_state else 'INACTIVE'}")
+            
+            return True
+        else:
+            print("Scissors button not found. Run test_segment_editor_scissors_workflow() first.")
+            return False
+            
+    except Exception as e:
+        print(f"Error testing scissors toggle: {e}")
+        return False
+
+def cleanup_all_workflow_scissors_ui():
+    """Console helper to clean up all scissors workflow UI"""
+    try:
+        cleanup_continue_ui()
+        print("All scissors workflow UI cleaned up")
+        return True
+    except Exception as e:
+        print(f"Error cleaning up scissors workflow UI: {e}")
+        return False
 
 def test_hide_extract_centerline_ui():
     """Console helper to test hiding Extract Centerline UI elements"""
@@ -5783,8 +5965,8 @@ def restore_extract_centerline_ui():
 
 def start_with_segment_editor_scissors():
     """
-    Start segmentation workflow by opening the Segment Editor module with only the scissors tool visible.
-    This function should be called when the workflow needs to switch to segmentation.
+    Start segmentation workflow using programmatic Segment Editor API without opening GUI.
+    Creates a scissors tool button for user control.
     """
     try:
         # Get the current volume node (should be the cropped volume from previous step)
@@ -5802,52 +5984,65 @@ def start_with_segment_editor_scissors():
             volume_node = volume_nodes[0]
         
         if not volume_node:
-            slicer.util.errorDisplay("No volume found. Please load a volume first.")
+            print("Error: No volume found. Please load a volume first.")
             return False
         
-        # Switch to Segment Editor module
-        slicer.util.selectModule("SegmentEditor")
-        slicer.app.processEvents()
+        # Create or get segmentation node
+        segmentation_node = None
+        existing_segmentations = slicer.util.getNodesByClass("vtkMRMLSegmentationNode")
         
-        # Set up the segmentation
-        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
-        segment_editor = segment_editor_widget.self()
+        # Look for existing workflow segmentation
+        for seg in existing_segmentations:
+            if "Workflow" in seg.GetName() or volume_node.GetName() in seg.GetName():
+                segmentation_node = seg
+                break
         
-        # Create new segmentation if needed
-        segmentation_node = segment_editor.parameterSetNode.GetSegmentationNode()
-        if segmentation_node is None or segmentation_node.GetSegmentation().GetNumberOfSegments() > 0:
+        # Create new segmentation if none found
+        if not segmentation_node:
             segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
-            segment_editor.parameterSetNode.SetAndObserveSegmentationNode(segmentation_node)
+            segmentation_node.SetName(f"{volume_node.GetName()}_WorkflowSegmentation")
+            
+            # Create a default segment
+            segmentation = segmentation_node.GetSegmentation()
+            segment_id = segmentation.AddEmptySegment("Segment_1")
+            segment = segmentation.GetSegment(segment_id)
+            segment.SetColor(1.0, 0.0, 0.0)  # Red color
         
-        # Name segmentation node based on the volume
-        segmentation_node.SetName(volume_node.GetName() + "_Segmentation")
+        # Set up programmatic segment editor (no GUI)
+        segmentEditorNode = slicer.vtkMRMLSegmentEditorNode()
+        slicer.mrmlScene.AddNode(segmentEditorNode)
+        segmentEditorNode.SetAndObserveSegmentationNode(segmentation_node)
+        segmentEditorNode.SetAndObserveSourceVolumeNode(volume_node)
         
-        # Set source volume
-        segment_editor.parameterSetNode.SetAndObserveSourceVolumeNode(volume_node)
+        # Get the first segment ID
+        segmentation = segmentation_node.GetSegmentation()
+        segment_ids = vtk.vtkStringArray()
+        segmentation.GetSegmentIDs(segment_ids)
+        if segment_ids.GetNumberOfValues() > 0:
+            segment_id = segment_ids.GetValue(0)
+            segmentEditorNode.SetSelectedSegmentID(segment_id)
         
-        # Try to automatically select the scissors tool
-        try:
-            if hasattr(segment_editor, 'effectByName'):
-                # Try different names for the scissors tool
-                scissors_names = ['Scissors', 'Cut', 'Scissor', 'Clip']
-                for name in scissors_names:
-                    scissors_effect = segment_editor.effectByName(name)
-                    if scissors_effect:
-                        segment_editor.setActiveEffect(scissors_effect)
-                        print(f"Automatically selected {name} tool")
-                        break
-                else:
-                    print("Scissors tool not found with standard names")
-        except Exception as e:
-            print(f"Could not auto-select scissors tool: {e}")
+        # Create invisible segment editor widget for API access
+        segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
+        segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
+        segmentEditorWidget.setMRMLSegmentEditorNode(segmentEditorNode)
         
-        print("Segment Editor module configured with scissors tool only")
-        print(f"Ready to segment volume: {volume_node.GetName()}")
+        # Store references for scissors tool control
+        slicer.modules.WorkflowSegmentEditorNode = segmentEditorNode
+        slicer.modules.WorkflowSegmentEditorWidget = segmentEditorWidget
+        slicer.modules.WorkflowSegmentationNode = segmentation_node
+        slicer.modules.WorkflowScissorsActive = False
+        
+        # Create scissors tool button in the workflow UI
+        create_scissors_tool_button()
+        
+        print(f"Programmatic segment editor set up for volume: {volume_node.GetName()}")
+        print("Scissors tool available via workflow button - no GUI opened")
         
         return True
         
     except Exception as e:
-        print(f"Error setting up Segment Editor with scissors: {e}")
+        print(f"Error setting up programmatic segment editor: {e}")
         return False
 
 def setup_minimal_segment_editor_ui():
@@ -5858,6 +6053,270 @@ def setup_minimal_segment_editor_ui():
         # First ensure we're in the Segment Editor module
         slicer.util.selectModule("SegmentEditor")
         slicer.app.processEvents()
+        
+        # Get the segment editor widget
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        if not segment_editor_widget:
+            print("Error: Could not get Segment Editor widget")
+            return False
+        
+        # Hide all effect buttons except scissors
+        try:
+            # Find all effect buttons and hide them except scissors
+            all_buttons = segment_editor_widget.findChildren("QPushButton")
+            hidden_count = 0
+            
+            for button in all_buttons:
+                button_text = button.text if hasattr(button, 'text') else ""
+                button_name = button.objectName if hasattr(button, 'objectName') else ""
+                
+                # Keep only scissors tool button visible
+                if not any(keyword in button_text.lower() or keyword in button_name.lower() 
+                          for keyword in ['scissor', 'cut', 'clip']):
+                    if button_text and 'apply' not in button_text.lower():
+                        button.hide()
+                        hidden_count += 1
+            
+            print(f"Hidden {hidden_count} effect buttons, keeping scissors tool visible")
+            
+        except Exception as e:
+            print(f"Error hiding effect buttons: {e}")
+        
+        # Hide other UI sections we don't need
+        try:
+            # Hide segments section (we'll manage segments programmatically)
+            collapsible_buttons = segment_editor_widget.findChildren("ctkCollapsibleButton")
+            for button in collapsible_buttons:
+                button_text = button.text if hasattr(button, 'text') else ""
+                if 'segment' in button_text.lower() and 'editor' not in button_text.lower():
+                    button.collapsed = True
+                    button.hide()
+            
+            print("Minimized Segment Editor UI - scissors tool ready")
+            
+        except Exception as e:
+            print(f"Error minimizing UI: {e}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error setting up minimal Segment Editor UI: {e}")
+        return False
+
+def create_scissors_tool_button():
+    """
+    Create a scissors tool toggle button for the workflow UI
+    """
+    try:
+        # Find a suitable parent widget (main window or workflow panel)
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            print("Error: Could not find main window for scissors button")
+            return False
+        
+        # Create scissors tool button
+        scissors_button = qt.QPushButton("✂️ SCISSORS TOOL")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
+        scissors_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #007bff; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 14px;
+                min-height: 40px;
+                min-width: 150px;
+            }
+            QPushButton:hover { 
+                background-color: #0056b3; 
+            }
+            QPushButton:checked { 
+                background-color: #dc3545; 
+                border: 2px solid #c82333;
+            }
+            QPushButton:checked:hover { 
+                background-color: #c82333; 
+            }
+        """)
+        
+        # Connect button to toggle function
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool(checked))
+        
+        # Add button to main toolbar or create floating widget
+        try:
+            # Try to add to main toolbar
+            toolbar = main_window.findChild("QToolBar", "MainToolBar")
+            if toolbar:
+                toolbar.addWidget(scissors_button)
+                print("Added scissors button to main toolbar")
+            else:
+                # Create floating widget
+                create_floating_scissors_widget(scissors_button)
+                
+        except Exception as e:
+            print(f"Could not add to toolbar, creating floating widget: {e}")
+            create_floating_scissors_widget(scissors_button)
+        
+        # Store button reference
+        slicer.modules.WorkflowScissorsButton = scissors_button
+        
+        print("Scissors tool button created and ready")
+        return True
+        
+    except Exception as e:
+        print(f"Error creating scissors tool button: {e}")
+        return False
+
+def create_floating_scissors_widget(scissors_button):
+    """
+    Create a floating widget for the scissors button
+    """
+    try:
+        # Create floating widget
+        floating_widget = qt.QWidget()
+        floating_widget.setWindowTitle("Workflow Scissors Tool")
+        floating_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        
+        # Set layout
+        layout = qt.QVBoxLayout()
+        layout.addWidget(scissors_button)
+        
+        # Add instructions
+        instructions = qt.QLabel("Click to activate/deactivate scissors tool for segmentation")
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: #666; font-size: 12px; padding: 10px;")
+        layout.addWidget(instructions)
+        
+        floating_widget.setLayout(layout)
+        floating_widget.resize(250, 120)
+        
+        # Position in top-right corner
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            main_geometry = main_window.geometry()
+            floating_widget.move(main_geometry.right() - 270, main_geometry.top() + 100)
+        
+        floating_widget.show()
+        
+        # Store reference
+        slicer.modules.WorkflowScissorsWidget = floating_widget
+        
+        print("Created floating scissors tool widget")
+        
+    except Exception as e:
+        print(f"Error creating floating scissors widget: {e}")
+
+def toggle_scissors_tool(activated):
+    """
+    Toggle the scissors tool on/off programmatically
+    """
+    try:
+        if not hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            print("Error: Segment editor not initialized. Run start_with_segment_editor_scissors() first.")
+            return False
+        
+        segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if activated:
+            # Activate scissors tool
+            segmentEditorWidget.setActiveEffectByName("Scissors")
+            effect = segmentEditorWidget.activeEffect()
+            
+            if effect:
+                # Configure scissors tool for workflow use
+                if hasattr(effect, 'setParameter'):
+                    effect.setParameter("Operation", "FillInside")  # Fill inside by default
+                
+                # Enable slice view interactions for scissors
+                interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                if interactionNode:
+                    interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+                
+                slicer.modules.WorkflowScissorsActive = True
+                print("✂️ Scissors tool ACTIVATED - Ready for segmentation")
+                print("   • Click and drag in slice views to cut/fill segments")
+                print("   • Right-click for tool options")
+                
+                # Update button appearance
+                if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                    button = slicer.modules.WorkflowScissorsButton
+                    button.setText("✂️ SCISSORS ACTIVE")
+                
+            else:
+                print("Error: Could not activate scissors effect")
+                return False
+                
+        else:
+            # Deactivate scissors tool
+            segmentEditorWidget.setActiveEffectByName("")  # Clear active effect
+            
+            # Return to normal interaction mode
+            interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+            if interactionNode:
+                interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            
+            slicer.modules.WorkflowScissorsActive = False
+            print("Scissors tool DEACTIVATED - Normal navigation mode")
+            
+            # Update button appearance
+            if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                button = slicer.modules.WorkflowScissorsButton
+                button.setText("✂️ SCISSORS TOOL")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error toggling scissors tool: {e}")
+        return False
+
+def cleanup_scissors_tool_ui():
+    """
+    Clean up scissors tool UI elements
+    """
+    try:
+        # Clean up button
+        if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+            button = slicer.modules.WorkflowScissorsButton
+            if button.parent():
+                parent = button.parent()
+                if hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                elif hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+            button.setParent(None)
+            del slicer.modules.WorkflowScissorsButton
+        
+        # Clean up floating widget
+        if hasattr(slicer.modules, 'WorkflowScissorsWidget'):
+            widget = slicer.modules.WorkflowScissorsWidget
+            widget.close()
+            widget.setParent(None)
+            del slicer.modules.WorkflowScissorsWidget
+        
+        # Clean up segment editor components
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorNode'):
+            node = slicer.modules.WorkflowSegmentEditorNode
+            slicer.mrmlScene.RemoveNode(node)
+            del slicer.modules.WorkflowSegmentEditorNode
+        
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            widget = slicer.modules.WorkflowSegmentEditorWidget
+            widget.setParent(None)
+            del slicer.modules.WorkflowSegmentEditorWidget
+        
+        # Clean up other references
+        for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+        
+        print("Cleaned up scissors tool UI and components")
+        
+    except Exception as e:
+        print(f"Error cleaning up scissors tool UI: {e}")
         
         # Automatically select the scissors tool if available
         try:
