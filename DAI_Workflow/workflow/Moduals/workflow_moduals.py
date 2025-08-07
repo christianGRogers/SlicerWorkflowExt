@@ -11,6 +11,13 @@ Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
 Christian Rogers - So Lab - Lawson - UWO (2025)
 
 I apoligise in advance for the code you are about to read but there was a bit of a time crunch
+
+UPDATE: Programmatic Segment Editor Integration
+- Replaced GUI-based Segment Editor with programmatic API
+- Added scissors tool toggle button for user control
+- No Segment Editor GUI is opened - all operations are programmatic
+- Floating UI elements for scissors control and workflow continuation
+- Scissors tool can be activated/deactivated as needed by user
 """
 
 def find_working_volume():
@@ -313,112 +320,310 @@ def show_segmentation_in_3d(segmentation_node):
 
 def load_into_segment_editor(segmentation_node, volume_node):
     """
-    Load the segmentation into the Segment Editor module and ensure proper selection
+    Load the segmentation using programmatic API instead of opening GUI
     """
-    slicer.util.selectModule("SegmentEditor")
-    remove_segment_from_all_segmentations("Segment_1")
-    slicer.app.processEvents()
-    segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation().self().editor
-    segment_editor_widget.setSegmentationNode(segmentation_node)
-    segment_editor_widget.setSourceVolumeNode(volume_node)
-    slicer.app.processEvents()
-    segmentation = segmentation_node.GetSegmentation()
-    workflow_segment_id = segmentation_node.GetAttribute("WorkflowCreatedSegmentID")
-    
-    if workflow_segment_id:
-        segment = segmentation.GetSegment(workflow_segment_id)
-        if segment:
-            segment_editor_widget.setCurrentSegmentID(workflow_segment_id)
-            print(f"Selected workflow segment (Segment_1): {workflow_segment_id}")
+    try:
+        print("Setting up programmatic segmentation workflow...")
+        
+        # Remove any existing segment from all segmentations if needed
+        remove_segment_from_all_segmentations("Segment_1")
+        
+        # Use the new programmatic approach
+        success = start_with_segment_editor_scissors()
+        
+        if not success:
+            print("Error: Could not set up programmatic segment editor")
+            return False
+        
+        # If a specific segmentation was provided, use it
+        if segmentation_node and hasattr(slicer.modules, 'WorkflowSegmentationNode'):
+            # Replace the default segmentation with the provided one
+            slicer.modules.WorkflowSegmentationNode = segmentation_node
             
+            # Update the segment editor node
+            if hasattr(slicer.modules, 'WorkflowSegmentEditorNode'):
+                segmentEditorNode = slicer.modules.WorkflowSegmentEditorNode
+                segmentEditorNode.SetAndObserveSegmentationNode(segmentation_node)
+                segmentEditorNode.SetAndObserveSourceVolumeNode(volume_node)
+                
+                # Select the first segment
+                segmentation = segmentation_node.GetSegmentation()
+                segment_ids = vtk.vtkStringArray()
+                segmentation.GetSegmentIDs(segment_ids)
+                if segment_ids.GetNumberOfValues() > 0:
+                    segment_id = segment_ids.GetValue(0)
+                    segmentEditorNode.SetSelectedSegmentID(segment_id)
+                    print(f"Selected segment: {segment_id}")
+        
+        # Enable segmentation visibility
+        if segmentation_node:
             display_node = segmentation_node.GetDisplayNode()
             if display_node:
                 display_node.SetAllSegmentsVisibility(True)
-                display_node.SetSegmentVisibility(workflow_segment_id, True)
                 display_node.SetVisibility2DOutline(True)
                 display_node.SetVisibility2DFill(True)
-        else:
-            print(f"Warning: Workflow segment {workflow_segment_id} not found, falling back to first segment")
-            segment_ids = vtk.vtkStringArray()
-            segmentation.GetSegmentIDs(segment_ids)
-            if segment_ids.GetNumberOfValues() > 0:
-                fallback_segment_id = segment_ids.GetValue(0)
-                segment_editor_widget.setCurrentSegmentID(fallback_segment_id)
-    else:
-        print("Warning: No workflow segment ID found, selecting first available segment")
-        segment_ids = vtk.vtkStringArray()
-        segmentation.GetSegmentIDs(segment_ids)
-        if segment_ids.GetNumberOfValues() > 0:
-            fallback_segment_id = segment_ids.GetValue(0)
-            segment_editor_widget.setCurrentSegmentID(fallback_segment_id)
+                print("Segmentation visibility enabled")
+        
+        # Force refresh slice views
         layout_manager = slicer.app.layoutManager()
         for sliceViewName in ['Red', 'Yellow', 'Green']:
             slice_widget = layout_manager.sliceWidget(sliceViewName)
             if slice_widget:
                 slice_view = slice_widget.sliceView()
                 slice_view.forceRender()
-    slicer.app.processEvents()
-    select_scissors_tool(segment_editor_widget)
-    add_continue_button_to_segment_editor()
-    
-    
-    print("Segmentation loaded and selected in Segment Editor module with mask visibility enabled")
-    print("Scissors tool selected - ready for cropping")
+        
+        print("Programmatic segmentation loaded - Use scissors button to activate tool")
+        print("No GUI opened - scissors tool available via workflow controls")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error loading into programmatic segment editor: {e}")
+        return False
 
-def select_scissors_tool(segment_editor_widget):
+def select_scissors_tool(segment_editor_widget=None):
     """
-    Select the Scissors tool in the Segment Editor
+    Select the Scissors tool programmatically (no GUI needed)
     """
-    scissors_effect = segment_editor_widget.effectByName("Scissors")
-    if scissors_effect:
-        segment_editor_widget.setActiveEffect(scissors_effect)
-        print("Scissors tool selected")
-    else:
-        print("Warning: Scissors tool not found")
+    try:
+        # Use the workflow's programmatic segment editor if available
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+            
+            # Activate scissors effect
+            segmentEditorWidget.setActiveEffectByName("Scissors")
+            effect = segmentEditorWidget.activeEffect()
+            
+            if effect:
+                print("Scissors tool activated programmatically")
+                
+                # Set the scissors button to active state if it exists
+                if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                    button = slicer.modules.WorkflowScissorsButton
+                    button.setChecked(True)
+                    slicer.modules.WorkflowScissorsActive = True
+                
+                return True
+            else:
+                print("Warning: Could not activate scissors effect")
+                return False
+        else:
+            print("Warning: Programmatic segment editor not available")
+            return False
+            
+    except Exception as e:
+        print(f"Error selecting scissors tool: {e}")
+        return False
 
 def add_continue_button_to_segment_editor():
     """
-    Add a prominent continue button directly to the Segment Editor interface
+    Add a continue button to the workflow (not to Segment Editor GUI since we're not using it)
     """
     try:
-        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation().self().editor
-        
-        if hasattr(segment_editor_widget, 'parent'):
-            segment_editor_main = segment_editor_widget.parent()
-            continue_button = qt.QPushButton("FINISH CROPPING - CONTINUE")
-            continue_button.setStyleSheet("""
-                QPushButton { 
-                    background-color: #28a745; 
-                    color: white; 
-                    border: none; 
-                    padding: 18px; 
-                    font-weight: bold;
-                    border-radius: 8px;
-                    margin: 15px;
-                    font-size: 16px;
-                    min-height: 60px;
-                    min-width: 300px;
-                }
-                QPushButton:hover { 
-                    background-color: #218838; 
-                    transform: scale(1.02);
-                }
-                QPushButton:pressed { 
-                    background-color: #1e7e34; 
-                }
-            """)
-            continue_button.connect('clicked()', lambda: on_continue_from_scissors())
-            if hasattr(segment_editor_main, 'layout'):
-                layout = segment_editor_main.layout()
-                if layout:
-                    # Insert the button at the top for prominence
-                    layout.insertWidget(0, continue_button)
-                    print("Added prominent green finish cropping button to Segment Editor")
-                    slicer.modules.SegmentEditorContinueButton = continue_button
-                    return
+        # Create a floating continue button since we're not using the Segment Editor GUI
+        create_continue_workflow_button()
+        print("Added continue workflow button")
         
     except Exception as e:
-        print(f"Error adding continue button to segment editor: {e}")
+        print(f"Error adding continue button: {e}")
+
+def create_continue_workflow_button():
+    """
+    Create a continue button and add it to the Crop Volume module GUI
+    """
+    try:
+        # Get the crop volume module widget
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            print("Warning: Crop Volume module not available, creating floating continue button")
+            create_floating_continue_button()
+            return
+        
+        # Create continue button
+        continue_button = qt.QPushButton("FINISH SEGMENTATION - CONTINUE")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: 2px solid #1e7e34; 
+                padding: 18px; 
+                font-weight: bold;
+                border-radius: 8px;
+                margin: 5px;
+                font-size: 16px;
+                min-height: 60px;
+                min-width: 300px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+                border: 2px solid #155724;
+                transform: scale(1.02);
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+                border: 2px solid #0f4c2c;
+            }
+        """)
+        
+        # Connect to continue function
+        continue_button.connect('clicked()', lambda: on_continue_from_scissors())
+        
+        # Add status label
+        status_label = qt.QLabel("Segmentation tools active. Use scissors button to edit segments.")
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet("color: #333; font-size: 14px; padding: 10px; font-weight: bold;")
+        
+        # Create container for continue workflow elements
+        continue_container = qt.QWidget()
+        continue_layout = qt.QVBoxLayout(continue_container)
+        continue_layout.addWidget(status_label)
+        continue_layout.addWidget(continue_button)
+        
+        # Try to add to the crop module GUI
+        success = add_continue_button_to_crop_module(crop_widget, continue_container)
+        
+        if success:
+            # Store references
+            slicer.modules.WorkflowContinueButton = continue_button
+            slicer.modules.WorkflowContinueWidget = continue_container
+            print("Added continue workflow button to Crop Volume module GUI")
+        else:
+            # Fallback to floating widget
+            print("Could not add to Crop Volume module, creating floating continue button")
+            create_floating_continue_button()
+        
+    except Exception as e:
+        print(f"Error creating continue workflow button: {e}")
+        # Fallback to floating widget
+        create_floating_continue_button()
+
+def create_floating_continue_button():
+    """
+    Create a floating continue button as fallback
+    """
+    try:
+        # Create continue button
+        continue_button = qt.QPushButton("FINISH SEGMENTATION - CONTINUE")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 18px; 
+                font-weight: bold;
+                border-radius: 8px;
+                margin: 15px;
+                font-size: 16px;
+                min-height: 60px;
+                min-width: 300px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+                transform: scale(1.02);
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        
+        # Connect to continue function
+        continue_button.connect('clicked()', lambda: on_continue_from_scissors())
+        
+        # Create floating widget for continue button
+        continue_widget = qt.QWidget()
+        continue_widget.setWindowTitle("Workflow Progress")
+        continue_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        
+        # Set layout
+        layout = qt.QVBoxLayout()
+        
+        # Add status label
+        status_label = qt.QLabel("Segmentation tools active. Use scissors button to edit segments.")
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet("color: #333; font-size: 14px; padding: 10px;")
+        layout.addWidget(status_label)
+        
+        layout.addWidget(continue_button)
+        continue_widget.setLayout(layout)
+        continue_widget.resize(350, 150)
+        
+        # Position in bottom-right corner
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            main_geometry = main_window.geometry()
+            continue_widget.move(main_geometry.right() - 370, main_geometry.bottom() - 200)
+        
+        continue_widget.show()
+        
+        # Store references
+        slicer.modules.WorkflowContinueButton = continue_button
+        slicer.modules.WorkflowContinueWidget = continue_widget
+        
+        print("Created floating continue workflow button")
+        
+    except Exception as e:
+        print(f"Error creating floating continue workflow button: {e}")
+
+def add_continue_button_to_crop_module(crop_widget, continue_container):
+    """
+    Add the continue button container to the Crop Volume module GUI
+    """
+    try:
+        # Try to get the crop module
+        crop_module = None
+        if hasattr(crop_widget, 'self'):
+            try:
+                crop_module = crop_widget.self()
+            except Exception:
+                pass
+        
+        if not crop_module:
+            crop_module = crop_widget
+        
+        # Find the main UI container in the crop module
+        main_ui_widget = None
+        
+        # Strategy 1: Look for the main widget container
+        if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
+            main_ui_widget = crop_module.ui.widget
+        elif hasattr(crop_module, 'widget'):
+            main_ui_widget = crop_module.widget
+        elif hasattr(crop_widget, 'widget'):
+            main_ui_widget = crop_widget.widget
+        
+        # Strategy 2: Get the module widget representation directly
+        if not main_ui_widget:
+            main_ui_widget = crop_widget
+        
+        # Try to add to the GUI layout
+        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+            layout = main_ui_widget.layout()
+            if layout:
+                # Add after the scissors buttons (towards bottom)
+                layout.addWidget(continue_container)
+                print("Added continue button to Crop Volume module layout")
+                return True
+            else:
+                # Try to create a new layout
+                new_layout = qt.QVBoxLayout(main_ui_widget)
+                new_layout.addWidget(continue_container)
+                print("Created new layout and added continue button to Crop Volume module")
+                return True
+        else:
+            # Fallback: try to find a suitable container widget
+            container_widgets = crop_widget.findChildren(qt.QWidget)
+            for widget in container_widgets:
+                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                    widget.layout().addWidget(continue_container)
+                    print("Added continue button to Crop Volume container widget")
+                    return True
+        
+        print("Could not find suitable location in Crop Volume module for continue button")
+        return False
+        
+    except Exception as e:
+        print(f"Error adding continue button to crop module: {e}")
+        return False
 
 def on_continue_from_scissors():
     """
@@ -428,26 +633,116 @@ def on_continue_from_scissors():
     cleanup_workflow_ui()
     open_centerline_module()
 
+def on_finish_cropping():
+    """
+    Called when user clicks the finish cropping button after using scissors tool
+    """
+    try:
+        print("User clicked finish cropping - proceeding to next workflow step...")
+        
+        # First collapse/hide the crop volume GUI completely
+        collapse_crop_volume_gui()
+        
+        # Clean up scissors tool UI
+        cleanup_scissors_tool_ui()
+        
+        # Continue to the next step in the workflow
+        cleanup_workflow_ui()
+        open_centerline_module()
+        
+        print("Successfully transitioned from cropping to centerline extraction")
+        
+    except Exception as e:
+        print(f"Error in finish cropping transition: {e}")
+
+def collapse_crop_volume_gui():
+    """
+    Completely collapse/hide the Crop Volume module GUI when cropping is finished
+    """
+    try:
+        print("Collapsing Crop Volume GUI...")
+        
+        # First try to hide all UI elements
+        hide_crop_volume_ui_elements()
+        
+        # Additionally, try to collapse the entire module widget
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if crop_widget:
+            # Try to find and collapse the main collapsible sections
+            all_collapsible_buttons = crop_widget.findChildren("ctkCollapsibleButton")
+            collapsed_count = 0
+            
+            for button in all_collapsible_buttons:
+                try:
+                    if hasattr(button, 'setCollapsed'):
+                        button.setCollapsed(True)
+                        collapsed_count += 1
+                    elif hasattr(button, 'collapsed') and hasattr(button, 'setProperty'):
+                        button.setProperty('collapsed', True)
+                        collapsed_count += 1
+                except Exception as e:
+                    continue
+            
+            # Also try to minimize the main widget if possible
+            try:
+                if hasattr(crop_widget, 'setVisible'):
+                    # Don't make completely invisible, but minimize visibility
+                    crop_widget.setMaximumHeight(50)  # Minimize height
+                    print(f"Minimized Crop Volume widget height")
+            except Exception as e:
+                print(f"Could not minimize widget: {e}")
+            
+            print(f"Collapsed {collapsed_count} sections in Crop Volume module")
+            
+        # Force GUI update
+        slicer.app.processEvents()
+        
+        print("✓ Crop Volume GUI collapsed - workflow continuing to next step")
+        
+    except Exception as e:
+        print(f"Error collapsing Crop Volume GUI: {e}")
+
 def cleanup_continue_ui():
     """
     Clean up continue button UI elements
     """
     try:
+        # Clean up old segment editor button if it exists
         if hasattr(slicer.modules, 'SegmentEditorContinueButton'):
             button = slicer.modules.SegmentEditorContinueButton
             if button.parent():
                 button.parent().layout().removeWidget(button)
             button.setParent(None)
             del slicer.modules.SegmentEditorContinueButton
-            print("Cleaned up continue button")
+            print("Cleaned up old continue button")
+        
+        # Clean up old dialog if it exists
         if hasattr(slicer.modules, 'SegmentEditorContinueDialog'):
             dialog = slicer.modules.SegmentEditorContinueDialog
             dialog.close()
             dialog.setParent(None)
             del slicer.modules.SegmentEditorContinueDialog
-            print("Cleaned up continue dialog")
+            print("Cleaned up old continue dialog")
+        
+        # Clean up new workflow continue button
+        if hasattr(slicer.modules, 'WorkflowContinueButton'):
+            button = slicer.modules.WorkflowContinueButton
+            button.setParent(None)
+            del slicer.modules.WorkflowContinueButton
+        
+        # Clean up new workflow continue widget
+        if hasattr(slicer.modules, 'WorkflowContinueWidget'):
+            widget = slicer.modules.WorkflowContinueWidget
+            widget.close()
+            widget.setParent(None)
+            del slicer.modules.WorkflowContinueWidget
+            print("Cleaned up workflow continue UI")
+            
+        # Also clean up scissors tool UI
+        cleanup_scissors_tool_ui()
             
     except Exception as e:
+        print(f"Error cleaning up continue UI: {e}")
         print(f"Error cleaning up continue UI: {e}")
 
 def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_color=(0.0, 1.0, 1.0), volume_node=None, volume_name=None):
@@ -958,16 +1253,55 @@ def setup_centerline_module():
                         endpoint_point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
                         endpoint_point_list.SetName("CenterlineEndpoints")
                         
-                        endpoint_set = False
-                        for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
-                            if hasattr(centerline_module.ui, endpoint_selector_attr):
-                                getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
-                                print(f"Created new endpoint point list using {endpoint_selector_attr}")
+                        # Try to find and set the endpoint selector using the XML object name
+                        endpoints_selector = None
+                        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+                        if extract_centerline_widget:
+                            # Use the exact object name from the XML
+                            endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+                            if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
+                                endpoints_selector.setCurrentNode(endpoint_point_list)
+                                print(f"✓ Set endpoint point list using endPointsMarkupsSelector from XML")
                                 endpoint_set = True
-                                break
+                            else:
+                                print("Could not find endPointsMarkupsSelector or it lacks setCurrentNode method")
                         
-                        if not endpoint_set:
-                            print("Warning: Could not find endpoint selector in centerline module")
+                        # Fallback to old method if XML-based approach failed
+                        if not endpoints_selector:
+                            endpoint_set = False
+                            for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
+                                if hasattr(centerline_module.ui, endpoint_selector_attr):
+                                    getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
+                                    print(f"Created new endpoint point list using {endpoint_selector_attr}")
+                                    endpoint_set = True
+                                    break
+                            
+                            if not endpoint_set:
+                                print("Warning: Could not find endpoint selector in centerline module")
+                        
+                        # Set this as the active node for point placement
+                        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+                        if selectionNode:
+                            selectionNode.SetActivePlaceNodeID(endpoint_point_list.GetID())
+                            print("✓ Set CenterlineEndpoints as active place node")
+                        
+                        # Enable point placement mode with multiple points
+                        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                        if interactionNode:
+                            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+                            interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+                            print("✓ Activated point placement mode with multiple control points enabled")
+                        
+                        # Try to configure the place widget
+                        if extract_centerline_widget:
+                            place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+                            if place_widget:
+                                if hasattr(place_widget, 'setCurrentNode'):
+                                    place_widget.setCurrentNode(endpoint_point_list)
+                                    print("✓ Set point list in place widget")
+                                if hasattr(place_widget, 'setPlaceModeEnabled'):
+                                    place_widget.setPlaceModeEnabled(True)
+                                    print("✓ Enabled place mode in place widget")
                         
                         for create_new_attr in ['createNewEndpointsCheckBox', 'createNewPointListCheckBox']:
                             if hasattr(centerline_module.ui, create_new_attr):
@@ -1028,10 +1362,35 @@ def setup_centerline_module():
                                 
                     except Exception as e:
                         print(f"Could not configure tree outputs (this is normal if UI elements have different names): {e}")
+                    
+                    # Force GUI update and give time for widgets to initialize
+                    slicer.app.processEvents()
+                    time.sleep(0.2)
                     slicer.app.processEvents()
                     
         print("Extract Centerline module setup complete")
         add_large_centerline_apply_button()
+        
+        # Give GUI more time to fully initialize before verification
+        slicer.app.processEvents()
+        time.sleep(0.3)
+        
+        # Verify the setup worked correctly
+        print("\n--- Verifying Extract Centerline Setup ---")
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        
+        if not verification_results["success"]:
+            print("⚠️ Initial setup verification failed, attempting fixes...")
+            fix_extract_centerline_setup_issues()
+            # Re-verify after fixes
+            time.sleep(0.2)
+            slicer.app.processEvents()
+            verification_results = verify_extract_centerline_point_list_autoselection()
+            
+            if verification_results["success"]:
+                print("✓ Issues resolved successfully!")
+            else:
+                print("⚠️ Some issues remain - manual intervention may be needed")
         
         prompt_for_endpoints()
         
@@ -1134,13 +1493,19 @@ def remove_segment_from_all_segmentations(segment_name):
 def add_large_crop_apply_button():
     """
     Add a large green Apply button directly to the Crop Volume module GUI
+    Only creates the button if scissors workflow is not active
     """
     try:
+        # Check if scissors workflow is active - if so, don't create the apply button
+        if hasattr(slicer.modules, 'WorkflowScissorsButton') or hasattr(slicer.modules, 'WorkflowFinishButton'):
+            print("Scissors workflow is active - skipping original apply button creation")
+            return True
+        
         if hasattr(slicer.modules, 'CropLargeApplyButton'):
             existing_button = slicer.modules.CropLargeApplyButton
             if existing_button and existing_button.parent():
                 print("Large Apply button already exists in Crop Volume module")
-                return
+                return True
         
         def create_large_button():
             try:
@@ -1636,6 +2001,270 @@ def style_crop_apply_button():
             
     except Exception as e:
         print(f"Error styling crop Apply button: {e}")
+
+def start_with_dicom_data():
+    """
+    Start the workflow by opening the Add DICOM Data module and waiting for a volume to be loaded.
+    """
+    try:
+        print("=== Starting Workflow: Add DICOM Data ===")
+        
+        # Check if there are already volumes in the scene
+        existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        if existing_volumes:
+            print(f"Found {len(existing_volumes)} existing volume(s) in the scene:")
+            for i, volume in enumerate(existing_volumes):
+                print(f"  {i+1}. {volume.GetName()}")
+            
+            # Ask user if they want to proceed with existing volumes or load new ones
+            result = slicer.util.confirmYesNoDisplay(
+                f"Found {len(existing_volumes)} existing volume(s) in the scene.\n\n"
+                "Would you like to:\n"
+                "• YES: Continue workflow with existing volumes\n"
+                "• NO: Load new DICOM data",
+                windowTitle="Existing Volumes Found"
+            )
+            
+            if result:
+                print("Continuing with existing volumes...")
+                start_with_volume_crop()
+                return
+        
+        # Open the DICOM module
+        slicer.util.selectModule("DICOM")
+        slicer.app.processEvents()
+        
+        print("DICOM module opened. Please import and load DICOM data.")
+        print("The workflow will automatically continue when a volume is added to the scene.")
+        
+        # Set up monitoring for volume addition
+        setup_volume_addition_monitor()
+        
+    except Exception as e:
+        print(f"Error opening DICOM module: {e}")
+        slicer.util.errorDisplay(f"Could not open DICOM module: {str(e)}")
+
+def setup_volume_addition_monitor():
+    """
+    Monitor for the addition of a volume to the scene, then continue with volume crop workflow.
+    """
+    try:
+        # Stop any existing monitoring
+        if hasattr(slicer.modules, 'VolumeAdditionMonitorTimer'):
+            slicer.modules.VolumeAdditionMonitorTimer.stop()
+            slicer.modules.VolumeAdditionMonitorTimer.timeout.disconnect()
+            del slicer.modules.VolumeAdditionMonitorTimer
+        
+        # Get baseline volume count
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        slicer.modules.BaselineVolumeCount = len(volume_nodes)
+        
+        print(f"Baseline volume count: {slicer.modules.BaselineVolumeCount}")
+        
+        # Create status widget
+        create_volume_waiting_status_widget()
+        
+        # Create monitoring timer
+        timer = qt.QTimer()
+        timer.timeout.connect(check_for_volume_addition)
+        timer.start(1000)  # Check every second
+        slicer.modules.VolumeAdditionMonitorTimer = timer
+        slicer.modules.VolumeMonitorCheckCount = 0
+        
+        print("Volume addition monitoring started")
+        
+    except Exception as e:
+        print(f"Error setting up volume addition monitor: {e}")
+
+def create_volume_waiting_status_widget():
+    """
+    Create a status widget to show that the workflow is waiting for volume addition.
+    """
+    try:
+        # Clean up any existing status widget
+        cleanup_volume_waiting_status_widget()
+        
+        # Create floating status widget
+        status_widget = qt.QWidget()
+        status_widget.setWindowTitle("Workflow Status")
+        status_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        
+        # Set layout
+        layout = qt.QVBoxLayout()
+        
+        # Add status label
+        status_label = qt.QLabel("🔄 Waiting for DICOM volume to be loaded...")
+        status_label.setStyleSheet("""
+            QLabel { 
+                background-color: #007bff; 
+                color: white; 
+                border: none; 
+                padding: 15px 20px; 
+                font-weight: bold;
+                border-radius: 8px;
+                margin: 5px;
+                font-size: 14px;
+                text-align: center;
+            }
+        """)
+        layout.addWidget(status_label)
+        
+        # Add instructions
+        instructions = qt.QLabel("1. Import DICOM data using the DICOM module\n2. Load a volume into the scene\n3. Workflow will continue automatically")
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: #666; font-size: 12px; padding: 10px; background-color: #f8f9fa; border-radius: 6px;")
+        layout.addWidget(instructions)
+        
+        # Add cancel button
+        cancel_button = qt.QPushButton("Cancel Workflow")
+        cancel_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #dc3545; 
+                color: white; 
+                border: none; 
+                padding: 10px 15px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 12px;
+            }
+            QPushButton:hover { 
+                background-color: #c82333; 
+            }
+        """)
+        cancel_button.connect('clicked()', lambda: cancel_volume_waiting())
+        layout.addWidget(cancel_button)
+        
+        status_widget.setLayout(layout)
+        status_widget.resize(350, 180)
+        
+        # Position in top-right corner
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            main_geometry = main_window.geometry()
+            status_widget.move(main_geometry.right() - 370, main_geometry.top() + 100)
+        
+        status_widget.show()
+        
+        # Store reference
+        slicer.modules.VolumeWaitingStatusWidget = status_widget
+        slicer.modules.VolumeWaitingStatusLabel = status_label
+        
+        print("Volume waiting status widget created")
+        
+    except Exception as e:
+        print(f"Error creating volume waiting status widget: {e}")
+
+def update_volume_waiting_status(message):
+    """
+    Update the status message in the volume waiting widget.
+    """
+    try:
+        if hasattr(slicer.modules, 'VolumeWaitingStatusLabel'):
+            label = slicer.modules.VolumeWaitingStatusLabel
+            if label:
+                label.setText(message)
+    except Exception as e:
+        print(f"Error updating volume waiting status: {e}")
+
+def cleanup_volume_waiting_status_widget():
+    """
+    Clean up the volume waiting status widget.
+    """
+    try:
+        if hasattr(slicer.modules, 'VolumeWaitingStatusWidget'):
+            widget = slicer.modules.VolumeWaitingStatusWidget
+            if widget:
+                widget.close()
+                widget.setParent(None)
+            del slicer.modules.VolumeWaitingStatusWidget
+        
+        if hasattr(slicer.modules, 'VolumeWaitingStatusLabel'):
+            del slicer.modules.VolumeWaitingStatusLabel
+            
+    except Exception as e:
+        print(f"Error cleaning up volume waiting status widget: {e}")
+
+def cancel_volume_waiting():
+    """
+    Cancel the volume waiting workflow.
+    """
+    try:
+        print("Cancelling volume waiting workflow...")
+        stop_volume_addition_monitoring()
+        cleanup_volume_waiting_status_widget()
+        print("Workflow cancelled. You can start a new workflow anytime.")
+    except Exception as e:
+        print(f"Error cancelling volume waiting: {e}")
+
+def check_for_volume_addition():
+    """
+    Check if a new volume has been added to the scene.
+    """
+    try:
+        # Get current volume count
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        current_count = len(volume_nodes)
+        
+        # Increment check counter for status updates
+        slicer.modules.VolumeMonitorCheckCount += 1
+        
+        # Update status widget every 5 checks (5 seconds)
+        if slicer.modules.VolumeMonitorCheckCount % 5 == 0:
+            update_volume_waiting_status(f"🔄 Waiting for volume... ({slicer.modules.VolumeMonitorCheckCount}s)")
+        
+        # Print status every 10 checks (10 seconds)
+        if slicer.modules.VolumeMonitorCheckCount % 10 == 0:
+            print(f"Waiting for volume addition... (Check #{slicer.modules.VolumeMonitorCheckCount})")
+        
+        # Check if a new volume has been added
+        if current_count > slicer.modules.BaselineVolumeCount:
+            print(f"✓ New volume detected! Count changed from {slicer.modules.BaselineVolumeCount} to {current_count}")
+            
+            # Update status widget
+            update_volume_waiting_status("✅ Volume detected! Continuing workflow...")
+            
+            # Stop monitoring
+            stop_volume_addition_monitoring()
+            
+            # Get the newly added volume
+            if volume_nodes:
+                latest_volume = volume_nodes[-1]  # Get the most recently added volume
+                print(f"Latest volume: {latest_volume.GetName()}")
+            
+            # Clean up status widget
+            qt.QTimer.singleShot(2000, cleanup_volume_waiting_status_widget)  # Keep success message for 2 seconds
+            
+            # Continue with the original workflow
+            print("Continuing with volume crop workflow...")
+            qt.QTimer.singleShot(500, start_with_volume_crop)  # Small delay to ensure volume is fully loaded
+            
+    except Exception as e:
+        print(f"Error checking for volume addition: {e}")
+
+def stop_volume_addition_monitoring():
+    """
+    Stop monitoring for volume addition.
+    """
+    try:
+        if hasattr(slicer.modules, 'VolumeAdditionMonitorTimer'):
+            timer = slicer.modules.VolumeAdditionMonitorTimer
+            timer.stop()
+            timer.timeout.disconnect()
+            del slicer.modules.VolumeAdditionMonitorTimer
+            print("Volume addition monitoring stopped")
+        
+        # Clean up monitoring variables
+        if hasattr(slicer.modules, 'BaselineVolumeCount'):
+            del slicer.modules.BaselineVolumeCount
+        if hasattr(slicer.modules, 'VolumeMonitorCheckCount'):
+            del slicer.modules.VolumeMonitorCheckCount
+        
+        # Clean up status widget
+        cleanup_volume_waiting_status_widget()
+            
+    except Exception as e:
+        print(f"Error stopping volume addition monitoring: {e}")
 
 def start_with_volume_crop():
     """
@@ -3968,6 +4597,118 @@ def stop_apply_monitoring():
     """Console helper to stop Apply button monitoring"""
     stop_apply_button_monitoring()
 
+def test_dicom_workflow():
+    """Console helper to test the DICOM workflow start"""
+    try:
+        print("=== Testing DICOM Workflow Start ===")
+        start_with_dicom_data()
+        return True
+    except Exception as e:
+        print(f"Error testing DICOM workflow: {e}")
+        return False
+
+def test_volume_monitoring():
+    """Console helper to test volume addition monitoring"""
+    try:
+        print("=== Testing Volume Addition Monitoring ===")
+        setup_volume_addition_monitor()
+        print("Monitoring started. Load a volume to test detection.")
+        return True
+    except Exception as e:
+        print(f"Error testing volume monitoring: {e}")
+        return False
+
+def stop_volume_monitoring():
+    """Console helper to manually stop volume addition monitoring"""
+    try:
+        print("Manually stopping volume addition monitoring...")
+        stop_volume_addition_monitoring()
+        return True
+    except Exception as e:
+        print(f"Error stopping volume monitoring: {e}")
+        return False
+
+def skip_to_volume_crop():
+    """Console helper to skip DICOM loading and go directly to volume crop"""
+    try:
+        print("=== Skipping to Volume Crop Workflow ===")
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        if not volume_nodes:
+            print("No volumes found in scene. Please load a volume first.")
+            return False
+        
+        # Stop any existing monitoring
+        stop_volume_addition_monitoring()
+        
+        # Continue with volume crop
+        start_with_volume_crop()
+        return True
+    except Exception as e:
+        print(f"Error skipping to volume crop: {e}")
+        return False
+
+def test_status_widget():
+    """Console helper to test the volume waiting status widget"""
+    try:
+        print("=== Testing Volume Waiting Status Widget ===")
+        create_volume_waiting_status_widget()
+        print("Status widget created. Call cleanup_volume_waiting_status_widget() to remove it.")
+        return True
+    except Exception as e:
+        print(f"Error testing status widget: {e}")
+        return False
+
+def cleanup_status_widget():
+    """Console helper to clean up the status widget"""
+    try:
+        cleanup_volume_waiting_status_widget()
+        print("Status widget cleaned up.")
+        return True
+    except Exception as e:
+        print(f"Error cleaning up status widget: {e}")
+        return False
+
+def show_dicom_workflow_help():
+    """Console helper to show help for the new DICOM workflow"""
+    help_text = """
+=== DICOM WORKFLOW HELP ===
+
+The workflow now starts with the Add DICOM Data module and automatically continues when a volume is loaded.
+
+WORKFLOW STEPS:
+1. Click "Start Workflow" button in the Workflow module
+2. DICOM module opens automatically
+3. Import and load your DICOM data using the DICOM module
+4. When a volume is detected in the scene, workflow continues automatically
+5. Volume Crop module opens with ROI ready for cropping
+
+CONSOLE HELPER FUNCTIONS:
+• test_dicom_workflow() - Test the DICOM workflow start
+• test_volume_monitoring() - Test volume addition monitoring
+• stop_volume_monitoring() - Stop volume monitoring manually
+• skip_to_volume_crop() - Skip DICOM loading and go directly to volume crop
+• test_status_widget() - Test the status widget display
+• cleanup_status_widget() - Clean up the status widget
+• show_dicom_workflow_help() - Show this help message
+
+FEATURES:
+• Automatic detection of existing volumes in the scene
+• Real-time monitoring for new volume addition
+• Visual status widget with progress indication
+• Ability to cancel the workflow at any time
+• Automatic continuation to volume crop workflow
+
+NOTES:
+• If volumes already exist in the scene, you'll be asked if you want to continue with them
+• The workflow monitors for ANY new volume addition, not just DICOM volumes
+• You can manually stop monitoring using stop_volume_monitoring()
+• The status widget provides visual feedback and can be cancelled
+
+For more help, see the workflow module documentation.
+"""
+    print(help_text)
+    return True
+
 def clear_existing_centerlines():
     """
     Clear existing centerline models and curves to prepare for retry
@@ -5290,9 +6031,96 @@ def test_minimal_segment_editor_ui():
     """Console helper to test setting up minimal Segment Editor UI"""
     return setup_minimal_segment_editor_ui()
 
+def test_programmatic_scissors():
+    """Console helper to test the new programmatic scissors workflow"""
+    try:
+        print("=== Testing New Programmatic Scissors Workflow ===")
+        print("This test demonstrates the updated workflow that uses Segment Editor API")
+        print("without opening the GUI, and provides a scissors tool button.")
+        print("")
+        
+        # Run the main test
+        success = test_segment_editor_scissors_workflow()
+        
+        if success:
+            print("")
+            print("🎉 SUCCESS! The programmatic scissors workflow is working.")
+            print("")
+            print("What you should see:")
+            print("• A floating scissors tool button (✂️ SCISSORS TOOL)")
+            print("• A floating continue workflow button")
+            print("• No Segment Editor GUI opened")
+            print("")
+            print("How to use:")
+            print("1. Click the scissors button to activate the tool")
+            print("2. Draw in slice views to edit segmentation")
+            print("3. Click scissors button again to deactivate")
+            print("4. Click 'FINISH SEGMENTATION - CONTINUE' when done")
+            print("")
+            print("To clean up: run cleanup_all_workflow_scissors_ui()")
+        
+        return success
+        
+    except Exception as e:
+        print(f"Error in programmatic scissors test: {e}")
+        return False
+
 def test_segment_editor_scissors_workflow():
     """Console helper to test the complete Segment Editor scissors workflow"""
-    return start_with_segment_editor_scissors()
+    try:
+        print("=== Testing Programmatic Segment Editor Scissors Workflow ===")
+        
+        # Test the main function
+        success = start_with_segment_editor_scissors()
+        
+        if success:
+            print("✓ Programmatic segment editor setup successful")
+            print("✓ Scissors tool button should be visible")
+            print("✓ Continue workflow button should be visible")
+            print("")
+            print("Next steps:")
+            print("1. Click the scissors tool button to activate/deactivate")
+            print("2. Use slice views to edit segmentation")
+            print("3. Click 'FINISH SEGMENTATION - CONTINUE' when done")
+        else:
+            print("✗ Failed to set up programmatic segment editor")
+        
+        return success
+        
+    except Exception as e:
+        print(f"Error testing scissors workflow: {e}")
+        return False
+
+def test_scissors_toggle():
+    """Console helper to test scissors tool toggle"""
+    try:
+        if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+            button = slicer.modules.WorkflowScissorsButton
+            current_state = button.isChecked()
+            print(f"Current scissors state: {'ACTIVE' if current_state else 'INACTIVE'}")
+            
+            # Toggle the state
+            button.setChecked(not current_state)
+            print(f"Toggled scissors to: {'ACTIVE' if not current_state else 'INACTIVE'}")
+            
+            return True
+        else:
+            print("Scissors button not found. Run test_segment_editor_scissors_workflow() first.")
+            return False
+            
+    except Exception as e:
+        print(f"Error testing scissors toggle: {e}")
+        return False
+
+def cleanup_all_workflow_scissors_ui():
+    """Console helper to clean up all scissors workflow UI"""
+    try:
+        cleanup_continue_ui()
+        print("All scissors workflow UI cleaned up")
+        return True
+    except Exception as e:
+        print(f"Error cleaning up scissors workflow UI: {e}")
+        return False
 
 def test_hide_extract_centerline_ui():
     """Console helper to test hiding Extract Centerline UI elements"""
@@ -5719,8 +6547,8 @@ def restore_extract_centerline_ui():
 
 def start_with_segment_editor_scissors():
     """
-    Start segmentation workflow by opening the Segment Editor module with only the scissors tool visible.
-    This function should be called when the workflow needs to switch to segmentation.
+    Start segmentation workflow using programmatic Segment Editor API without opening GUI.
+    Creates a scissors tool button for user control.
     """
     try:
         # Get the current volume node (should be the cropped volume from previous step)
@@ -5738,52 +6566,65 @@ def start_with_segment_editor_scissors():
             volume_node = volume_nodes[0]
         
         if not volume_node:
-            slicer.util.errorDisplay("No volume found. Please load a volume first.")
+            print("Error: No volume found. Please load a volume first.")
             return False
         
-        # Switch to Segment Editor module
-        slicer.util.selectModule("SegmentEditor")
-        slicer.app.processEvents()
+        # Create or get segmentation node
+        segmentation_node = None
+        existing_segmentations = slicer.util.getNodesByClass("vtkMRMLSegmentationNode")
         
-        # Set up the segmentation
-        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
-        segment_editor = segment_editor_widget.self()
+        # Look for existing workflow segmentation
+        for seg in existing_segmentations:
+            if "Workflow" in seg.GetName() or volume_node.GetName() in seg.GetName():
+                segmentation_node = seg
+                break
         
-        # Create new segmentation if needed
-        segmentation_node = segment_editor.parameterSetNode.GetSegmentationNode()
-        if segmentation_node is None or segmentation_node.GetSegmentation().GetNumberOfSegments() > 0:
+        # Create new segmentation if none found
+        if not segmentation_node:
             segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
-            segment_editor.parameterSetNode.SetAndObserveSegmentationNode(segmentation_node)
+            segmentation_node.SetName(f"{volume_node.GetName()}_WorkflowSegmentation")
+            
+            # Create a default segment
+            segmentation = segmentation_node.GetSegmentation()
+            segment_id = segmentation.AddEmptySegment("Segment_1")
+            segment = segmentation.GetSegment(segment_id)
+            segment.SetColor(1.0, 0.0, 0.0)  # Red color
         
-        # Name segmentation node based on the volume
-        segmentation_node.SetName(volume_node.GetName() + "_Segmentation")
+        # Set up programmatic segment editor (no GUI)
+        segmentEditorNode = slicer.vtkMRMLSegmentEditorNode()
+        slicer.mrmlScene.AddNode(segmentEditorNode)
+        segmentEditorNode.SetAndObserveSegmentationNode(segmentation_node)
+        segmentEditorNode.SetAndObserveSourceVolumeNode(volume_node)
         
-        # Set source volume
-        segment_editor.parameterSetNode.SetAndObserveSourceVolumeNode(volume_node)
+        # Get the first segment ID
+        segmentation = segmentation_node.GetSegmentation()
+        segment_ids = vtk.vtkStringArray()
+        segmentation.GetSegmentIDs(segment_ids)
+        if segment_ids.GetNumberOfValues() > 0:
+            segment_id = segment_ids.GetValue(0)
+            segmentEditorNode.SetSelectedSegmentID(segment_id)
         
-        # Try to automatically select the scissors tool
-        try:
-            if hasattr(segment_editor, 'effectByName'):
-                # Try different names for the scissors tool
-                scissors_names = ['Scissors', 'Cut', 'Scissor', 'Clip']
-                for name in scissors_names:
-                    scissors_effect = segment_editor.effectByName(name)
-                    if scissors_effect:
-                        segment_editor.setActiveEffect(scissors_effect)
-                        print(f"Automatically selected {name} tool")
-                        break
-                else:
-                    print("Scissors tool not found with standard names")
-        except Exception as e:
-            print(f"Could not auto-select scissors tool: {e}")
+        # Create invisible segment editor widget for API access
+        segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
+        segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
+        segmentEditorWidget.setMRMLSegmentEditorNode(segmentEditorNode)
         
-        print("Segment Editor module configured with scissors tool only")
-        print(f"Ready to segment volume: {volume_node.GetName()}")
+        # Store references for scissors tool control
+        slicer.modules.WorkflowSegmentEditorNode = segmentEditorNode
+        slicer.modules.WorkflowSegmentEditorWidget = segmentEditorWidget
+        slicer.modules.WorkflowSegmentationNode = segmentation_node
+        slicer.modules.WorkflowScissorsActive = False
+        
+        # Create scissors tool button in the workflow UI
+        create_scissors_tool_button()
+        
+        print(f"Programmatic segment editor set up for volume: {volume_node.GetName()}")
+        print("Scissors tool available via workflow button - no GUI opened")
         
         return True
         
     except Exception as e:
-        print(f"Error setting up Segment Editor with scissors: {e}")
+        print(f"Error setting up programmatic segment editor: {e}")
         return False
 
 def setup_minimal_segment_editor_ui():
@@ -5794,6 +6635,590 @@ def setup_minimal_segment_editor_ui():
         # First ensure we're in the Segment Editor module
         slicer.util.selectModule("SegmentEditor")
         slicer.app.processEvents()
+        
+        # Get the segment editor widget
+        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
+        if not segment_editor_widget:
+            print("Error: Could not get Segment Editor widget")
+            return False
+        
+        # Hide all effect buttons except scissors
+        try:
+            # Find all effect buttons and hide them except scissors
+            all_buttons = segment_editor_widget.findChildren("QPushButton")
+            hidden_count = 0
+            
+            for button in all_buttons:
+                button_text = button.text if hasattr(button, 'text') else ""
+                button_name = button.objectName if hasattr(button, 'objectName') else ""
+                
+                # Keep only scissors tool button visible
+                if not any(keyword in button_text.lower() or keyword in button_name.lower() 
+                          for keyword in ['scissor', 'cut', 'clip']):
+                    if button_text and 'apply' not in button_text.lower():
+                        button.hide()
+                        hidden_count += 1
+            
+            print(f"Hidden {hidden_count} effect buttons, keeping scissors tool visible")
+            
+        except Exception as e:
+            print(f"Error hiding effect buttons: {e}")
+        
+        # Hide other UI sections we don't need
+        try:
+            # Hide segments section (we'll manage segments programmatically)
+            collapsible_buttons = segment_editor_widget.findChildren("ctkCollapsibleButton")
+            for button in collapsible_buttons:
+                button_text = button.text if hasattr(button, 'text') else ""
+                if 'segment' in button_text.lower() and 'editor' not in button_text.lower():
+                    button.collapsed = True
+                    button.hide()
+            
+            print("Minimized Segment Editor UI - scissors tool ready")
+            
+        except Exception as e:
+            print(f"Error minimizing UI: {e}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error setting up minimal Segment Editor UI: {e}")
+        return False
+
+def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
+    """
+    Add scissors and finish buttons to the Crop Volume module GUI
+    """
+    try:
+        # First, remove/hide the original large green "APPLY CROP" button
+        remove_original_crop_apply_button(crop_widget)
+        
+        # Try to get the crop module
+        crop_module = None
+        if hasattr(crop_widget, 'self'):
+            try:
+                crop_module = crop_widget.self()
+            except Exception:
+                pass
+        
+        if not crop_module:
+            crop_module = crop_widget
+        
+        # Find the main UI container in the crop module
+        main_ui_widget = None
+        
+        # Strategy 1: Look for the main widget container
+        if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
+            main_ui_widget = crop_module.ui.widget
+        elif hasattr(crop_module, 'widget'):
+            main_ui_widget = crop_module.widget
+        elif hasattr(crop_widget, 'widget'):
+            main_ui_widget = crop_widget.widget
+        
+        # Strategy 2: Get the module widget representation directly
+        if not main_ui_widget:
+            main_ui_widget = crop_widget
+        
+        # Create a container widget for our buttons
+        button_container = qt.QWidget()
+        button_layout = qt.QHBoxLayout(button_container)
+        button_layout.addWidget(scissors_button)
+        button_layout.addWidget(finish_button)
+        
+        # Add some instructions
+        instructions = qt.QLabel("Workflow: Use scissors to edit segmentation, then finish cropping")
+        instructions.setStyleSheet("color: #666; font-size: 12px; padding: 5px; font-weight: bold;")
+        instructions.setWordWrap(True)
+        
+        # Create final container with instructions and buttons
+        final_container = qt.QWidget()
+        final_layout = qt.QVBoxLayout(final_container)
+        final_layout.addWidget(instructions)
+        final_layout.addWidget(button_container)
+        
+        # Try to add to the GUI layout
+        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+            layout = main_ui_widget.layout()
+            if layout:
+                # Insert at the top of the module
+                layout.insertWidget(0, final_container)
+                print("Added workflow buttons to Crop Volume module layout")
+                return True
+            else:
+                # Try to create a new layout
+                new_layout = qt.QVBoxLayout(main_ui_widget)
+                new_layout.insertWidget(0, final_container)
+                print("Created new layout and added workflow buttons to Crop Volume module")
+                return True
+        else:
+            # Fallback: try to find a suitable container widget
+            container_widgets = crop_widget.findChildren(qt.QWidget)
+            for widget in container_widgets:
+                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                    widget.layout().insertWidget(0, final_container)
+                    print("Added workflow buttons to Crop Volume container widget")
+                    return True
+        
+        print("Could not find suitable location in Crop Volume module for buttons")
+        return False
+        
+    except Exception as e:
+        print(f"Error adding buttons to crop module: {e}")
+        return False
+
+def remove_original_crop_apply_button(crop_widget):
+    """
+    Remove or hide the original large green "APPLY CROP" button from the Crop Volume module
+    """
+    try:
+        removed_count = 0
+        
+        # Method 1: Remove the stored reference button
+        if hasattr(slicer.modules, 'CropLargeApplyButton'):
+            button = slicer.modules.CropLargeApplyButton
+            if button and button.parent():
+                # Remove from parent layout
+                parent = button.parent()
+                if hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+                elif hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                
+                # Hide and delete the button
+                button.hide()
+                button.setParent(None)
+                
+                # Remove the reference
+                del slicer.modules.CropLargeApplyButton
+                removed_count += 1
+                print("Removed stored CropLargeApplyButton")
+        
+        # Method 2: Search for and remove any "APPLY CROP" buttons in the crop widget
+        if crop_widget:
+            all_buttons = crop_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                try:
+                    button_text = button.text if hasattr(button, 'text') else ""
+                    if button_text and "APPLY CROP" in button_text:
+                        # Remove from parent layout
+                        parent = button.parent()
+                        if parent and hasattr(parent, 'layout') and parent.layout():
+                            parent.layout().removeWidget(button)
+                        elif parent and hasattr(parent, 'removeWidget'):
+                            parent.removeWidget(button)
+                        
+                        # Hide and delete the button
+                        button.hide()
+                        button.setParent(None)
+                        removed_count += 1
+                        print(f"Removed 'APPLY CROP' button: {button_text}")
+                except Exception as e:
+                    print(f"Error removing button: {e}")
+        
+        # Method 3: Also look for and hide any other large green buttons that might be apply buttons
+        if crop_widget:
+            all_buttons = crop_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                try:
+                    button_text = button.text if hasattr(button, 'text') else ""
+                    button_style = button.styleSheet() if hasattr(button, 'styleSheet') else ""
+                    
+                    # Check if it's a large green button (likely an apply button)
+                    if (button_text and 
+                        ("apply" in button_text.lower() or "crop" in button_text.lower()) and 
+                        ("#28a745" in button_style or "background-color: #28a745" in button_style)):
+                        
+                        # Hide the button instead of removing it completely (safer)
+                        button.hide()
+                        removed_count += 1
+                        print(f"Hidden large green apply button: {button_text}")
+                except Exception as e:
+                    print(f"Error hiding button: {e}")
+        
+        if removed_count > 0:
+            print(f"Successfully removed/hidden {removed_count} original apply button(s)")
+        else:
+            print("No original apply buttons found to remove")
+        
+        return removed_count > 0
+        
+    except Exception as e:
+        print(f"Error removing original crop apply button: {e}")
+        return False
+
+def create_scissors_tool_button():
+    """
+    Create a scissors tool toggle button for the workflow UI
+    """
+    try:
+        # Find a suitable parent widget (main window or workflow panel)
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            print("Error: Could not find main window for scissors button")
+            return False
+        
+        # Create scissors tool button
+        scissors_button = qt.QPushButton("SCISSORS (ERASE)")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
+        scissors_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #007bff; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 14px;
+                min-height: 40px;
+                min-width: 150px;
+            }
+            QPushButton:hover { 
+                background-color: #0056b3; 
+            }
+            QPushButton:checked { 
+                background-color: #dc3545; 
+                border: 2px solid #c82333;
+            }
+            QPushButton:checked:hover { 
+                background-color: #c82333; 
+            }
+        """)
+        
+        # Connect button to toggle function
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool(checked))
+        
+        # Add buttons to Crop Volume module GUI
+        try:
+            # Get the crop volume module widget
+            crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+            if crop_widget:
+                # Create finish cropping button for crop module
+                finish_button = qt.QPushButton("FINISH CROPPING")
+                finish_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #28a745; 
+                        color: white; 
+                        border: 2px solid #1e7e34; 
+                        padding: 15px 20px; 
+                        font-weight: bold;
+                        border-radius: 8px;
+                        margin: 5px;
+                        font-size: 16px;
+                        min-height: 50px;
+                        min-width: 180px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #218838; 
+                        border: 2px solid #155724;
+                    }
+                    QPushButton:pressed { 
+                        background-color: #1e7e34; 
+                        border: 2px solid #0f4c2c;
+                    }
+                """)
+                finish_button.connect('clicked()', lambda: on_finish_cropping())
+                
+                # Update scissors button styling to match the crop module look
+                scissors_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #007bff; 
+                        color: white; 
+                        border: 2px solid #0056b3; 
+                        padding: 15px 20px; 
+                        font-weight: bold;
+                        border-radius: 8px;
+                        margin: 5px;
+                        font-size: 16px;
+                        min-height: 50px;
+                        min-width: 180px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #0056b3; 
+                        border: 2px solid #004085;
+                    }
+                    QPushButton:checked { 
+                        background-color: #dc3545; 
+                        border: 2px solid #c82333;
+                    }
+                    QPushButton:checked:hover { 
+                        background-color: #c82333; 
+                        border: 2px solid #bd2130;
+                    }
+                """)
+                
+                # Add both buttons to the crop module GUI
+                success = add_buttons_to_crop_module(crop_widget, scissors_button, finish_button)
+                
+                if success:
+                    # Store finish button reference
+                    slicer.modules.WorkflowFinishButton = finish_button
+                    print("Added scissors and finish cropping buttons to Crop Volume module GUI")
+                else:
+                    # Fallback to floating widget
+                    create_floating_scissors_widget(scissors_button)
+            else:
+                # Fallback to floating widget if crop module not available
+                create_floating_scissors_widget(scissors_button)
+                
+        except Exception as e:
+            print(f"Could not add to crop module, creating floating widget: {e}")
+            create_floating_scissors_widget(scissors_button)
+        
+        # Store button reference
+        slicer.modules.WorkflowScissorsButton = scissors_button
+        
+        print("Scissors tool button created and ready")
+        return True
+        
+    except Exception as e:
+        print(f"Error creating scissors tool button: {e}")
+        return False
+
+def create_floating_scissors_widget(scissors_button):
+    """
+    Create a floating widget for the scissors button and finish cropping button
+    """
+    try:
+        # Create floating widget
+        floating_widget = qt.QWidget()
+        floating_widget.setWindowTitle("Workflow Tools")
+        floating_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        
+        # Set layout
+        layout = qt.QVBoxLayout()
+        
+        # Add scissors button
+        layout.addWidget(scissors_button)
+        
+        # Create finish cropping button
+        finish_button = qt.QPushButton("✅ FINISH CROPPING")
+        finish_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 14px;
+                min-height: 40px;
+                min-width: 150px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        
+        # Connect finish button to continue workflow
+        finish_button.connect('clicked()', lambda: on_finish_cropping())
+        layout.addWidget(finish_button)
+        
+        # Add instructions
+        instructions = qt.QLabel("Use scissors tool to ERASE/SUBTRACT from segmentation, then click Finish Cropping to continue")
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: #666; font-size: 12px; padding: 10px;")
+        layout.addWidget(instructions)
+        
+        floating_widget.setLayout(layout)
+        floating_widget.resize(250, 180)
+        
+        # Position in top-right corner
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            main_geometry = main_window.geometry()
+            floating_widget.move(main_geometry.right() - 270, main_geometry.top() + 100)
+        
+        floating_widget.show()
+        
+        # Store references
+        slicer.modules.WorkflowScissorsWidget = floating_widget
+        slicer.modules.WorkflowFinishButton = finish_button
+        
+        print("Created floating scissors tool widget with finish cropping button")
+        
+    except Exception as e:
+        print(f"Error creating floating scissors widget: {e}")
+
+def toggle_scissors_tool(activated):
+    """
+    Toggle the scissors tool on/off programmatically
+    """
+    try:
+        if not hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            print("Error: Segment editor not initialized. Run start_with_segment_editor_scissors() first.")
+            return False
+        
+        segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if activated:
+            # Activate scissors tool
+            segmentEditorWidget.setActiveEffectByName("Scissors")
+            effect = segmentEditorWidget.activeEffect()
+            
+            if effect:
+                # Configure scissors tool for workflow use - set to ERASE/SUBTRACT mode
+                if hasattr(effect, 'setParameter'):
+                    effect.setParameter("Operation", "EraseInside")  # Erase inside (subtract/cut)
+                
+                # Enable slice view interactions for scissors
+                interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                if interactionNode:
+                    interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+                
+                slicer.modules.WorkflowScissorsActive = True
+                print("Scissors tool ACTIVATED - Ready for ERASING/SUBTRACTING")
+                print("   • Click and drag in slice views to ERASE/CUT segments")
+                print("   • Right-click for tool options")
+                
+                # Update button appearance
+                if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                    button = slicer.modules.WorkflowScissorsButton
+                    button.setText("✂️ SCISSORS ACTIVE (ERASE)")
+                
+            else:
+                print("Error: Could not activate scissors effect")
+                return False
+                
+        else:
+            # Deactivate scissors tool
+            segmentEditorWidget.setActiveEffectByName("")  # Clear active effect
+            
+            # Return to normal interaction mode
+            interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+            if interactionNode:
+                interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            
+            slicer.modules.WorkflowScissorsActive = False
+            print("Scissors tool DEACTIVATED - Normal navigation mode")
+            
+            # Update button appearance
+            if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                button = slicer.modules.WorkflowScissorsButton
+                button.setText("✂️ SCISSORS (ERASE)")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error toggling scissors tool: {e}")
+        return False
+
+def cleanup_scissors_tool_ui():
+    """
+    Clean up scissors tool UI elements and restore original crop apply button
+    """
+    try:
+        # Clean up button
+        if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+            button = slicer.modules.WorkflowScissorsButton
+            if button.parent():
+                parent = button.parent()
+                if hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                elif hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+            button.setParent(None)
+            del slicer.modules.WorkflowScissorsButton
+        
+        # Clean up floating widget
+        if hasattr(slicer.modules, 'WorkflowScissorsWidget'):
+            widget = slicer.modules.WorkflowScissorsWidget
+            widget.close()
+            widget.setParent(None)
+            del slicer.modules.WorkflowScissorsWidget
+        
+        # Clean up finish button
+        if hasattr(slicer.modules, 'WorkflowFinishButton'):
+            button = slicer.modules.WorkflowFinishButton
+            if button.parent():
+                parent = button.parent()
+                if hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                elif hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+            button.setParent(None)
+            del slicer.modules.WorkflowFinishButton
+        
+        # Clean up segment editor components
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorNode'):
+            node = slicer.modules.WorkflowSegmentEditorNode
+            slicer.mrmlScene.RemoveNode(node)
+            del slicer.modules.WorkflowSegmentEditorNode
+        
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            widget = slicer.modules.WorkflowSegmentEditorWidget
+            widget.setParent(None)
+            del slicer.modules.WorkflowSegmentEditorWidget
+        
+        # Clean up other references
+        for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+        
+        # Restore the original crop apply button if needed
+        restore_original_crop_apply_button()
+        
+        print("Cleaned up scissors tool UI and components")
+        
+    except Exception as e:
+        print(f"Error cleaning up scissors tool UI: {e}")
+
+def restore_original_crop_apply_button():
+    """
+    Restore the original large green "APPLY CROP" button to the Crop Volume module
+    """
+    try:
+        # Check if we're still in the Crop Volume module
+        current_module = slicer.util.selectedModule()
+        if current_module != "CropVolume":
+            print("Not in Crop Volume module, skipping apply button restoration")
+            return
+        
+        # Check if the button already exists
+        if hasattr(slicer.modules, 'CropLargeApplyButton'):
+            button = slicer.modules.CropLargeApplyButton
+            if button and button.parent():
+                # Button already exists and is visible
+                button.show()
+                print("Original apply button already exists, made it visible")
+                return
+        
+        # Recreate the original apply button
+        print("Recreating original APPLY CROP button...")
+        success = add_large_crop_apply_button()
+        
+        if success:
+            print("Successfully restored original APPLY CROP button")
+        else:
+            print("Could not restore original APPLY CROP button")
+        
+    except Exception as e:
+        print(f"Error restoring original crop apply button: {e}")
+
+def remove_crop_apply_button_manually():
+    """
+    Console helper function to manually remove the original crop apply button
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if crop_widget:
+            success = remove_original_crop_apply_button(crop_widget)
+            if success:
+                print("Successfully removed original crop apply button")
+            else:
+                print("No original crop apply button found to remove")
+            return success
+        else:
+            print("Crop Volume module widget not found")
+            return False
+    except Exception as e:
+        print(f"Error manually removing crop apply button: {e}")
+        return False
         
         # Automatically select the scissors tool if available
         try:
@@ -5847,6 +7272,319 @@ def restore_segment_editor_ui():
         
     except Exception as e:
         print(f"Error restoring Segment Editor UI: {e}")
+        return False
+
+def verify_extract_centerline_point_list_autoselection():
+    """
+    Verify that once the Extract Centerline module is opened:
+    1. The newly created point list (CenterlineEndpoints) is auto-selected in the GUI
+    2. The point placement tool is auto-selected 
+    3. The "place multiple control points" option is enabled
+    
+    Returns:
+        dict: Verification results with status and details
+    """
+    try:
+        print("=== VERIFYING EXTRACT CENTERLINE POINT LIST AUTO-SELECTION ===")
+        
+        # Ensure we're in the Extract Centerline module
+        current_module = slicer.util.selectedModule()
+        if current_module != "ExtractCenterline":
+            print(f"Warning: Current module is '{current_module}', switching to ExtractCenterline")
+            slicer.util.selectModule("ExtractCenterline")
+            slicer.app.processEvents()
+        
+        # Get the Extract Centerline widget
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if not extract_centerline_widget:
+            return {
+                "success": False,
+                "error": "Could not get Extract Centerline widget"
+            }
+        
+        verification_results = {
+            "success": True,
+            "point_list_selected": False,
+            "point_placement_active": False,
+            "multiple_points_enabled": False,
+            "details": []
+        }
+        
+        # 1. Check if the CenterlineEndpoints point list is auto-selected
+        print("--- Checking Point List Auto-Selection ---")
+        
+        # Look for the endpoints selector (from XML: endPointsMarkupsSelector)
+        endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+        if endpoints_selector:
+            # Check if it has a currentNode method and what's selected
+            if hasattr(endpoints_selector, 'currentNode'):
+                current_node = endpoints_selector.currentNode()
+                if current_node:
+                    node_name = current_node.GetName()
+                    print(f"✓ Point list selector found with current node: '{node_name}'")
+                    if "CenterlineEndpoints" in node_name or "Endpoints" in node_name:
+                        verification_results["point_list_selected"] = True
+                        verification_results["details"].append(f"✓ Correct point list auto-selected: {node_name}")
+                    else:
+                        verification_results["details"].append(f"✗ Wrong point list selected: {node_name}")
+                else:
+                    verification_results["details"].append("✗ No point list selected in endpoints selector")
+            else:
+                verification_results["details"].append("✗ Endpoints selector doesn't have currentNode method")
+        else:
+            verification_results["details"].append("✗ Could not find endPointsMarkupsSelector widget")
+        
+        # 2. Check if the point placement tool is auto-selected
+        print("--- Checking Point Placement Tool Activation ---")
+        
+        # Look for the place widget (from XML: endPointsMarkupsPlaceWidget)
+        place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+        if place_widget:
+            print(f"✓ Found endPointsMarkupsPlaceWidget: {type(place_widget)}")
+            verification_results["details"].append("✓ Point placement widget found")
+            
+            # Check if the place widget is in active placement mode
+            if hasattr(place_widget, 'placeModeEnabled'):
+                place_mode_enabled = place_widget.placeModeEnabled
+                print(f"Place mode enabled: {place_mode_enabled}")
+                if place_mode_enabled:
+                    verification_results["point_placement_active"] = True
+                    verification_results["details"].append("✓ Point placement tool is active")
+                else:
+                    verification_results["details"].append("✗ Point placement tool is not active")
+            else:
+                verification_results["details"].append("? Could not check if point placement tool is active")
+        else:
+            verification_results["details"].append("✗ Could not find endPointsMarkupsPlaceWidget")
+        
+        # 3. Check if "place multiple control points" option is enabled
+        print("--- Checking Multiple Points Placement Mode ---")
+        
+        # Check the interaction node for place mode persistence
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            place_mode_persistence = interactionNode.GetPlaceModePersistence()
+            print(f"Place mode persistence: {place_mode_persistence}")
+            if place_mode_persistence == 1:
+                verification_results["multiple_points_enabled"] = True
+                verification_results["details"].append("✓ Multiple control points placement is enabled")
+            else:
+                verification_results["details"].append("✗ Multiple control points placement is disabled")
+            
+            # Also check current interaction mode
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            print(f"Current interaction mode: {current_mode}")
+            if current_mode == interactionNode.Place:
+                verification_results["details"].append("✓ Interaction mode is set to Place")
+            else:
+                verification_results["details"].append(f"? Interaction mode is: {current_mode}")
+        else:
+            verification_results["details"].append("✗ Could not access interaction node")
+        
+        # 4. Additional checks - verify the point list exists and is properly configured
+        print("--- Additional Point List Verification ---")
+        
+        # Look for CenterlineEndpoints point list in the scene
+        endpoints_node = slicer.util.getNode("CenterlineEndpoints")
+        if endpoints_node:
+            print(f"✓ Found CenterlineEndpoints node: {endpoints_node.GetName()}")
+            print(f"  Current point count: {endpoints_node.GetNumberOfControlPoints()}")
+            verification_results["details"].append(f"✓ CenterlineEndpoints node exists with {endpoints_node.GetNumberOfControlPoints()} points")
+            
+            # Check if it's the active markup node
+            selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+            if selectionNode:
+                active_place_node_id = selectionNode.GetActivePlaceNodeID()
+                if active_place_node_id == endpoints_node.GetID():
+                    verification_results["details"].append("✓ CenterlineEndpoints is the active place node")
+                else:
+                    active_node = slicer.mrmlScene.GetNodeByID(active_place_node_id) if active_place_node_id else None
+                    active_node_name = active_node.GetName() if active_node else "None"
+                    verification_results["details"].append(f"✗ Different node is active for placement: {active_node_name}")
+        else:
+            verification_results["details"].append("✗ CenterlineEndpoints node not found in scene")
+        
+        # 5. Summary evaluation
+        print("--- Verification Summary ---")
+        
+        all_checks_passed = (
+            verification_results["point_list_selected"] and
+            verification_results["point_placement_active"] and
+            verification_results["multiple_points_enabled"]
+        )
+        
+        verification_results["success"] = all_checks_passed
+        
+        if all_checks_passed:
+            print("🎉 ALL VERIFICATIONS PASSED!")
+            print("✓ Point list is auto-selected")
+            print("✓ Point placement tool is active")
+            print("✓ Multiple control points mode is enabled")
+        else:
+            print("⚠️ SOME VERIFICATIONS FAILED:")
+            if not verification_results["point_list_selected"]:
+                print("✗ Point list auto-selection failed")
+            if not verification_results["point_placement_active"]:
+                print("✗ Point placement tool activation failed")
+            if not verification_results["multiple_points_enabled"]:
+                print("✗ Multiple control points mode not enabled")
+        
+        # Print all details
+        print("\nDetailed Results:")
+        for detail in verification_results["details"]:
+            print(f"  {detail}")
+        
+        return verification_results
+        
+    except Exception as e:
+        print(f"Error during verification: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def setup_extract_centerline_with_verification():
+    """
+    Set up the Extract Centerline module and verify proper auto-selection functionality
+    """
+    try:
+        print("=== SETTING UP EXTRACT CENTERLINE WITH VERIFICATION ===")
+        
+        # First set up the module as usual
+        setup_centerline_module()
+        
+        # Give the GUI time to update
+        slicer.app.processEvents()
+        time.sleep(0.5)
+        
+        # Now verify the setup worked correctly
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        
+        if verification_results["success"]:
+            print("\n🎉 Extract Centerline setup and verification completed successfully!")
+            return True
+        else:
+            print("\n⚠️ Extract Centerline setup completed but verification found issues:")
+            if "error" in verification_results:
+                print(f"Error: {verification_results['error']}")
+            
+            # Try to fix common issues
+            print("\nAttempting to fix detected issues...")
+            fix_extract_centerline_setup_issues()
+            
+            # Re-verify after fixes
+            print("\nRe-verifying after fixes...")
+            verification_results = verify_extract_centerline_point_list_autoselection()
+            
+            if verification_results["success"]:
+                print("🎉 Issues fixed successfully!")
+                return True
+            else:
+                print("⚠️ Some issues could not be automatically fixed")
+                return False
+        
+    except Exception as e:
+        print(f"Error in setup with verification: {e}")
+        return False
+
+def fix_extract_centerline_setup_issues():
+    """
+    Attempt to fix common issues with Extract Centerline module setup
+    """
+    try:
+        print("--- Attempting to Fix Extract Centerline Setup Issues ---")
+        
+        # 1. Ensure CenterlineEndpoints point list exists and is selected
+        endpoints_node = slicer.util.getNode("CenterlineEndpoints")
+        if not endpoints_node:
+            print("Creating missing CenterlineEndpoints node...")
+            endpoints_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+            endpoints_node.SetName("CenterlineEndpoints")
+        
+        # 2. Set it as the active node for placement
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode and endpoints_node:
+            selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
+            print("Set CenterlineEndpoints as active place node")
+        
+        # 3. Ensure point placement mode is active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)  # Enable multiple points placement
+            print("Activated point placement mode with multiple points enabled")
+        
+        # 4. Try to set the point list in the Extract Centerline widget
+        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+        if extract_centerline_widget:
+            endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+            if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
+                endpoints_selector.setCurrentNode(endpoints_node)
+                print("Set CenterlineEndpoints in the Extract Centerline selector")
+            
+            # Also try to activate the place widget
+            place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+            if place_widget:
+                if hasattr(place_widget, 'setCurrentNode'):
+                    place_widget.setCurrentNode(endpoints_node)
+                if hasattr(place_widget, 'setPlaceModeEnabled'):
+                    place_widget.setPlaceModeEnabled(True)
+                print("Configured place widget")
+        
+        slicer.app.processEvents()
+        print("Fix attempt completed")
+        
+    except Exception as e:
+        print(f"Error fixing Extract Centerline setup: {e}")
+
+# Console helper functions for testing the verification
+def test_extract_centerline_verification():
+    """Console helper to test the Extract Centerline verification"""
+    return verify_extract_centerline_point_list_autoselection()
+
+def test_extract_centerline_setup_with_verification():
+    """Console helper to test the full setup with verification"""
+    return setup_extract_centerline_with_verification()
+
+def fix_centerline_issues():
+    """Console helper to fix Extract Centerline issues"""
+    return fix_extract_centerline_setup_issues()
+
+def test_scissors_and_finish_buttons():
+    """Console helper to test the scissors tool and finish cropping buttons"""
+    try:
+        print("=== Testing Scissors Tool and Finish Cropping Buttons ===")
+        
+        # Test the scissors tool setup
+        success = start_with_segment_editor_scissors()
+        
+        if success:
+            print("✓ Scissors tool and finish cropping buttons created successfully")
+            print("✓ Both buttons should be visible in the floating widget")
+            print("✓ Scissors button: Toggle ERASE/SUBTRACT segmentation tool")
+            print("✓ Finish Cropping button: Continue to next workflow step + collapse crop GUI")
+            print("")
+            print("Key Features:")
+            print("  • Scissors tool is configured for ERASING/SUBTRACTING (not adding)")
+            print("  • When Finish Cropping is clicked, Crop Volume GUI will collapse")
+            print("  • Workflow automatically transitions to centerline extraction")
+            return True
+        else:
+            print("✗ Failed to create scissors tool buttons")
+            return False
+            
+    except Exception as e:
+        print(f"Error testing scissors and finish buttons: {e}")
+        return False
+
+def test_crop_volume_collapse():
+    """Console helper to test the crop volume GUI collapse functionality"""
+    try:
+        print("=== Testing Crop Volume GUI Collapse ===")
+        collapse_crop_volume_gui()
+        return True
+    except Exception as e:
+        print(f"Error testing crop volume collapse: {e}")
         return False
 
 def main():
