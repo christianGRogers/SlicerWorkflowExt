@@ -2002,6 +2002,270 @@ def style_crop_apply_button():
     except Exception as e:
         print(f"Error styling crop Apply button: {e}")
 
+def start_with_dicom_data():
+    """
+    Start the workflow by opening the Add DICOM Data module and waiting for a volume to be loaded.
+    """
+    try:
+        print("=== Starting Workflow: Add DICOM Data ===")
+        
+        # Check if there are already volumes in the scene
+        existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        if existing_volumes:
+            print(f"Found {len(existing_volumes)} existing volume(s) in the scene:")
+            for i, volume in enumerate(existing_volumes):
+                print(f"  {i+1}. {volume.GetName()}")
+            
+            # Ask user if they want to proceed with existing volumes or load new ones
+            result = slicer.util.confirmYesNoDisplay(
+                f"Found {len(existing_volumes)} existing volume(s) in the scene.\n\n"
+                "Would you like to:\n"
+                "• YES: Continue workflow with existing volumes\n"
+                "• NO: Load new DICOM data",
+                windowTitle="Existing Volumes Found"
+            )
+            
+            if result:
+                print("Continuing with existing volumes...")
+                start_with_volume_crop()
+                return
+        
+        # Open the DICOM module
+        slicer.util.selectModule("DICOM")
+        slicer.app.processEvents()
+        
+        print("DICOM module opened. Please import and load DICOM data.")
+        print("The workflow will automatically continue when a volume is added to the scene.")
+        
+        # Set up monitoring for volume addition
+        setup_volume_addition_monitor()
+        
+    except Exception as e:
+        print(f"Error opening DICOM module: {e}")
+        slicer.util.errorDisplay(f"Could not open DICOM module: {str(e)}")
+
+def setup_volume_addition_monitor():
+    """
+    Monitor for the addition of a volume to the scene, then continue with volume crop workflow.
+    """
+    try:
+        # Stop any existing monitoring
+        if hasattr(slicer.modules, 'VolumeAdditionMonitorTimer'):
+            slicer.modules.VolumeAdditionMonitorTimer.stop()
+            slicer.modules.VolumeAdditionMonitorTimer.timeout.disconnect()
+            del slicer.modules.VolumeAdditionMonitorTimer
+        
+        # Get baseline volume count
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        slicer.modules.BaselineVolumeCount = len(volume_nodes)
+        
+        print(f"Baseline volume count: {slicer.modules.BaselineVolumeCount}")
+        
+        # Create status widget
+        create_volume_waiting_status_widget()
+        
+        # Create monitoring timer
+        timer = qt.QTimer()
+        timer.timeout.connect(check_for_volume_addition)
+        timer.start(1000)  # Check every second
+        slicer.modules.VolumeAdditionMonitorTimer = timer
+        slicer.modules.VolumeMonitorCheckCount = 0
+        
+        print("Volume addition monitoring started")
+        
+    except Exception as e:
+        print(f"Error setting up volume addition monitor: {e}")
+
+def create_volume_waiting_status_widget():
+    """
+    Create a status widget to show that the workflow is waiting for volume addition.
+    """
+    try:
+        # Clean up any existing status widget
+        cleanup_volume_waiting_status_widget()
+        
+        # Create floating status widget
+        status_widget = qt.QWidget()
+        status_widget.setWindowTitle("Workflow Status")
+        status_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        
+        # Set layout
+        layout = qt.QVBoxLayout()
+        
+        # Add status label
+        status_label = qt.QLabel("🔄 Waiting for DICOM volume to be loaded...")
+        status_label.setStyleSheet("""
+            QLabel { 
+                background-color: #007bff; 
+                color: white; 
+                border: none; 
+                padding: 15px 20px; 
+                font-weight: bold;
+                border-radius: 8px;
+                margin: 5px;
+                font-size: 14px;
+                text-align: center;
+            }
+        """)
+        layout.addWidget(status_label)
+        
+        # Add instructions
+        instructions = qt.QLabel("1. Import DICOM data using the DICOM module\n2. Load a volume into the scene\n3. Workflow will continue automatically")
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: #666; font-size: 12px; padding: 10px; background-color: #f8f9fa; border-radius: 6px;")
+        layout.addWidget(instructions)
+        
+        # Add cancel button
+        cancel_button = qt.QPushButton("Cancel Workflow")
+        cancel_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #dc3545; 
+                color: white; 
+                border: none; 
+                padding: 10px 15px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 12px;
+            }
+            QPushButton:hover { 
+                background-color: #c82333; 
+            }
+        """)
+        cancel_button.connect('clicked()', lambda: cancel_volume_waiting())
+        layout.addWidget(cancel_button)
+        
+        status_widget.setLayout(layout)
+        status_widget.resize(350, 180)
+        
+        # Position in top-right corner
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            main_geometry = main_window.geometry()
+            status_widget.move(main_geometry.right() - 370, main_geometry.top() + 100)
+        
+        status_widget.show()
+        
+        # Store reference
+        slicer.modules.VolumeWaitingStatusWidget = status_widget
+        slicer.modules.VolumeWaitingStatusLabel = status_label
+        
+        print("Volume waiting status widget created")
+        
+    except Exception as e:
+        print(f"Error creating volume waiting status widget: {e}")
+
+def update_volume_waiting_status(message):
+    """
+    Update the status message in the volume waiting widget.
+    """
+    try:
+        if hasattr(slicer.modules, 'VolumeWaitingStatusLabel'):
+            label = slicer.modules.VolumeWaitingStatusLabel
+            if label:
+                label.setText(message)
+    except Exception as e:
+        print(f"Error updating volume waiting status: {e}")
+
+def cleanup_volume_waiting_status_widget():
+    """
+    Clean up the volume waiting status widget.
+    """
+    try:
+        if hasattr(slicer.modules, 'VolumeWaitingStatusWidget'):
+            widget = slicer.modules.VolumeWaitingStatusWidget
+            if widget:
+                widget.close()
+                widget.setParent(None)
+            del slicer.modules.VolumeWaitingStatusWidget
+        
+        if hasattr(slicer.modules, 'VolumeWaitingStatusLabel'):
+            del slicer.modules.VolumeWaitingStatusLabel
+            
+    except Exception as e:
+        print(f"Error cleaning up volume waiting status widget: {e}")
+
+def cancel_volume_waiting():
+    """
+    Cancel the volume waiting workflow.
+    """
+    try:
+        print("Cancelling volume waiting workflow...")
+        stop_volume_addition_monitoring()
+        cleanup_volume_waiting_status_widget()
+        print("Workflow cancelled. You can start a new workflow anytime.")
+    except Exception as e:
+        print(f"Error cancelling volume waiting: {e}")
+
+def check_for_volume_addition():
+    """
+    Check if a new volume has been added to the scene.
+    """
+    try:
+        # Get current volume count
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        current_count = len(volume_nodes)
+        
+        # Increment check counter for status updates
+        slicer.modules.VolumeMonitorCheckCount += 1
+        
+        # Update status widget every 5 checks (5 seconds)
+        if slicer.modules.VolumeMonitorCheckCount % 5 == 0:
+            update_volume_waiting_status(f"🔄 Waiting for volume... ({slicer.modules.VolumeMonitorCheckCount}s)")
+        
+        # Print status every 10 checks (10 seconds)
+        if slicer.modules.VolumeMonitorCheckCount % 10 == 0:
+            print(f"Waiting for volume addition... (Check #{slicer.modules.VolumeMonitorCheckCount})")
+        
+        # Check if a new volume has been added
+        if current_count > slicer.modules.BaselineVolumeCount:
+            print(f"✓ New volume detected! Count changed from {slicer.modules.BaselineVolumeCount} to {current_count}")
+            
+            # Update status widget
+            update_volume_waiting_status("✅ Volume detected! Continuing workflow...")
+            
+            # Stop monitoring
+            stop_volume_addition_monitoring()
+            
+            # Get the newly added volume
+            if volume_nodes:
+                latest_volume = volume_nodes[-1]  # Get the most recently added volume
+                print(f"Latest volume: {latest_volume.GetName()}")
+            
+            # Clean up status widget
+            qt.QTimer.singleShot(2000, cleanup_volume_waiting_status_widget)  # Keep success message for 2 seconds
+            
+            # Continue with the original workflow
+            print("Continuing with volume crop workflow...")
+            qt.QTimer.singleShot(500, start_with_volume_crop)  # Small delay to ensure volume is fully loaded
+            
+    except Exception as e:
+        print(f"Error checking for volume addition: {e}")
+
+def stop_volume_addition_monitoring():
+    """
+    Stop monitoring for volume addition.
+    """
+    try:
+        if hasattr(slicer.modules, 'VolumeAdditionMonitorTimer'):
+            timer = slicer.modules.VolumeAdditionMonitorTimer
+            timer.stop()
+            timer.timeout.disconnect()
+            del slicer.modules.VolumeAdditionMonitorTimer
+            print("Volume addition monitoring stopped")
+        
+        # Clean up monitoring variables
+        if hasattr(slicer.modules, 'BaselineVolumeCount'):
+            del slicer.modules.BaselineVolumeCount
+        if hasattr(slicer.modules, 'VolumeMonitorCheckCount'):
+            del slicer.modules.VolumeMonitorCheckCount
+        
+        # Clean up status widget
+        cleanup_volume_waiting_status_widget()
+            
+    except Exception as e:
+        print(f"Error stopping volume addition monitoring: {e}")
+
 def start_with_volume_crop():
     """
     Start the workflow by opening the Volume Crop module and creating an ROI that fits the entire volume.
@@ -4332,6 +4596,118 @@ def stop_monitoring():
 def stop_apply_monitoring():
     """Console helper to stop Apply button monitoring"""
     stop_apply_button_monitoring()
+
+def test_dicom_workflow():
+    """Console helper to test the DICOM workflow start"""
+    try:
+        print("=== Testing DICOM Workflow Start ===")
+        start_with_dicom_data()
+        return True
+    except Exception as e:
+        print(f"Error testing DICOM workflow: {e}")
+        return False
+
+def test_volume_monitoring():
+    """Console helper to test volume addition monitoring"""
+    try:
+        print("=== Testing Volume Addition Monitoring ===")
+        setup_volume_addition_monitor()
+        print("Monitoring started. Load a volume to test detection.")
+        return True
+    except Exception as e:
+        print(f"Error testing volume monitoring: {e}")
+        return False
+
+def stop_volume_monitoring():
+    """Console helper to manually stop volume addition monitoring"""
+    try:
+        print("Manually stopping volume addition monitoring...")
+        stop_volume_addition_monitoring()
+        return True
+    except Exception as e:
+        print(f"Error stopping volume monitoring: {e}")
+        return False
+
+def skip_to_volume_crop():
+    """Console helper to skip DICOM loading and go directly to volume crop"""
+    try:
+        print("=== Skipping to Volume Crop Workflow ===")
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        if not volume_nodes:
+            print("No volumes found in scene. Please load a volume first.")
+            return False
+        
+        # Stop any existing monitoring
+        stop_volume_addition_monitoring()
+        
+        # Continue with volume crop
+        start_with_volume_crop()
+        return True
+    except Exception as e:
+        print(f"Error skipping to volume crop: {e}")
+        return False
+
+def test_status_widget():
+    """Console helper to test the volume waiting status widget"""
+    try:
+        print("=== Testing Volume Waiting Status Widget ===")
+        create_volume_waiting_status_widget()
+        print("Status widget created. Call cleanup_volume_waiting_status_widget() to remove it.")
+        return True
+    except Exception as e:
+        print(f"Error testing status widget: {e}")
+        return False
+
+def cleanup_status_widget():
+    """Console helper to clean up the status widget"""
+    try:
+        cleanup_volume_waiting_status_widget()
+        print("Status widget cleaned up.")
+        return True
+    except Exception as e:
+        print(f"Error cleaning up status widget: {e}")
+        return False
+
+def show_dicom_workflow_help():
+    """Console helper to show help for the new DICOM workflow"""
+    help_text = """
+=== DICOM WORKFLOW HELP ===
+
+The workflow now starts with the Add DICOM Data module and automatically continues when a volume is loaded.
+
+WORKFLOW STEPS:
+1. Click "Start Workflow" button in the Workflow module
+2. DICOM module opens automatically
+3. Import and load your DICOM data using the DICOM module
+4. When a volume is detected in the scene, workflow continues automatically
+5. Volume Crop module opens with ROI ready for cropping
+
+CONSOLE HELPER FUNCTIONS:
+• test_dicom_workflow() - Test the DICOM workflow start
+• test_volume_monitoring() - Test volume addition monitoring
+• stop_volume_monitoring() - Stop volume monitoring manually
+• skip_to_volume_crop() - Skip DICOM loading and go directly to volume crop
+• test_status_widget() - Test the status widget display
+• cleanup_status_widget() - Clean up the status widget
+• show_dicom_workflow_help() - Show this help message
+
+FEATURES:
+• Automatic detection of existing volumes in the scene
+• Real-time monitoring for new volume addition
+• Visual status widget with progress indication
+• Ability to cancel the workflow at any time
+• Automatic continuation to volume crop workflow
+
+NOTES:
+• If volumes already exist in the scene, you'll be asked if you want to continue with them
+• The workflow monitors for ANY new volume addition, not just DICOM volumes
+• You can manually stop monitoring using stop_volume_monitoring()
+• The status widget provides visual feedback and can be cancelled
+
+For more help, see the workflow module documentation.
+"""
+    print(help_text)
+    return True
 
 def clear_existing_centerlines():
     """
