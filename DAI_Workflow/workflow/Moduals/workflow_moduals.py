@@ -29,10 +29,9 @@ def find_working_volume():
         if hasattr(slicer.modules, 'WorkflowCroppedVolume'):
             cropped_volume = slicer.modules.WorkflowCroppedVolume
             if cropped_volume and not cropped_volume.IsA('vtkObject'):  # Check if node still exists
-                print(f"Using stored cropped volume for segmentation: {cropped_volume.GetName()}")
                 return cropped_volume
             else:
-                print("Stored cropped volume reference no longer valid")
+                pass
         
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         
@@ -42,7 +41,6 @@ def find_working_volume():
         # Strategy 1: Look for cropped volumes (these are most recent and relevant)
         for volume in volume_nodes:
             if 'crop' in volume.GetName().lower():
-                print(f"Found cropped volume for segmentation: {volume.GetName()}")
                 return volume
         
         # Strategy 2: Look for visible volumes (not hidden)
@@ -53,16 +51,13 @@ def find_working_volume():
                 visible_volumes.append(volume)
         
         if len(visible_volumes) == 1:
-            print(f"Found single visible volume for segmentation: {visible_volumes[0].GetName()}")
             return visible_volumes[0]
         elif len(visible_volumes) > 1:
             # If multiple visible volumes, prefer non-straightened ones for initial segmentation
             for volume in visible_volumes:
                 if 'straight' not in volume.GetName().lower():
-                    print(f"Found visible non-straightened volume for segmentation: {volume.GetName()}")
                     return volume
             # Fallback to first visible volume
-            print(f"Using first visible volume for segmentation: {visible_volumes[0].GetName()}")
             return visible_volumes[0]
         
         # Strategy 3: Check the active volume in slice views
@@ -73,23 +68,16 @@ def find_working_volume():
                 if active_volume_id:
                     active_volume = slicer.mrmlScene.GetNodeByID(active_volume_id)
                     if active_volume and active_volume.IsA("vtkMRMLScalarVolumeNode"):
-                        print(f"Found active volume for segmentation: {active_volume.GetName()}")
                         return active_volume
         except Exception as e:
-            print(f"Could not check active volume: {e}")
+            pass
         
         # Strategy 4: Fallback to first volume, but warn user
         first_volume = volume_nodes[0]
-        print(f"Warning: Using first available volume for segmentation: {first_volume.GetName()}")
-        print("Available volumes:")
-        for i, volume in enumerate(volume_nodes):
-            visibility_status = "visible" if (volume.GetDisplayNode() and volume.GetDisplayNode().GetVisibility()) else "hidden"
-            print(f"  {i+1}. {volume.GetName()} ({visibility_status})")
         
         return first_volume
         
     except Exception as e:
-        print(f"Error finding working volume: {e}")
         return slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
 
 def create_threshold_segment():
@@ -104,11 +92,9 @@ def create_threshold_segment():
     
     threshold_values = prompt_for_threshold_range()
     if threshold_values is None:
-        print("Threshold input cancelled by user")
         return
     
     threshold_value_low, threshold_value_high = threshold_values
-    print(f"Using thresholds: {threshold_value_low} - {threshold_value_high}")
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
@@ -174,7 +160,6 @@ def prompt_for_threshold_range():
             return None
             
     except Exception as e:
-        print(f"Error in threshold dialog: {e}")
         return (290.0, 3071.0)
 
 def create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high=None):
@@ -205,7 +190,6 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
         segmentation_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
         segmentation = segmentation_node.GetSegmentation()
         segment_id = segmentation.AddEmptySegment("Segment_1")
-        print("Created new segmentation with Segment_1")
     else:
         segmentation = segmentation_node.GetSegmentation()
         segment_ids = vtk.vtkStringArray()
@@ -219,15 +203,11 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
                 segment_id = test_segment_id
                 break
         
-        print(f"Using existing Segment_1 in segmentation: {segmentation_node.GetName()}")
+        pass
     segmentation_node.SetAttribute("WorkflowCreatedSegmentID", segment_id)
-    print(f"Using segment with ID: {segment_id}")
-
-    print("Applying threshold directly to Segment_1...")
     
     segment = segmentation.GetSegment(segment_id)
     if not segment:
-        print("Error: Could not find segment to apply threshold")
         return segmentation_node
     try:
         volume_array = slicer.util.arrayFromVolume(volume_node)
@@ -236,8 +216,6 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
         else:
             binary_mask = volume_array >= threshold_value_low
         
-        print(f"Created binary mask with {binary_mask.sum()} voxels in threshold range")
-        
         temp_labelmap = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode")
         temp_labelmap.SetName("TempThresholdLabelmap")
         slicer.util.updateVolumeFromArray(temp_labelmap, binary_mask.astype('uint8'))
@@ -245,12 +223,12 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
         segment.GetRepresentation(slicer.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName()).Initialize()
         segmentationLogic = slicer.modules.segmentations.logic()
         if segmentationLogic.ImportLabelmapToSegmentationNode(temp_labelmap, segmentation_node):
-            print(f"Successfully applied threshold {threshold_value_low} - {threshold_value_high} to Segment_1")
+            pass
         else:
-            print("Warning: Failed to import threshold labelmap to segment")
+            pass
         slicer.mrmlScene.RemoveNode(temp_labelmap)
     except Exception as e:
-        print(f"Error applying threshold to Segment_1: {e}")
+        pass
     #TODO remove exesive error handeling 
     # except Exception as e:
     #     print(f"Error applying threshold: {e}")
@@ -316,14 +294,12 @@ def show_segmentation_in_3d(segmentation_node):
     slicer.app.processEvents()
     if threeDWidget and threeDView:
         threeDView.forceRender()
-    print("3D threshold segmentation created and displayed in 3D view!")
 
 def load_into_segment_editor(segmentation_node, volume_node):
     """
     Load the segmentation using programmatic API instead of opening GUI
     """
     try:
-        print("Setting up programmatic segmentation workflow...")
         
         # Remove any existing segment from all segmentations if needed
         remove_segment_from_all_segmentations("Segment_1")
@@ -332,7 +308,6 @@ def load_into_segment_editor(segmentation_node, volume_node):
         success = start_with_segment_editor_scissors()
         
         if not success:
-            print("Error: Could not set up programmatic segment editor")
             return False
         
         # If a specific segmentation was provided, use it
@@ -353,7 +328,6 @@ def load_into_segment_editor(segmentation_node, volume_node):
                 if segment_ids.GetNumberOfValues() > 0:
                     segment_id = segment_ids.GetValue(0)
                     segmentEditorNode.SetSelectedSegmentID(segment_id)
-                    print(f"Selected segment: {segment_id}")
         
         # Enable segmentation visibility
         if segmentation_node:
@@ -362,7 +336,6 @@ def load_into_segment_editor(segmentation_node, volume_node):
                 display_node.SetAllSegmentsVisibility(True)
                 display_node.SetVisibility2DOutline(True)
                 display_node.SetVisibility2DFill(True)
-                print("Segmentation visibility enabled")
         
         # Force refresh slice views
         layout_manager = slicer.app.layoutManager()
@@ -372,13 +345,9 @@ def load_into_segment_editor(segmentation_node, volume_node):
                 slice_view = slice_widget.sliceView()
                 slice_view.forceRender()
         
-        print("Programmatic segmentation loaded - Use scissors button to activate tool")
-        print("No GUI opened - scissors tool available via workflow controls")
-        
         return True
         
     except Exception as e:
-        print(f"Error loading into programmatic segment editor: {e}")
         return False
 
 def select_scissors_tool(segment_editor_widget=None):
@@ -395,7 +364,7 @@ def select_scissors_tool(segment_editor_widget=None):
             effect = segmentEditorWidget.activeEffect()
             
             if effect:
-                print("Scissors tool activated programmatically")
+                pass
                 
                 # Set the scissors button to active state if it exists
                 if hasattr(slicer.modules, 'WorkflowScissorsButton'):
@@ -405,14 +374,11 @@ def select_scissors_tool(segment_editor_widget=None):
                 
                 return True
             else:
-                print("Warning: Could not activate scissors effect")
                 return False
         else:
-            print("Warning: Programmatic segment editor not available")
             return False
             
     except Exception as e:
-        print(f"Error selecting scissors tool: {e}")
         return False
 
 def add_continue_button_to_segment_editor():
@@ -422,10 +388,9 @@ def add_continue_button_to_segment_editor():
     try:
         # Create a floating continue button since we're not using the Segment Editor GUI
         create_continue_workflow_button()
-        print("Added continue workflow button")
         
     except Exception as e:
-        print(f"Error adding continue button: {e}")
+        pass
 
 def create_continue_workflow_button():
     """
@@ -435,7 +400,6 @@ def create_continue_workflow_button():
         # Get the crop volume module widget
         crop_widget = slicer.modules.cropvolume.widgetRepresentation()
         if not crop_widget:
-            print("Warning: Crop Volume module not available, creating floating continue button")
             create_floating_continue_button()
             return
         
@@ -486,14 +450,14 @@ def create_continue_workflow_button():
             # Store references
             slicer.modules.WorkflowContinueButton = continue_button
             slicer.modules.WorkflowContinueWidget = continue_container
-            print("Added continue workflow button to Crop Volume module GUI")
+            pass
         else:
             # Fallback to floating widget
-            print("Could not add to Crop Volume module, creating floating continue button")
+            pass
             create_floating_continue_button()
         
     except Exception as e:
-        print(f"Error creating continue workflow button: {e}")
+        pass
         # Fallback to floating widget
         create_floating_continue_button()
 
@@ -559,10 +523,10 @@ def create_floating_continue_button():
         slicer.modules.WorkflowContinueButton = continue_button
         slicer.modules.WorkflowContinueWidget = continue_widget
         
-        print("Created floating continue workflow button")
+        pass
         
     except Exception as e:
-        print(f"Error creating floating continue workflow button: {e}")
+        pass
 
 def add_continue_button_to_crop_module(crop_widget, continue_container):
     """
@@ -601,13 +565,13 @@ def add_continue_button_to_crop_module(crop_widget, continue_container):
             if layout:
                 # Add after the scissors buttons (towards bottom)
                 layout.addWidget(continue_container)
-                print("Added continue button to Crop Volume module layout")
+                pass
                 return True
             else:
                 # Try to create a new layout
                 new_layout = qt.QVBoxLayout(main_ui_widget)
                 new_layout.addWidget(continue_container)
-                print("Created new layout and added continue button to Crop Volume module")
+                pass
                 return True
         else:
             # Fallback: try to find a suitable container widget
@@ -615,21 +579,21 @@ def add_continue_button_to_crop_module(crop_widget, continue_container):
             for widget in container_widgets:
                 if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
                     widget.layout().addWidget(continue_container)
-                    print("Added continue button to Crop Volume container widget")
+                    pass
                     return True
         
-        print("Could not find suitable location in Crop Volume module for continue button")
+        pass
         return False
         
     except Exception as e:
-        print(f"Error adding continue button to crop module: {e}")
+        pass
         return False
 
 def on_continue_from_scissors():
     """
     Called when user clicks the continue button after using scissors
     """
-    print("User clicked continue from scissors tool - opening centerline extraction module...")
+    pass
     cleanup_workflow_ui()
     open_centerline_module()
 
@@ -638,7 +602,7 @@ def on_finish_cropping():
     Called when user clicks the finish cropping button after using scissors tool
     """
     try:
-        print("User clicked finish cropping - proceeding to next workflow step...")
+        pass
         
         # First collapse/hide the crop volume GUI completely
         collapse_crop_volume_gui()
@@ -650,17 +614,17 @@ def on_finish_cropping():
         cleanup_workflow_ui()
         open_centerline_module()
         
-        print("Successfully transitioned from cropping to centerline extraction")
+        pass
         
     except Exception as e:
-        print(f"Error in finish cropping transition: {e}")
+        pass
 
 def collapse_crop_volume_gui():
     """
     Completely collapse/hide the Crop Volume module GUI when cropping is finished
     """
     try:
-        print("Collapsing Crop Volume GUI...")
+        pass
         
         # First try to hide all UI elements
         hide_crop_volume_ui_elements()
@@ -688,19 +652,19 @@ def collapse_crop_volume_gui():
                 if hasattr(crop_widget, 'setVisible'):
                     # Don't make completely invisible, but minimize visibility
                     crop_widget.setMaximumHeight(50)  # Minimize height
-                    print(f"Minimized Crop Volume widget height")
+                    pass
             except Exception as e:
-                print(f"Could not minimize widget: {e}")
+                pass
             
-            print(f"Collapsed {collapsed_count} sections in Crop Volume module")
+            pass
             
         # Force GUI update
         slicer.app.processEvents()
         
-        print("✓ Crop Volume GUI collapsed - workflow continuing to next step")
+        pass
         
     except Exception as e:
-        print(f"Error collapsing Crop Volume GUI: {e}")
+        pass
 
 def cleanup_continue_ui():
     """
@@ -714,7 +678,7 @@ def cleanup_continue_ui():
                 button.parent().layout().removeWidget(button)
             button.setParent(None)
             del slicer.modules.SegmentEditorContinueButton
-            print("Cleaned up old continue button")
+            pass
         
         # Clean up old dialog if it exists
         if hasattr(slicer.modules, 'SegmentEditorContinueDialog'):
@@ -722,7 +686,7 @@ def cleanup_continue_ui():
             dialog.close()
             dialog.setParent(None)
             del slicer.modules.SegmentEditorContinueDialog
-            print("Cleaned up old continue dialog")
+            pass
         
         # Clean up new workflow continue button
         if hasattr(slicer.modules, 'WorkflowContinueButton'):
@@ -736,14 +700,14 @@ def cleanup_continue_ui():
             widget.close()
             widget.setParent(None)
             del slicer.modules.WorkflowContinueWidget
-            print("Cleaned up workflow continue UI")
+            pass
             
         # Also clean up scissors tool UI
         cleanup_scissors_tool_ui()
             
     except Exception as e:
-        print(f"Error cleaning up continue UI: {e}")
-        print(f"Error cleaning up continue UI: {e}")
+        pass
+        pass
 
 def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_color=(0.0, 1.0, 1.0), volume_node=None, volume_name=None):
     """
@@ -766,7 +730,7 @@ def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_
         if volume_node is None:
             volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
             if not volume_nodes:
-                print("Error: No volume nodes found in scene")
+                pass
                 return None
             
             # If volume_name is specified, search for it by name
@@ -774,18 +738,18 @@ def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_
                 for volume in volume_nodes:
                     if volume.GetName() == volume_name:
                         volume_node = volume
-                        print(f"Found volume by name: {volume_name}")
+                        pass
                         break
                     elif volume_name.lower() in volume.GetName().lower():
                         volume_node = volume
-                        print(f"Found volume by partial name match: {volume.GetName()}")
+                        pass
                         break
                 
                 if volume_node is None:
-                    print(f"Warning: Volume '{volume_name}' not found. Available volumes:")
+                    pass
                     for i, vol in enumerate(volume_nodes):
-                        print(f"  {i+1}. {vol.GetName()}")
-                    print("Falling back to automatic selection...")
+                        pass
+                    pass
             
             # Fallback: Try to find cropped volume first, otherwise use first available
             if volume_node is None:
@@ -797,7 +761,7 @@ def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_
                 if volume_node is None:
                     volume_node = volume_nodes[0]
         
-        print(f"Creating mask segmentation '{mask_name}' from volume '{volume_node.GetName()}'")
+        pass
         
         # Create new segmentation node
         segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
@@ -813,18 +777,18 @@ def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_
         # Set custom RGB color
         if len(rgb_color) >= 3:
             segment.SetColor(rgb_color[0], rgb_color[1], rgb_color[2])
-            print(f"Set segment color to RGB: {rgb_color}")
+            pass
         
         # Apply threshold to create binary mask
         volume_array = slicer.util.arrayFromVolume(volume_node)
         if threshold_high is not None:
             binary_mask = (volume_array >= threshold_low) & (volume_array <= threshold_high)
-            print(f"Applied threshold range: {threshold_low} - {threshold_high}")
+            pass
         else:
             binary_mask = volume_array >= threshold_low
-            print(f"Applied threshold: >= {threshold_low}")
+            pass
         
-        print(f"Binary mask contains {binary_mask.sum()} voxels")
+        pass
         
         # Convert binary mask to labelmap and import to segmentation
         temp_labelmap = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode")
@@ -835,7 +799,7 @@ def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_
         # Import labelmap to segmentation
         segmentationLogic = slicer.modules.segmentations.logic()
         if segmentationLogic.ImportLabelmapToSegmentationNode(temp_labelmap, segmentation_node):
-            print(f"Successfully created mask segmentation '{mask_name}'")
+            pass
             
             # Clean up temporary labelmap
             slicer.mrmlScene.RemoveNode(temp_labelmap)
@@ -845,27 +809,27 @@ def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_
             if display_node:
                 display_node.SetVisibility3D(False)  # Disable 3D visibility
                 display_node.SetVisibility(True)     # Keep 2D slice visibility
-                print("Segmentation visibility: 2D slice view only (not in 3D scene)")
+                pass
             
             return segmentation_node
         else:
-            print(f"Error: Failed to import labelmap to segmentation")
+            pass
             slicer.mrmlScene.RemoveNode(temp_labelmap)
             slicer.mrmlScene.RemoveNode(segmentation_node)
             return None
             
     except Exception as e:
-        print(f"Error creating mask segmentation: {e}")
+        pass
         return None
 
 def create_analysis_masks(straightened_volumes):
     try:
         if not straightened_volumes:
-            print("Warning: No straightened volumes provided for analysis masks")
+            pass
             return
         
         straightened_volume = straightened_volumes[0]
-        print(f"Creating analysis masks on straightened volume: {straightened_volume.GetName()}")
+        pass
         
         segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
         segmentation_node.SetName("AnalysisMasks")
@@ -891,11 +855,11 @@ def create_analysis_masks(straightened_volumes):
         volume_array = slicer.util.arrayFromVolume(straightened_volume)
         
         for mask_name, threshold_low, threshold_high in mask_definitions:
-            print(f"Adding {mask_name} mask with threshold range {threshold_low}-{threshold_high} HU...")
+            pass
             
             binary_mask = (volume_array >= threshold_low) & (volume_array <= threshold_high)
             voxel_count = binary_mask.sum()
-            print(f"{mask_name} mask contains {voxel_count} voxels")
+            pass
             
             temp_labelmap = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode")
             temp_labelmap.SetName(f"TempLabelmap_{mask_name}")
@@ -904,16 +868,16 @@ def create_analysis_masks(straightened_volumes):
             
             segmentationLogic = slicer.modules.segmentations.logic()
             if segmentationLogic.ImportLabelmapToSegmentationNode(temp_labelmap, segmentation_node):
-                print(f"Successfully added {mask_name} to st-analysis segment")
+                pass
             else:
-                print(f"Failed to add {mask_name} to st-analysis segment")
+                pass
             
             slicer.mrmlScene.RemoveNode(temp_labelmap)
         
-        print(f"\nAnalysis masks created successfully!")
-        print(f"Single segment: st-analysis in segmentation: {segmentation_node.GetName()}")
-        print("Combined mask includes LAP, NCP, and STENOSIS thresholds")
-        print("Mask is visible in 2D slice views but not in 3D scene.")
+        pass
+        pass
+        pass
+        pass
         
         slicer.modules.WorkflowAnalysisSegmentation = segmentation_node
         slicer.modules.WorkflowAnalysisSegments = [segment_id]
@@ -921,7 +885,7 @@ def create_analysis_masks(straightened_volumes):
         return segmentation_node
             
     except Exception as e:
-        print(f"Error creating analysis masks: {e}")
+        pass
         return None
 
 def cleanup_workflow_ui():
@@ -934,18 +898,18 @@ def cleanup_workflow_ui():
             dock_widget.close()
             dock_widget.setParent(None)
             del slicer.modules.WorkflowDockWidget
-            print("Workflow dock widget cleaned up")
+            pass
         if hasattr(slicer.modules, 'WorkflowDialog'):
             dialog = slicer.modules.WorkflowDialog
             dialog.close()
             dialog.setParent(None)
             del slicer.modules.WorkflowDialog
-            print("Workflow dialog cleaned up")
+            pass
         cleanup_point_placement_ui()
         cleanup_centerline_ui()
             
     except Exception as e:
-        print(f"Error cleaning up workflow UI: {e}")
+        pass
 
 def open_centerline_module():
     """
@@ -962,7 +926,7 @@ def open_centerline_module():
         if workflow_segmentation:
             prepare_surface_for_centerline(workflow_segmentation)
         slicer.util.selectModule("ExtractCenterline")
-        print("Switched to Extract Centerline module")
+        pass
         slicer.app.processEvents()
         
         # Set up minimal UI with only inputs section
@@ -972,7 +936,7 @@ def open_centerline_module():
         setup_centerline_module()
         
     except Exception as e:
-        print(f"Error opening centerline module: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not open Extract Centerline module: {str(e)}")
 
 def remove_duplicate_centerline_buttons():
@@ -993,21 +957,21 @@ def remove_duplicate_centerline_buttons():
                         duplicate_buttons.append(button)
 
             if len(duplicate_buttons) > 1:
-                print(f"Found {len(duplicate_buttons)} duplicate centerline buttons, removing {len(duplicate_buttons) - 1}")
+                pass
                 for i, button in enumerate(duplicate_buttons):
                     if i > 0:
                         if button.parent() and hasattr(button.parent(), 'layout'):
                             button.parent().layout().removeWidget(button)
                         button.setParent(None)
                         button.deleteLater()
-                        print(f"Removed duplicate centerline button #{i+1}")
+                        pass
             elif len(duplicate_buttons) == 1:
-                print("Found 1 centerline button (no duplicates)")
+                pass
             else:
-                print("No large centerline buttons found")
+                pass
                 
     except Exception as e:
-        print(f"Error removing duplicate centerline buttons: {e}")
+        pass
 
 def add_large_centerline_apply_button():
     """
@@ -1017,7 +981,7 @@ def add_large_centerline_apply_button():
         if hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
             existing_button = slicer.modules.CenterlineLargeApplyButton
             if existing_button and existing_button.parent():
-                print("Large Apply button already exists in Extract Centerline module")
+                pass
                 return
         remove_duplicate_centerline_buttons()
         
@@ -1026,7 +990,7 @@ def add_large_centerline_apply_button():
                 if hasattr(slicer.modules, 'CenterlineLargeApplyButton'):
                     existing_button = slicer.modules.CenterlineLargeApplyButton
                     if existing_button and existing_button.parent():
-                        print("Large Apply button already exists, skipping creation")
+                        pass
                         return True
                 
                 centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
@@ -1073,7 +1037,7 @@ def add_large_centerline_apply_button():
                         """)
                         
                         def on_apply_button_clicked():
-                            print("Apply button clicked - starting centerline extraction and monitoring...")
+                            pass
                             setup_centerline_completion_monitor()
                             original_apply_button.click()
                         
@@ -1117,7 +1081,7 @@ def add_large_centerline_apply_button():
                         return False
                         
             except Exception as e:
-                print(f"Error creating large Apply button in Extract Centerline: {e}")
+                pass
                 return False
         success = create_large_button()
         
@@ -1129,7 +1093,7 @@ def add_large_centerline_apply_button():
             qt.QTimer.singleShot(3000, delayed_create)
             
     except Exception as e:
-        print(f"Error adding large centerline Apply button: {e}")
+        pass
 
 def cleanup_centerline_ui():
     """
@@ -1146,26 +1110,26 @@ def cleanup_centerline_ui():
                 button.setParent(None)
                 button.deleteLater()
             del slicer.modules.CenterlineLargeApplyButton
-            print("Cleaned up centerline large apply button")
+            pass
             
     except Exception as e:
-        print(f"Error cleaning up centerline UI: {e}")
+        pass
 
 def clean_centerline_buttons():
     """
     Utility function to manually clean up duplicate centerline buttons (can be called from console)
     """
-    print("Manually cleaning up duplicate centerline buttons...")
+    pass
     remove_duplicate_centerline_buttons()
-    print("Cleanup complete. You can now add a new button if needed.")
+    pass
 
 def stop_centerline_monitoring_manually():
     """
     Utility function to manually stop centerline monitoring (can be called from console)
     """
-    print("Manually stopping centerline monitoring...")
+    pass
     stop_centerline_monitoring()
-    print("Centerline monitoring stopped. You can now click the Apply button to start fresh monitoring.")
+    pass
 
 def check_monitoring_status():
     """
@@ -1176,13 +1140,13 @@ def check_monitoring_status():
         if timer and timer.isActive():
             check_count = getattr(slicer.modules, 'CenterlineCheckCount', 0)
             start_time = getattr(slicer.modules, 'CenterlineMonitoringStartTime', 0)
-            print(f"Centerline monitoring is ACTIVE - Check count: {check_count}, Started at: {start_time}")
-            print("Monitoring will automatically detect when centerline extraction completes")
+            pass
+            pass
         else:
-            print("Centerline monitoring timer exists but is NOT active")
+            pass
     else:
-        print("Centerline monitoring is NOT active")
-        print("Monitoring will start automatically when you click the Extract Centerline button")
+        pass
+        pass
 
 def setup_centerline_module():
     """
@@ -1202,43 +1166,43 @@ def setup_centerline_module():
                         break
                 
                 if workflow_segmentation:
-                    print(f"Setting up centerline extraction for: {workflow_segmentation.GetName()}")
+                    pass
                     workflow_segmentation.CreateClosedSurfaceRepresentation()
                     segmentation_set = False
                     for selector_name in ['inputSegmentationSelector', 'inputSurfaceSelector', 'segmentationSelector']:
                         if hasattr(centerline_module, 'ui') and hasattr(centerline_module.ui, selector_name):
                             getattr(centerline_module.ui, selector_name).setCurrentNode(workflow_segmentation)
-                            print(f"Set input segmentation using {selector_name}")
+                            pass
                             segmentation_set = True
                             break
                     
                     if not segmentation_set:
-                        print("Warning: Could not find segmentation selector in centerline module")
+                        pass
                     slicer.app.processEvents()
                     workflow_segment_id = workflow_segmentation.GetAttribute("WorkflowCreatedSegmentID")
                     if workflow_segment_id:
                         segmentation = workflow_segmentation.GetSegmentation()
                         segment = segmentation.GetSegment(workflow_segment_id)
                         if segment:
-                            print(f"Found workflow segment: {segment.GetName()} (ID: {workflow_segment_id})")
+                            pass
                             segment.SetTag("Segmentation.Status", "completed")
                             segment_set = False
                             for selector_name in ['inputSegmentSelector', 'segmentSelector', 'inputSurfaceSegmentSelector']:
                                 if hasattr(centerline_module.ui, selector_name):
                                     try:
                                         getattr(centerline_module.ui, selector_name).setCurrentSegmentID(workflow_segment_id)
-                                        print(f"Selected segment using {selector_name}: {segment.GetName()}")
+                                        pass
                                         segment_set = True
                                         break
                                     except Exception as e:
-                                        print(f"Could not set segment using {selector_name}: {e}")
+                                        pass
                             
                             if not segment_set:
-                                print("Warning: Could not find segment selector, but segmentation is set")
+                                pass
                         else:
-                            print(f"Warning: Could not find segment with ID {workflow_segment_id}")
+                            pass
                     else:
-                        print("Warning: No workflow segment ID stored")
+                        pass
                         segmentation = workflow_segmentation.GetSegmentation()
                         segment_ids = vtk.vtkStringArray()
                         segmentation.GetSegmentIDs(segment_ids)
@@ -1246,7 +1210,7 @@ def setup_centerline_module():
                             first_segment_id = segment_ids.GetValue(0)
                             first_segment = segmentation.GetSegment(first_segment_id)
                             if first_segment:
-                                print(f"Using first available segment: {first_segment.GetName()}")
+                                pass
                                 first_segment.SetTag("Segmentation.Status", "completed")
                     
                     try:
@@ -1261,10 +1225,10 @@ def setup_centerline_module():
                             endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
                             if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
                                 endpoints_selector.setCurrentNode(endpoint_point_list)
-                                print(f"✓ Set endpoint point list using endPointsMarkupsSelector from XML")
+                                pass
                                 endpoint_set = True
                             else:
-                                print("Could not find endPointsMarkupsSelector or it lacks setCurrentNode method")
+                                pass
                         
                         # Fallback to old method if XML-based approach failed
                         if not endpoints_selector:
@@ -1272,25 +1236,25 @@ def setup_centerline_module():
                             for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
                                 if hasattr(centerline_module.ui, endpoint_selector_attr):
                                     getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
-                                    print(f"Created new endpoint point list using {endpoint_selector_attr}")
+                                    pass
                                     endpoint_set = True
                                     break
                             
                             if not endpoint_set:
-                                print("Warning: Could not find endpoint selector in centerline module")
+                                pass
                         
                         # Set this as the active node for point placement
                         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
                         if selectionNode:
                             selectionNode.SetActivePlaceNodeID(endpoint_point_list.GetID())
-                            print("✓ Set CenterlineEndpoints as active place node")
+                            pass
                         
                         # Enable point placement mode with multiple points
                         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
                         if interactionNode:
                             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
                             interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
-                            print("✓ Activated point placement mode with multiple control points enabled")
+                            pass
                         
                         # Try to configure the place widget
                         if extract_centerline_widget:
@@ -1298,18 +1262,18 @@ def setup_centerline_module():
                             if place_widget:
                                 if hasattr(place_widget, 'setCurrentNode'):
                                     place_widget.setCurrentNode(endpoint_point_list)
-                                    print("✓ Set point list in place widget")
+                                    pass
                                 if hasattr(place_widget, 'setPlaceModeEnabled'):
                                     place_widget.setPlaceModeEnabled(True)
-                                    print("✓ Enabled place mode in place widget")
+                                    pass
                         
                         for create_new_attr in ['createNewEndpointsCheckBox', 'createNewPointListCheckBox']:
                             if hasattr(centerline_module.ui, create_new_attr):
                                 getattr(centerline_module.ui, create_new_attr).setChecked(True)
-                                print(f"Enabled create new point list using {create_new_attr}")
+                                pass
                                 
                     except Exception as e:
-                        print(f"Could not configure endpoint point list: {e}")
+                        pass
                     
                     try:
                         centerline_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
@@ -1319,56 +1283,56 @@ def setup_centerline_module():
                         for model_selector_attr in ['outputCenterlineModelSelector', 'centerlineModelSelector', 'outputModelSelector']:
                             if hasattr(centerline_module.ui, model_selector_attr):
                                 getattr(centerline_module.ui, model_selector_attr).setCurrentNode(centerline_model)
-                                print(f"Created new centerline model using {model_selector_attr}")
+                                pass
                                 model_set = True
                                 break
                         
                         if not model_set:
-                            print("Warning: Could not find centerline model selector")
+                            pass
                         
                         for create_new_model_attr in ['createNewModelCheckBox', 'createNewCenterlineModelCheckBox']:
                             if hasattr(centerline_module.ui, create_new_model_attr):
                                 getattr(centerline_module.ui, create_new_model_attr).setChecked(True)
-                                print(f"Enabled create new model using {create_new_model_attr}")
+                                pass
                                 
                     except Exception as e:
-                        print(f"Could not configure centerline model: {e}")
+                        pass
                     try:
                         if hasattr(centerline_module.ui, 'outputTreeModelSelector'):
                             tree_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
                             tree_model.SetName("CenterlineTree")
                             centerline_module.ui.outputTreeModelSelector.setCurrentNode(tree_model)
-                            print("Created new model node for centerline tree")
+                            pass
 
                         if hasattr(centerline_module.ui, 'outputTreeCurveSelector'):
                             tree_curve = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
                             tree_curve.SetName("CenterlineCurve")
                             centerline_module.ui.outputTreeCurveSelector.setCurrentNode(tree_curve)
-                            print("Created new curve node for centerline tree")
+                            pass
                         
                         for tree_model_attr in ['treeModelSelector']:
                             if hasattr(centerline_module.ui, tree_model_attr):
                                 tree_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
                                 tree_model.SetName("CenterlineTree")
                                 getattr(centerline_module.ui, tree_model_attr).setCurrentNode(tree_model)
-                                print(f"Created new model node using {tree_model_attr}")
+                                pass
                         
                         for tree_curve_attr in ['outputCenterlineCurveSelector', 'centerlineCurveSelector', 'treeCurveSelector']:
                             if hasattr(centerline_module.ui, tree_curve_attr):
                                 tree_curve = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
                                 tree_curve.SetName("CenterlineCurve")
                                 getattr(centerline_module.ui, tree_curve_attr).setCurrentNode(tree_curve)
-                                print(f"Created new curve node using {tree_curve_attr}")
+                                pass
                                 
                     except Exception as e:
-                        print(f"Could not configure tree outputs (this is normal if UI elements have different names): {e}")
+                        pass
                     
                     # Force GUI update and give time for widgets to initialize
                     slicer.app.processEvents()
                     time.sleep(0.2)
                     slicer.app.processEvents()
                     
-        print("Extract Centerline module setup complete")
+        pass
         add_large_centerline_apply_button()
         
         # Give GUI more time to fully initialize before verification
@@ -1376,11 +1340,11 @@ def setup_centerline_module():
         time.sleep(0.3)
         
         # Verify the setup worked correctly
-        print("\n--- Verifying Extract Centerline Setup ---")
+        pass
         verification_results = verify_extract_centerline_point_list_autoselection()
         
         if not verification_results["success"]:
-            print("⚠️ Initial setup verification failed, attempting fixes...")
+            pass
             fix_extract_centerline_setup_issues()
             # Re-verify after fixes
             time.sleep(0.2)
@@ -1388,14 +1352,14 @@ def setup_centerline_module():
             verification_results = verify_extract_centerline_point_list_autoselection()
             
             if verification_results["success"]:
-                print("✓ Issues resolved successfully!")
+                pass
             else:
-                print("⚠️ Some issues remain - manual intervention may be needed")
+                pass
         
         prompt_for_endpoints()
         
     except Exception as e:
-        print(f"Error setting up centerline module: {e}")
+        pass
 
 def prepare_surface_for_centerline(segmentation_node):
     """
@@ -1413,17 +1377,17 @@ def prepare_surface_for_centerline(segmentation_node):
                 segment.SetTag("Segmentation.Status", "completed")
                 closed_surface_rep_name = slicer.vtkSegmentationConverter.GetSegmentationClosedSurfaceRepresentationName()
                 if not segment.HasRepresentation(closed_surface_rep_name):
-                    print(f"Creating closed surface representation for segment: {segment.GetName()}")
+                    pass
                     segmentation_node.CreateClosedSurfaceRepresentation()
                 
-                print(f"Prepared segment for centerline extraction: {segment.GetName()}")
+                pass
         segmentation_node.Modified()
         
-        print("Surface preparation for centerline extraction complete")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error preparing surface for centerline: {e}")
+        pass
         return False
 
 def remove_default_segment(segmentation_node):
@@ -1446,18 +1410,18 @@ def remove_default_segment(segmentation_node):
                     segment_id != workflow_segment_id and 
                     not segment_name.startswith("ThresholdSegment_")):
                     segments_to_remove.append(segment_id)
-                    print(f"Marking for removal: {segment_name} (ID: {segment_id})")
+                    pass
         for segment_id in segments_to_remove:
             segmentation.RemoveSegment(segment_id)
-            print(f"Removed default segment: {segment_id}")
+            pass
         
         if segments_to_remove:
-            print(f"Cleaned up {len(segments_to_remove)} default segment(s)")
+            pass
         else:
-            print("No default segments to remove")
+            pass
             
     except Exception as e:
-        print(f"Error removing default segments: {e}")
+        pass
 
 def remove_segment_from_all_segmentations(segment_name):
     """
@@ -1477,17 +1441,17 @@ def remove_segment_from_all_segmentations(segment_name):
                 segment = segmentation.GetSegment(segment_id)
                 if segment and segment.GetName() == segment_name:
                     segmentation.RemoveSegment(segment_id)
-                    print(f"Removed segment '{segment_name}' from {seg_node.GetName()}")
+                    pass
                     removed_count += 1
                     break 
         
         if removed_count == 0:
-            print(f"No segments named '{segment_name}' found in any segmentation")
+            pass
         else:
-            print(f"Removed {removed_count} segment(s) named '{segment_name}'")
+            pass
             
     except Exception as e:
-        print(f"Error removing segments: {e}")
+        pass
 
 
 def add_large_crop_apply_button():
@@ -1498,13 +1462,13 @@ def add_large_crop_apply_button():
     try:
         # Check if scissors workflow is active - if so, don't create the apply button
         if hasattr(slicer.modules, 'WorkflowScissorsButton') or hasattr(slicer.modules, 'WorkflowFinishButton'):
-            print("Scissors workflow is active - skipping original apply button creation")
+            pass
             return True
         
         if hasattr(slicer.modules, 'CropLargeApplyButton'):
             existing_button = slicer.modules.CropLargeApplyButton
             if existing_button and existing_button.parent():
-                print("Large Apply button already exists in Crop Volume module")
+                pass
                 return True
         
         def create_large_button():
@@ -1512,14 +1476,14 @@ def add_large_crop_apply_button():
                 if hasattr(slicer.modules, 'CropLargeApplyButton'):
                     existing_button = slicer.modules.CropLargeApplyButton
                     if existing_button and existing_button.parent():
-                        print("Large Apply button already exists, skipping creation")
+                        pass
                         return True
                 
-                print("Attempting to create large Apply button for Crop Volume...")
+                pass
                 crop_widget = slicer.modules.cropvolume.widgetRepresentation()
-                print(f"Crop widget found: {crop_widget is not None}")
-                print(f"Crop widget type: {type(crop_widget)}")
-                print(f"Crop widget has 'self' attribute: {hasattr(crop_widget, 'self') if crop_widget else 'N/A'}")
+                pass
+                pass
+                pass
                 
                 if crop_widget:
                     crop_module = None
@@ -1527,57 +1491,57 @@ def add_large_crop_apply_button():
                     if hasattr(crop_widget, 'self'):
                         try:
                             crop_module = crop_widget.self()
-                            print(f"Method 1 - Got crop module via 'self': {crop_module is not None}")
+                            pass
                         except Exception as e:
-                            print(f"Method 1 failed: {e}")
+                            pass
                     
                     if not crop_module:
                         try:
                             crop_module = crop_widget
-                            print(f"Method 2 - Using crop_widget directly: {crop_module is not None}")
+                            pass
                         except Exception as e:
-                            print(f"Method 2 failed: {e}")
+                            pass
 
                     if not crop_module:
                         try:
                             crop_module = slicer.modules.cropvolume.createNewWidgetRepresentation()
-                            print(f"Method 3 - Created new widget representation: {crop_module is not None}")
+                            pass
                         except Exception as e:
-                            print(f"Method 3 failed: {e}")
+                            pass
                     
                     if crop_module:
-                        print(f"Successfully got crop module: {type(crop_module)}")
+                        pass
                         
                         original_apply_button = None
-                        print("Searching for Apply button in Crop Volume module...")
+                        pass
                         
                         apply_button_attrs = ['applyButton', 'ApplyButton', 'applyCropButton', 'cropApplyButton']
                         
                         if hasattr(crop_module, 'ui'):
-                            print("Found 'ui' attribute, searching for Apply button...")
+                            pass
                             for attr_name in apply_button_attrs:
                                 if hasattr(crop_module.ui, attr_name):
                                     original_apply_button = getattr(crop_module.ui, attr_name)
-                                    print(f"Found Apply button using attribute: {attr_name}")
+                                    pass
                                     break
                         else:
-                            print("No 'ui' attribute found, trying direct attributes...")
+                            pass
                             for attr_name in apply_button_attrs:
                                 if hasattr(crop_module, attr_name):
                                     original_apply_button = getattr(crop_module, attr_name)
-                                    print(f"Found Apply button using direct attribute: {attr_name}")
+                                    pass
                                     break
 
                         if not original_apply_button:
-                            print("Direct attribute search failed, searching by button text...")
+                            pass
                             all_buttons = crop_widget.findChildren(qt.QPushButton)
-                            print(f"Found {len(all_buttons)} buttons in crop widget")
+                            pass
                             for i, button in enumerate(all_buttons):
                                 button_text = button.text if hasattr(button, 'text') else ""
-                                print(f"Button {i}: '{button_text}'")
+                                pass
                                 if button_text and 'apply' in button_text.lower():
                                     original_apply_button = button
-                                    print(f"Found Apply button by text: '{button_text}'")
+                                    pass
                                     break
                     
                     if original_apply_button:
@@ -1611,7 +1575,7 @@ def add_large_crop_apply_button():
                         large_apply_button.connect('clicked()', lambda: original_apply_button.click())
                         
                     else:
-                        print("Warning: Original Apply button not found, creating standalone button")
+                        pass
                         # Create button anyway and try to trigger apply through the module
                         large_apply_button = qt.QPushButton("APPLY CROP")
                         large_apply_button.setStyleSheet("""
@@ -1643,17 +1607,17 @@ def add_large_crop_apply_button():
                             try:
                                 if hasattr(crop_module, 'onApplyButton'):
                                     crop_module.onApplyButton()
-                                    print("Applied crop using onApplyButton method")
+                                    pass
                                 elif hasattr(crop_module, 'apply'):
                                     crop_module.apply()
-                                    print("Applied crop using apply method")
+                                    pass
                                 else:
-                                    print("Could not find crop apply method - please use original Apply button")
+                                    pass
                             except Exception as e:
-                                print(f"Error applying crop: {e}")
+                                pass
                         
                         large_apply_button.connect('clicked()', trigger_crop_apply)
-                        print("Connected large button to crop apply logic")
+                        pass
                     
                     # Add the button to the GUI (common for both cases)
                     # Try to find the main UI container in the crop module
@@ -1678,16 +1642,16 @@ def add_large_crop_apply_button():
                         else:
                             new_layout = qt.QVBoxLayout(main_ui_widget)
                             new_layout.insertWidget(0, large_apply_button)
-                            print("Created layout and added large green Apply button to Crop Volume module")
+                            pass
                     else:
                         container_widgets = crop_widget.findChildren(qt.QWidget)
                         for widget in container_widgets:
                             if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
                                 widget.layout().insertWidget(0, large_apply_button)
-                                print("Added large green Apply button to Crop Volume container widget")
+                                pass
                                 break
                         else:
-                            print("Could not find suitable container in Crop Volume module")
+                            pass
                             return False
                     
                     slicer.modules.CropLargeApplyButton = large_apply_button
@@ -1696,9 +1660,9 @@ def add_large_crop_apply_button():
                     if crop_widget:
                         try:
                             attrs = [attr for attr in dir(crop_widget) if not attr.startswith('_')]
-                            print(f"  {attrs[:10]}...")  # Show first 10 attributes
+                            pass
                         except:
-                            print("  Could not list attributes")
+                            pass
                     return False
                         
             except Exception as e:
@@ -1710,10 +1674,10 @@ def add_large_crop_apply_button():
         if not success:
             qt.QTimer.singleShot(1000, create_large_button)
             qt.QTimer.singleShot(3000, create_large_button)
-            print("Scheduling delayed large Apply button creation...")
+            pass
             
     except Exception as e:
-        print(f"Error adding large crop Apply button: {e}")
+        pass
 
 def add_large_cpr_apply_button():
     """
@@ -1723,7 +1687,7 @@ def add_large_cpr_apply_button():
         if hasattr(slicer.modules, 'CPRLargeApplyButton'):
             existing_button = slicer.modules.CPRLargeApplyButton
             if existing_button and existing_button.parent():
-                print("Large Apply button already exists in CPR module")
+                pass
                 return
         
         def create_large_button():
@@ -1741,27 +1705,27 @@ def add_large_cpr_apply_button():
                         try:
                             cpr_module = cpr_widget.self()
                         except Exception as e:
-                            print(f"Method 1 failed: {e}")
+                            pass
                     
                     if not cpr_module:
                         try:
                             cpr_module = cpr_widget
-                            print(f"Method 2 - Using cpr_widget directly: {cpr_module is not None}")
+                            pass
                         except Exception as e:
-                            print(f"Method 2 failed: {e}")
+                            pass
 
                     if not cpr_module:
                         try:
                             cpr_module = slicer.modules.curvedplanarreformat.createNewWidgetRepresentation()
-                            print(f"Method 3 - Created new widget representation: {cpr_module is not None}")
+                            pass
                         except Exception as e:
-                            print(f"Method 3 failed: {e}")
+                            pass
                     
                     if cpr_module:
-                        print(f"Successfully got CPR module: {type(cpr_module)}")
+                        pass
                         
                         original_apply_button = None
-                        print("Searching for Apply button in CPR module...")
+                        pass
                         
                         apply_button_attrs = ['applyButton', 'ApplyButton', 'applyCPRButton', 'cprApplyButton']
 
@@ -1769,26 +1733,26 @@ def add_large_cpr_apply_button():
                             for attr_name in apply_button_attrs:
                                 if hasattr(cpr_module.ui, attr_name):
                                     original_apply_button = getattr(cpr_module.ui, attr_name)
-                                    print(f"Found Apply button using attribute: {attr_name}")
+                                    pass
                                     break
                         else:
 
                             for attr_name in apply_button_attrs:
                                 if hasattr(cpr_module, attr_name):
                                     original_apply_button = getattr(cpr_module, attr_name)
-                                    print(f"Found Apply button using direct attribute: {attr_name}")
+                                    pass
                                     break
                         
                         if not original_apply_button:
-                            print("Direct attribute search failed, searching by button text...")
+                            pass
                             all_buttons = cpr_widget.findChildren(qt.QPushButton)
-                            print(f"Found {len(all_buttons)} buttons in CPR widget")
+                            pass
                             for i, button in enumerate(all_buttons):
                                 button_text = button.text if hasattr(button, 'text') else ""
-                                print(f"Button {i}: '{button_text}'")
+                                pass
                                 if button_text and 'apply' in button_text.lower():
                                     original_apply_button = button
-                                    print(f"Found Apply button by text: '{button_text}'")
+                                    pass
                                     break
                         
                         if original_apply_button:
@@ -1820,7 +1784,7 @@ def add_large_cpr_apply_button():
                             large_apply_button.connect('clicked()', lambda: original_apply_button.click())
                             
                         else:
-                            print("Warning: Original Apply button not found, creating standalone button")
+                            pass
                             large_apply_button = qt.QPushButton("APPLY CPR")
                             large_apply_button.setStyleSheet("""
                                 QPushButton { 
@@ -1850,14 +1814,14 @@ def add_large_cpr_apply_button():
                                 try:
                                     if hasattr(cpr_module, 'onApplyButton'):
                                         cpr_module.onApplyButton()
-                                        print("Applied CPR using onApplyButton method")
+                                        pass
                                     elif hasattr(cpr_module, 'apply'):
                                         cpr_module.apply()
-                                        print("Applied CPR using apply method")
+                                        pass
                                     else:
-                                        print("Could not find CPR apply method - please use original Apply button")
+                                        pass
                                 except Exception as e:
-                                    print(f"Error applying CPR: {e}")
+                                    pass
                             
                             large_apply_button.connect('clicked()', trigger_cpr_apply)
                         
@@ -1895,13 +1859,13 @@ def add_large_cpr_apply_button():
                         if cpr_widget:
                             try:
                                 attrs = [attr for attr in dir(cpr_widget) if not attr.startswith('_')]
-                                print(f"  {attrs[:10]}...")
+                                pass
                             except:
-                                print("  Could not list attributes")
+                                pass
                         return False
                         
             except Exception as e:
-                print(f"Error creating large Apply button: {e}")
+                pass
                 return False
         
         success = create_large_button()
@@ -1911,7 +1875,7 @@ def add_large_cpr_apply_button():
             qt.QTimer.singleShot(3000, create_large_button)
             
     except Exception as e:
-        print(f"Error adding large CPR Apply button: {e}")
+        pass
 
 def style_crop_apply_button():
     """
@@ -1928,21 +1892,21 @@ def style_crop_apply_button():
                         crop_module = crop_widget.self()
                         if hasattr(crop_module.ui, 'applyButton'):
                             apply_button = crop_module.ui.applyButton
-                            print("Found Apply button via direct UI access")
+                            pass
                         elif hasattr(crop_module.ui, 'ApplyButton'):
                             apply_button = crop_module.ui.ApplyButton
-                            print("Found Apply button via capitalized UI access")
+                            pass
                     
                     if not apply_button:
                         all_buttons = crop_widget.findChildren(qt.QPushButton)
-                        print(f"Searching through {len(all_buttons)} buttons in crop module")
+                        pass
                         for button in all_buttons:
                             button_text = button.text if hasattr(button, 'text') else ""
                             button_name = button.objectName() if hasattr(button, 'objectName') else ""
-                            print(f"  Button: '{button_text}' (name: '{button_name}')")
+                            pass
                             if 'apply' in button_text.lower() or 'apply' in button_name.lower():
                                 apply_button = button
-                                print(f"Found Apply button via search: '{button_text}'")
+                                pass
                                 break
                     
                     if not apply_button:
@@ -1953,7 +1917,7 @@ def style_crop_apply_button():
                             parent_name = button.parent().objectName() if button.parent() and hasattr(button.parent(), 'objectName') else ""
                             if 'apply' in button_text.lower() and ('crop' in parent_name.lower() or 'volume' in parent_name.lower()):
                                 apply_button = button
-                                print(f"Found Apply button via global search: '{button_text}' in parent '{parent_name}'")
+                                pass
                                 break
                     
                     if apply_button:
@@ -1990,7 +1954,7 @@ def style_crop_apply_button():
                         return False
                         
             except Exception as e:
-                print(f"Error in apply_styling: {e}")
+                pass
                 return False
         
         success = apply_styling()
@@ -2000,21 +1964,21 @@ def style_crop_apply_button():
             timer.singleShot(1000, apply_styling)  # Try again after 1 second
             
     except Exception as e:
-        print(f"Error styling crop Apply button: {e}")
+        pass
 
 def start_with_dicom_data():
     """
     Start the workflow by opening the Add DICOM Data module and waiting for a volume to be loaded.
     """
     try:
-        print("=== Starting Workflow: Add DICOM Data ===")
+        pass
         
         # Check if there are already volumes in the scene
         existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         if existing_volumes:
-            print(f"Found {len(existing_volumes)} existing volume(s) in the scene:")
+            pass
             for i, volume in enumerate(existing_volumes):
-                print(f"  {i+1}. {volume.GetName()}")
+                pass
             
             # Ask user if they want to proceed with existing volumes or load new ones
             result = slicer.util.confirmYesNoDisplay(
@@ -2026,7 +1990,7 @@ def start_with_dicom_data():
             )
             
             if result:
-                print("Continuing with existing volumes...")
+                pass
                 start_with_volume_crop()
                 return
         
@@ -2034,14 +1998,14 @@ def start_with_dicom_data():
         slicer.util.selectModule("DICOM")
         slicer.app.processEvents()
         
-        print("DICOM module opened. Please import and load DICOM data.")
-        print("The workflow will automatically continue when a volume is added to the scene.")
+        pass
+        pass
         
         # Set up monitoring for volume addition
         setup_volume_addition_monitor()
         
     except Exception as e:
-        print(f"Error opening DICOM module: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not open DICOM module: {str(e)}")
 
 def setup_volume_addition_monitor():
@@ -2059,7 +2023,7 @@ def setup_volume_addition_monitor():
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         slicer.modules.BaselineVolumeCount = len(volume_nodes)
         
-        print(f"Baseline volume count: {slicer.modules.BaselineVolumeCount}")
+        pass
         
         # Create status widget
         create_volume_waiting_status_widget()
@@ -2071,10 +2035,10 @@ def setup_volume_addition_monitor():
         slicer.modules.VolumeAdditionMonitorTimer = timer
         slicer.modules.VolumeMonitorCheckCount = 0
         
-        print("Volume addition monitoring started")
+        pass
         
     except Exception as e:
-        print(f"Error setting up volume addition monitor: {e}")
+        pass
 
 def create_volume_waiting_status_widget():
     """
@@ -2150,10 +2114,10 @@ def create_volume_waiting_status_widget():
         slicer.modules.VolumeWaitingStatusWidget = status_widget
         slicer.modules.VolumeWaitingStatusLabel = status_label
         
-        print("Volume waiting status widget created")
+        pass
         
     except Exception as e:
-        print(f"Error creating volume waiting status widget: {e}")
+        pass
 
 def update_volume_waiting_status(message):
     """
@@ -2165,7 +2129,7 @@ def update_volume_waiting_status(message):
             if label:
                 label.setText(message)
     except Exception as e:
-        print(f"Error updating volume waiting status: {e}")
+        pass
 
 def cleanup_volume_waiting_status_widget():
     """
@@ -2183,19 +2147,19 @@ def cleanup_volume_waiting_status_widget():
             del slicer.modules.VolumeWaitingStatusLabel
             
     except Exception as e:
-        print(f"Error cleaning up volume waiting status widget: {e}")
+        pass
 
 def cancel_volume_waiting():
     """
     Cancel the volume waiting workflow.
     """
     try:
-        print("Cancelling volume waiting workflow...")
+        pass
         stop_volume_addition_monitoring()
         cleanup_volume_waiting_status_widget()
-        print("Workflow cancelled. You can start a new workflow anytime.")
+        pass
     except Exception as e:
-        print(f"Error cancelling volume waiting: {e}")
+        pass
 
 def check_for_volume_addition():
     """
@@ -2215,11 +2179,11 @@ def check_for_volume_addition():
         
         # Print status every 10 checks (10 seconds)
         if slicer.modules.VolumeMonitorCheckCount % 10 == 0:
-            print(f"Waiting for volume addition... (Check #{slicer.modules.VolumeMonitorCheckCount})")
+            pass
         
         # Check if a new volume has been added
         if current_count > slicer.modules.BaselineVolumeCount:
-            print(f"✓ New volume detected! Count changed from {slicer.modules.BaselineVolumeCount} to {current_count}")
+            pass
             
             # Update status widget
             update_volume_waiting_status("✅ Volume detected! Continuing workflow...")
@@ -2230,17 +2194,17 @@ def check_for_volume_addition():
             # Get the newly added volume
             if volume_nodes:
                 latest_volume = volume_nodes[-1]  # Get the most recently added volume
-                print(f"Latest volume: {latest_volume.GetName()}")
+                pass
             
             # Clean up status widget
             qt.QTimer.singleShot(2000, cleanup_volume_waiting_status_widget)  # Keep success message for 2 seconds
             
             # Continue with the original workflow
-            print("Continuing with volume crop workflow...")
+            pass
             qt.QTimer.singleShot(500, start_with_volume_crop)  # Small delay to ensure volume is fully loaded
             
     except Exception as e:
-        print(f"Error checking for volume addition: {e}")
+        pass
 
 def stop_volume_addition_monitoring():
     """
@@ -2252,7 +2216,7 @@ def stop_volume_addition_monitoring():
             timer.stop()
             timer.timeout.disconnect()
             del slicer.modules.VolumeAdditionMonitorTimer
-            print("Volume addition monitoring stopped")
+            pass
         
         # Clean up monitoring variables
         if hasattr(slicer.modules, 'BaselineVolumeCount'):
@@ -2264,7 +2228,7 @@ def stop_volume_addition_monitoring():
         cleanup_volume_waiting_status_widget()
             
     except Exception as e:
-        print(f"Error stopping volume addition monitoring: {e}")
+        pass
 
 def start_with_volume_crop():
     """
@@ -2304,7 +2268,7 @@ def start_with_volume_crop():
     roi_node.SetCenter(center)
     roi_node.SetSize(size)
     
-    print(f"Created ROI covering entire volume: center={center}, size={size}")
+    pass
     
     crop_widget = slicer.modules.cropvolume.widgetRepresentation()
     if crop_widget and hasattr(crop_widget, 'self'):
@@ -2321,7 +2285,7 @@ def start_with_volume_crop():
         display_node.SetColor(1.0, 1.0, 0.0)
         display_node.SetSelectedColor(1.0, 0.5, 0.0)
     
-    print("ROI created - adjust handles and click Apply to crop")
+    pass
     
     slicer.app.processEvents()
     
@@ -2329,7 +2293,7 @@ def start_with_volume_crop():
     
     qt.QTimer.singleShot(2000, add_large_crop_apply_button)
     
-    print("Large green Apply button creation scheduled for Crop Volume module")
+    pass
     
     setup_crop_completion_monitor(volume_node)
 
@@ -2384,7 +2348,7 @@ def check_crop_completion(original_volume_node):
                         if composite_node and composite_node.GetBackgroundVolumeID() == original_volume_node.GetID():
                             composite_node.SetBackgroundVolumeID(None)
             
-            print(f"Hidden original volume: {original_volume_node.GetName()}")
+            pass
             
             slicer.modules.WorkflowOriginalVolume = original_volume_node
             slicer.modules.WorkflowCroppedVolume = node
@@ -2395,9 +2359,9 @@ def check_crop_completion(original_volume_node):
             for roi_node in roi_nodes:
                 if 'crop' in roi_node.GetName().lower():
                     slicer.mrmlScene.RemoveNode(roi_node)
-                    print(f"Automatically deleted ROI: {roi_node.GetName()}")
+                    pass
             
-            print(f"Cropped volume '{node.GetName()}' detected. Continuing workflow.")
+            pass
             create_threshold_segment()
             return
 
@@ -2435,11 +2399,11 @@ def set_cropped_volume_visible(cropped_volume):
         
         slicer.app.processEvents()
         
-        print(f"Cropped volume '{cropped_volume.GetName()}' set as active and visible in all slice views")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error setting cropped volume visible: {e}")
+        pass
         return False
 
 
@@ -2448,12 +2412,12 @@ def prompt_for_endpoints():
     Simplified prompt for centerline extraction
     """
     try:
-        print("Centerline extraction configured - place start and end points, then click the Extract Centerline button")
-        print("Monitoring will start automatically when you click the Apply button")
+        pass
+        pass
         
     except Exception as e:
-        print(f"Error prompting for endpoints: {e}")
-        print("Please add start and end points using the Extract Centerline module, then click Apply")
+        pass
+        pass
 
 def setup_centerline_completion_monitor():
     """
@@ -2465,7 +2429,7 @@ def setup_centerline_completion_monitor():
         # Clear the dialog shown flag for new extraction cycle
         if hasattr(slicer.modules, 'CenterlineDialogShown'):
             del slicer.modules.CenterlineDialogShown
-            print("Cleared dialog shown flag for new extraction cycle")
+            pass
 
         # Store baseline count of centerlines before monitoring starts
         current_models = find_all_centerline_models()
@@ -2479,10 +2443,10 @@ def setup_centerline_completion_monitor():
         slicer.modules.CenterlineMonitorTimer = timer
         slicer.modules.CenterlineCheckCount = 0
         slicer.modules.CenterlineMonitoringStartTime = time.time()
-        print(f"Started monitoring for centerline completion (baseline: {len(current_models)} models, {len(current_curves)} curves)")
+        pass
         
     except Exception as e:
-        print(f"Error setting up centerline completion monitor: {e}")
+        pass
 
 def setup_centerline_completion_monitor_without_reset(target_models=None, target_curves=None):
     """
@@ -2506,10 +2470,10 @@ def setup_centerline_completion_monitor_without_reset(target_models=None, target
         slicer.modules.CenterlineMonitorTimer = timer
         slicer.modules.CenterlineCheckCount = 0
         slicer.modules.CenterlineMonitoringStartTime = time.time()
-        print(f"Started monitoring for specific centerline completion (tracking {len(target_models or [])} models, {len(target_curves or [])} curves)")
+        pass
         
     except Exception as e:
-        print(f"Error setting up specific centerline completion monitor: {e}")
+        pass
 
 def check_specific_centerline_completion():
     """
@@ -2521,7 +2485,7 @@ def check_specific_centerline_completion():
         
         # Check if a dialog has already been shown for this extraction cycle
         if hasattr(slicer.modules, 'CenterlineDialogShown') and slicer.modules.CenterlineDialogShown:
-            print("Dialog already shown for this extraction cycle - stopping specific monitoring")
+            pass
             stop_centerline_monitoring()
             return
         
@@ -2530,7 +2494,7 @@ def check_specific_centerline_completion():
         target_curve_ids = getattr(slicer.modules, 'TargetCenterlineCurves', [])
         
         if not target_model_ids and not target_curve_ids:
-            print("No target centerlines to monitor - stopping")
+            pass
             stop_centerline_monitoring()
             return
         
@@ -2541,7 +2505,7 @@ def check_specific_centerline_completion():
         target_models = [model for model in all_models if model.GetID() in target_model_ids]
         target_curves = [curve for curve in all_curves if curve.GetID() in target_curve_ids]
         
-        print(f"Checking specific centerlines: {len(target_models)} models, {len(target_curves)} curves")
+        pass
         
         # Check if any target centerlines now have sufficient data
         best_model = None
@@ -2552,16 +2516,16 @@ def check_specific_centerline_completion():
             if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points
                 if not best_model or polydata.GetNumberOfPoints() > best_model.GetPolyData().GetNumberOfPoints():
                     best_model = model
-                    print(f"Target model {model.GetName()} now has sufficient data: {polydata.GetNumberOfPoints()} points")
+                    pass
         
         for curve in target_curves:
             if curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
                 if not best_curve or curve.GetNumberOfControlPoints() > best_curve.GetNumberOfControlPoints():
                     best_curve = curve
-                    print(f"Target curve {curve.GetName()} now has sufficient data: {curve.GetNumberOfControlPoints()} control points")
+                    pass
         
         if best_model or best_curve:
-            print("Target centerlines now have sufficient data - showing completion dialog")
+            pass
             
             # Mark that we're showing a dialog for this extraction cycle
             slicer.modules.CenterlineDialogShown = True
@@ -2570,7 +2534,7 @@ def check_specific_centerline_completion():
             show_centerline_completion_dialog(best_model, best_curve)
         
     except Exception as e:
-        print(f"Error checking specific centerline completion: {e}")
+        pass
 
 def check_centerline_completion():
     """
@@ -2594,7 +2558,7 @@ def check_centerline_completion():
         current_curves = find_all_centerline_curves()
         
         # Debug information
-        print(f"Checking centerline completion: baseline models={baseline_model_count}, current models={len(current_models)}, baseline curves={baseline_curve_count}, current curves={len(current_curves)}")
+        pass
         
         # Look for new centerlines with substantial data
         new_centerline_model = None
@@ -2607,7 +2571,7 @@ def check_centerline_completion():
                 polydata = model.GetPolyData()
                 if polydata and polydata.GetNumberOfPoints() > 10:  # Require at least 10 points
                     new_centerline_model = model
-                    print(f"Found new centerline model: {model.GetName()} with {polydata.GetNumberOfPoints()} points")
+                    pass
                     break
         
         if len(current_curves) > baseline_curve_count:
@@ -2616,15 +2580,15 @@ def check_centerline_completion():
             for curve in new_curves_slice:
                 if curve.GetNumberOfControlPoints() > 5:  # Require at least 5 control points
                     new_centerline_curve = curve
-                    print(f"Found new centerline curve: {curve.GetName()} with {curve.GetNumberOfControlPoints()} control points")
+                    pass
                     break
         
         if new_centerline_model or new_centerline_curve:
-            print("Centerline extraction completed with sufficient data!")
+            pass
             
             # Check if a dialog has already been shown for this extraction cycle
             if hasattr(slicer.modules, 'CenterlineDialogShown') and slicer.modules.CenterlineDialogShown:
-                print("Dialog already shown for this extraction cycle - skipping duplicate")
+                pass
                 stop_centerline_monitoring()
                 return
             
@@ -2635,7 +2599,7 @@ def check_centerline_completion():
             show_centerline_completion_dialog(new_centerline_model, new_centerline_curve)
         
     except Exception as e:
-        print(f"Error checking centerline completion: {e}")
+        pass
 
 def find_recent_centerline_model(created_after=0):
     """
@@ -2651,7 +2615,7 @@ def find_recent_centerline_model(created_after=0):
                     polydata = model.GetPolyData()
                     if polydata and polydata.GetNumberOfPoints() > 10:
                         centerline_models.append(model)
-                        print(f"Found potential centerline model: {model.GetName()} with {polydata.GetNumberOfPoints()} points")
+                        pass
         
         if centerline_models:
             centerline_models.sort(key=lambda x: x.GetMTime(), reverse=True)
@@ -2660,7 +2624,7 @@ def find_recent_centerline_model(created_after=0):
         return None
         
     except Exception as e:
-        print(f"Error finding centerline model: {e}")
+        pass
         return None
 
 def find_all_centerline_models():
@@ -2681,7 +2645,7 @@ def find_all_centerline_models():
         return centerline_models
         
     except Exception as e:
-        print(f"Error finding all centerline models: {e}")
+        pass
         return []
 
 def find_recent_centerline_curve(created_after=0):
@@ -2699,7 +2663,7 @@ def find_recent_centerline_curve(created_after=0):
                     # Only consider curves with substantial data (more than just endpoint markers)
                     if curve.GetNumberOfControlPoints() > 5:
                         centerline_curves.append(curve)
-                        print(f"Found potential centerline curve: {curve.GetName()} with {curve.GetNumberOfControlPoints()} control points")
+                        pass
         
         if centerline_curves:
             centerline_curves.sort(key=lambda x: x.GetMTime(), reverse=True)
@@ -2708,7 +2672,7 @@ def find_recent_centerline_curve(created_after=0):
         return None
         
     except Exception as e:
-        print(f"Error finding centerline curve: {e}")
+        pass
         return None
 
 def find_all_centerline_curves():
@@ -2729,7 +2693,7 @@ def find_all_centerline_curves():
         return centerline_curves
         
     except Exception as e:
-        print(f"Error finding all centerline curves: {e}")
+        pass
         return []
 
 def stop_centerline_monitoring():
@@ -2789,10 +2753,10 @@ def stop_centerline_monitoring():
                     }
                 """)
             
-        print("Stopped centerline monitoring")
+        pass
         
     except Exception as e:
-        print(f"Error stopping centerline monitoring: {e}")
+        pass
 
 def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     """
@@ -2800,7 +2764,7 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     """
     try:
         slicer.util.selectModule("CurvedPlanarReformat")
-        print("Switched to Curved Planar Reformat module")
+        pass
         slicer.app.processEvents()
         setup_cpr_module()
         create_point_list_and_prompt()
@@ -2811,7 +2775,7 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         
         
     except Exception as e:
-        print(f"Error switching to CPR module: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not open Curved Planar Reformat module: {str(e)}")
 
 def auto_apply_cpr():
@@ -2819,11 +2783,11 @@ def auto_apply_cpr():
     Automatically apply the CPR processing while keeping the module open for re-application
     """
     try:
-        print("Auto-applying CPR...")
+        pass
         
         cpr_widget = slicer.modules.curvedplanarreformat.widgetRepresentation()
         if not cpr_widget:
-            print("Error: CPR module widget not found for auto-apply")
+            pass
             return
         
         cpr_module = None
@@ -2831,29 +2795,29 @@ def auto_apply_cpr():
             cpr_module = cpr_widget.self()
         
         if not cpr_module:
-            print("Error: Could not access CPR module for auto-apply")
+            pass
             return
         
         apply_button = None
         
         if hasattr(cpr_module, 'ui') and hasattr(cpr_module.ui, 'applyButton'):
             apply_button = cpr_module.ui.applyButton
-            print("Found original Apply button")
+            pass
         
         if not apply_button and hasattr(slicer.modules, 'CPRLargeApplyButton'):
             apply_button = slicer.modules.CPRLargeApplyButton
-            print("Found custom large Apply button")
+            pass
         
         if not apply_button:
             all_buttons = cpr_widget.findChildren(qt.QPushButton)
             for button in all_buttons:
                 if button.text.lower() == 'apply' and button.isEnabled():
                     apply_button = button
-                    print("Found Apply button by searching widget")
+                    pass
                     break
         
         if apply_button and apply_button.isEnabled():
-            print("Clicking Apply button to start CPR processing...")
+            pass
             apply_button.click()
             
             setup_cpr_completion_monitor()
@@ -2861,14 +2825,14 @@ def auto_apply_cpr():
             
         else:
             if not apply_button:
-                print("Could not find Apply button for auto-apply")
+                pass
             else:
-                print("Apply button found but not enabled - please check CPR configuration")
-            print("You can manually click Apply when ready.")
+                pass
+            pass
             
     except Exception as e:
-        print(f"Error in auto-apply CPR: {e}")
-        print("You can manually click Apply to run CPR processing.")
+        pass
+        pass
 
 def setup_cpr_completion_monitor():
     """
@@ -2881,10 +2845,10 @@ def setup_cpr_completion_monitor():
             timer.start(2000)  # Check every 2 seconds
             slicer.modules.CPRMonitorTimer = timer
             slicer.modules.CPRCheckCount = 0
-            print("Started monitoring CPR completion...")
+            pass
         
     except Exception as e:
-        print(f"Error setting up CPR completion monitor: {e}")
+        pass
 
 def check_cpr_completion():
     """
@@ -2911,11 +2875,11 @@ def check_cpr_completion():
                 projected_volumes.append(volume)
         
         if straightened_volumes or projected_volumes:
-            print("CPR processing completed successfully!")
+            pass
             if straightened_volumes:
-                print(f"  - Created straightened volume(s): {[v.GetName() for v in straightened_volumes]}")
+                pass
             if projected_volumes:
-                print(f"  - Created projected volume(s): {[v.GetName() for v in projected_volumes]}")
+                pass
             
             # Create analysis masks on the straightened volume
             create_analysis_masks(straightened_volumes)
@@ -2924,7 +2888,7 @@ def check_cpr_completion():
             
         
     except Exception as e:
-        print(f"Error checking CPR completion: {e}")
+        pass
 
 def stop_cpr_monitoring():
     """
@@ -2940,10 +2904,10 @@ def stop_cpr_monitoring():
         if hasattr(slicer.modules, 'CPRCheckCount'):
             del slicer.modules.CPRCheckCount
             
-        print("Stopped CPR monitoring")
+        pass
         
     except Exception as e:
-        print(f"Error stopping CPR monitoring: {e}")
+        pass
 
 def setup_cpr_module():
     """
@@ -2960,7 +2924,7 @@ def setup_cpr_module():
             # Configure input volume - find the appropriate volume to use
             input_volume = find_working_volume()
             if input_volume:
-                print(f"Found input volume for CPR: {input_volume.GetName()}")
+                pass
                 
                 # Set input volume selector
                 input_volume_set = False
@@ -2980,22 +2944,22 @@ def setup_cpr_module():
                         
                         # Verify the selection took effect
                         if selector.currentNode() == input_volume:
-                            print(f"Successfully set input volume using {input_selector_name}: {input_volume.GetName()}")
+                            pass
                             input_volume_set = True
                             break
                         else:
-                            print(f"Failed to set input volume using {input_selector_name}")
+                            pass
                 
                 if not input_volume_set:
-                    print("Warning: Could not find or set input volume selector")
-                    print("Available UI attributes:", [attr for attr in dir(cpr_module.ui) if 'volume' in attr.lower() or 'input' in attr.lower()])
+                    pass
+                    pass
             else:
-                print("Warning: Could not find appropriate input volume for CPR")
+                pass
             
             # Configure centerline input - find the most recent centerline
             centerline_model = find_recent_centerline_model()  # Use default created_after=0 to find any existing model
             if centerline_model:
-                print(f"Found centerline model for CPR: {centerline_model.GetName()}")
+                pass
                 
                 # Set centerline selector
                 centerline_set = False
@@ -3015,17 +2979,17 @@ def setup_cpr_module():
                         
                         # Verify the selection took effect
                         if selector.currentNode() == centerline_model:
-                            print(f"Successfully set centerline using {centerline_selector_name}: {centerline_model.GetName()}")
+                            pass
                             centerline_set = True
                             break
                         else:
-                            print(f"Failed to set centerline using {centerline_selector_name}")
+                            pass
                 
                 if not centerline_set:
-                    print("Warning: Could not find or set centerline selector")
-                    print("Available UI attributes:", [attr for attr in dir(cpr_module.ui) if 'centerline' in attr.lower() or 'curve' in attr.lower()])
+                    pass
+                    pass
             else:
-                print("Warning: Could not find centerline model for CPR")
+                pass
             
             # Configure output nodes and settings
             try:
@@ -3051,9 +3015,9 @@ def setup_cpr_module():
                 # Process events to ensure nodes are properly added to scene
                 slicer.app.processEvents()
                 
-                print(f"Created output volume: {output_volume.GetName()}")
-                print(f"Created projected volume: {projected_volume.GetName()}")
-                print(f"Created transform node: {transform_node.GetName()}")
+                pass
+                pass
+                pass
                 
                 # Set the output selectors to the created nodes
                 output_volume_set = False
@@ -3064,77 +3028,77 @@ def setup_cpr_module():
                 if hasattr(cpr_module.ui, 'outputStraightenedVolumeSelector'):
                     cpr_module.ui.outputStraightenedVolumeSelector.setCurrentNode(output_volume)
                     output_volume_set = True
-                    print("Set output straightened volume selector")
+                    pass
                 
                 # Set output projected volume selector
                 if hasattr(cpr_module.ui, 'outputProjectedVolumeSelector'):
                     cpr_module.ui.outputProjectedVolumeSelector.setCurrentNode(projected_volume)
                     projected_volume_set = True
-                    print("Set output projected volume selector")
+                    pass
                 
                 # Set output transform selector
                 if hasattr(cpr_module.ui, 'outputTransformToStraightenedVolumeSelector'):
                     cpr_module.ui.outputTransformToStraightenedVolumeSelector.setCurrentNode(transform_node)
                     transform_set = True
-                    print("Set output transform selector")
+                    pass
                 
                 # Set resolution and thickness parameters
                 if hasattr(cpr_module.ui, 'curveResolutionSliderWidget'):
                     cpr_module.ui.curveResolutionSliderWidget.setValue(0.6)
-                    print("Set curve resolution to 0.6 mm")
+                    pass
                 
                 if hasattr(cpr_module.ui, 'sliceResolutionSliderWidget'):
                     cpr_module.ui.sliceResolutionSliderWidget.setValue(0.6)
-                    print("Set slice resolution to 0.6 mm")
+                    pass
                 
                 # Legacy fallback for older parameter names
                 if hasattr(cpr_module.ui, 'resolutionSpinBox'):
                     cpr_module.ui.resolutionSpinBox.setValue(0.6)
-                    print("Set resolution to 0.6 mm")
+                    pass
                 
                 if hasattr(cpr_module.ui, 'thicknessSpinBox'):
                     cpr_module.ui.thicknessSpinBox.setValue(1.0)
-                    print("Set thickness to 1.0 mm")
+                    pass
                 
                 # Final UI update
                 slicer.app.processEvents()
                 
                 # Report setup status
-                print("CPR module setup complete with automatic selector configuration:")
+                pass
                 if output_volume_set:
-                    print("Output straightened volume selector set")
+                    pass
                 else:
-                    print("Output straightened volume selector not found - users should select manually")
+                    pass
                     
                 if projected_volume_set:
-                    print("Output projected volume selector set")
+                    pass
                 else:
-                    print("Output projected volume selector not found - users should select manually")
+                    pass
                     
                 if transform_set:
-                    print("Output transform selector set")
+                    pass
                 else:
-                    print("Output transform selector not found - users should select manually")
+                    pass
                 
                 if not input_volume:
-                    print("Warning: No input volume detected - users should select one manually")
+                    pass
                 if not centerline_model:
-                    print("Warning: No centerline model detected - users should select one manually")
+                    pass
                 
-                print("CPR module configured - ready to apply!")
+                pass
                     
             except Exception as e:
-                print(f"Could not configure CPR output options: {e}")
+                pass
 
             slicer.app.processEvents()
             
             add_large_cpr_apply_button()
 
         else:
-            print("Warning: Could not access CPR module widget")
+            pass
             
     except Exception as e:
-        print(f"Error setting up CPR module: {e}")
+        pass
             
 
 
@@ -3150,7 +3114,7 @@ def create_point_list_and_prompt():
         return True
         
     except Exception as e:
-        print(f"Error creating point placement controls: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not create point placement controls: {str(e)}")
         return False
 
@@ -3282,10 +3246,10 @@ def create_point_placement_controls():
         slicer.modules.PointPlacementDockWidget = dock_widget
         slicer.modules.PointCountLabel = count_label
         
-        print("Point placement controls created")
+        pass
         
     except Exception as e:
-        print(f"Error creating point placement controls: {e}")
+        pass
 
 def start_point_placement(point_list, start_button, stop_button, count_label):
     """
@@ -3309,11 +3273,11 @@ def start_point_placement(point_list, start_button, stop_button, count_label):
         # Set up observer for automatic tool re-selection
         setup_point_count_observer(point_list, count_label)
         
-        print("Point placement mode started with continuous placement enabled")
-        print("Point placement started - place points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
+        pass
+        pass
         
     except Exception as e:
-        print(f"Error starting point placement: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
 
 
@@ -3324,17 +3288,17 @@ def clear_all_points(point_list, count_label):
     try:
         point_count = point_list.GetNumberOfControlPoints()
         if point_count == 0:
-            print("No points to clear.")
+            pass
             return
         
         result = slicer.util.confirmYesNoDisplay(f"Clear all {point_count} points?")
         if result:
             point_list.RemoveAllControlPoints()
             update_point_count_display(point_list, count_label)
-            print("All points cleared")
+            pass
         
     except Exception as e:
-        print(f"Error clearing points: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not clear points: {str(e)}")
 
 
@@ -3359,7 +3323,7 @@ def setup_point_count_observer(point_list, count_label):
         point_list.PointRemoveObserver = observer_id3
         
     except Exception as e:
-        print(f"Error setting up point count observer: {e}")
+        pass
 
 def on_point_added(point_list, count_label):
     """
@@ -3379,21 +3343,21 @@ def on_point_added(point_list, count_label):
         point_names = ["pre-lesion", "post-lesion", "start-slice", "end-slice"]
         if point_count <= len(point_names):
             point_name = point_names[point_count - 1]
-            print(f"Point {point_count} placed: {point_name} point")
-            print(f"Point placement tool automatically re-selected for next point")
+            pass
+            pass
         else:
-            print(f"Additional point {point_count} placed")
-            print(f"Point placement tool automatically re-selected")
+            pass
+            pass
             
         # Provide next step guidance
         if point_count < 4:
             next_point = point_names[point_count] if point_count < len(point_names) else f"point {point_count + 1}"
-            print(f"Ready to place {next_point}")
+            pass
         elif point_count == 4:
-            print("All 4 required points placed! Circles will be created automatically.")
+            pass
         
     except Exception as e:
-        print(f"Error handling point addition: {e}")
+        pass
 
 def update_point_count_display_for_current_list(count_label):
     """
@@ -3412,7 +3376,7 @@ def update_point_count_display_for_current_list(count_label):
             
             # Check if we have all 4 points (pre-lesion, post-lesion, start-slice, end-slice) to create circles
             if current_point_list.GetNumberOfControlPoints() == 4:
-                print("F-1 has all 4 points - creating circles at pre-lesion and post-lesion locations")
+                pass
                 draw_circles_on_centerline()
                 
         else:
@@ -3427,7 +3391,7 @@ def update_point_count_display_for_current_list(count_label):
             count_label.setText(f"Total points: {total_points}")
         
     except Exception as e:
-        print(f"Error updating point count display: {e}")
+        pass
 
 def update_point_count_display(point_list, count_label):
     """
@@ -3453,7 +3417,7 @@ def update_point_count_display(point_list, count_label):
                     point_list.SetNthControlPointLabel(i, f"additional-{i+1-4}")
         
     except Exception as e:
-        print(f"Error updating point count display: {e}")
+        pass
 
 def ensure_point_placement_mode_active(point_list):
     """
@@ -3472,13 +3436,13 @@ def ensure_point_placement_mode_active(point_list):
             current_mode = interactionNode.GetCurrentInteractionMode()
             if current_mode != interactionNode.Place:
                 interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-                print("Point placement mode automatically re-enabled")
+                pass
             
             # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
             interactionNode.SetPlaceModePersistence(1)
         
     except Exception as e:
-        print(f"Error ensuring point placement mode active: {e}")
+        pass
 
 def cleanup_point_placement_ui():
     """
@@ -3490,13 +3454,13 @@ def cleanup_point_placement_ui():
             dock_widget.close()
             dock_widget.setParent(None)
             del slicer.modules.PointPlacementDockWidget
-            print("Point placement dock widget cleaned up")
+            pass
         
         if hasattr(slicer.modules, 'PointCountLabel'):
             del slicer.modules.PointCountLabel
             
     except Exception as e:
-        print(f"Error cleaning up point placement UI: {e}")
+        pass
 
 def apply_only_transform_to_point_list(point_list):
     """
@@ -3507,7 +3471,7 @@ def apply_only_transform_to_point_list(point_list):
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
         
         if len(transform_nodes) == 0:
-            print("No transforms found in the scene - point list will use default coordinate system")
+            pass
             return False
         
         # Look specifically for "Straightening transform"
@@ -3520,16 +3484,16 @@ def apply_only_transform_to_point_list(point_list):
         if straightening_transform:
             # Apply the Straightening transform
             point_list.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            print(f"Applied 'Straightening transform' to point list '{point_list.GetName()}'")
+            pass
             return True
         else:
             # Straightening transform not found
             transform_names = [node.GetName() for node in transform_nodes]
-            print(f"'Straightening transform' not found. Available transforms: {', '.join(transform_names)}")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error applying transform to point list: {e}")
+        pass
         return False
 
 def start_new_point_list_placement(count_label):
@@ -3570,12 +3534,12 @@ def start_new_point_list_placement(count_label):
         
         update_point_count_display(point_list, count_label)
         
-        print(f"Created new point list: {point_list.GetName()}")
-        print("Point placement mode started with continuous placement enabled")
-        print("F-1 point list created - place points: 1:pre-lesion, 2:post-lesion, 3:start-slice, 4:end-slice")
+        pass
+        pass
+        pass
         
     except Exception as e:
-        print(f"Error starting new point list placement: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
 
 def clear_all_points_from_scene(count_label):
@@ -3592,7 +3556,7 @@ def clear_all_points_from_scene(count_label):
                 lesion_analysis_nodes.append(node)
         
         if not lesion_analysis_nodes:
-            print("No F-1 point list found to clear.")
+            pass
             return
         
         node_count = len(lesion_analysis_nodes)
@@ -3600,7 +3564,7 @@ def clear_all_points_from_scene(count_label):
         
         for node in lesion_analysis_nodes:
             slicer.mrmlScene.RemoveNode(node)
-            print(f"Removed point list: {node.GetName()}")
+            pass
         
         if hasattr(slicer.modules, 'CurrentLesionAnalysisPointList'):
             del slicer.modules.CurrentLesionAnalysisPointList
@@ -3610,10 +3574,10 @@ def clear_all_points_from_scene(count_label):
             interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
         
         count_label.setText("Points placed: 0")
-        print(f"Cleared {node_count} F-1 point(s) with {total_points} total points")
+        pass
         
     except Exception as e:
-        print(f"Error clearing points from scene: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not clear points: {str(e)}")
 
 def create_stenosis_ratio_measurement():
@@ -3645,13 +3609,13 @@ def create_stenosis_ratio_measurement():
         # Set up observer to stop tool when line is complete
         setup_single_stenosis_line_observer(line_node)
         
-        print(f"Created stenosis line measurement: {line_node.GetName()}")
-        print("Line measurement tool activated - place line measurement")
+        pass
+        pass
         
         return line_node
         
     except Exception as e:
-        print(f"Error creating stenosis line measurements: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not create stenosis line measurements: {str(e)}")
         return None
 
@@ -3670,7 +3634,7 @@ def count_existing_stenosis_measurements():
         return stenosis_count
         
     except Exception as e:
-        print(f"Error counting stenosis measurements: {e}")
+        pass
         return 0
 
 def configure_stenosis_line_node(line_node):
@@ -3716,10 +3680,10 @@ def configure_stenosis_line_node(line_node):
         line_node.SetMaximumNumberOfControlPoints(2)
         line_node.SetRequiredNumberOfControlPoints(2)
         
-        print(f"Configured stenosis line node: {line_node.GetName()}")
+        pass
         
     except Exception as e:
-        print(f"Error configuring stenosis line node: {e}")
+        pass
 
 def setup_single_stenosis_line_observer(line_node):
     """
@@ -3737,10 +3701,10 @@ def setup_single_stenosis_line_observer(line_node):
         )
         line_node.StenosisObserver = observer_id
         
-        print("Set up single stenosis line observer (waiting for 2 points)")
+        pass
         
     except Exception as e:
-        print(f"Error setting up single stenosis line observer: {e}")
+        pass
 
 def check_single_line_completion(line_node):
     """
@@ -3748,7 +3712,7 @@ def check_single_line_completion(line_node):
     """
     try:
         current_points = line_node.GetNumberOfControlPoints()
-        print(f"Stenosis line now has {current_points} point(s)")
+        pass
         
         # Only stop when we have exactly 2 points AND a measurable distance > 0mm
         if current_points == 2:
@@ -3756,7 +3720,7 @@ def check_single_line_completion(line_node):
             measurement = line_node.GetMeasurement("length")
             if measurement:
                 length_value = measurement.GetValue()
-                print(f"Stenosis line distance: {length_value:.2f} mm")
+                pass
                 
                 if length_value > 0.0:  # Only stop if distance is greater than 0mm
                     # Remove the observer to avoid multiple triggers
@@ -3764,20 +3728,20 @@ def check_single_line_completion(line_node):
                         line_node.RemoveObserver(line_node.StenosisObserver)
                         delattr(line_node, 'StenosisObserver')
                     
-                    print(f"Stenosis line complete: {length_value:.2f} mm")
+                    pass
                     
                     # Stop the measurement tool
                     stop_stenosis_measurement_tool()
                 else:
-                    print("Line has 2 points but distance is 0mm - waiting for proper line placement")
-                    print("Make sure you click two distinct points to create a measurable distance")
+                    pass
+                    pass
             else:
-                print("Line has 2 points but measurement not ready - waiting...")
+                pass
         elif current_points == 1:
-            print("First point placed - click second point to complete the line")
+            pass
         
     except Exception as e:
-        print(f"Error checking single line completion: {e}")
+        pass
 
 
 
@@ -3795,10 +3759,10 @@ def setup_stenosis_line_sequence_observer(first_line_node, second_line_node):
         )
         first_line_node.StenosisSequenceObserver = observer_id
         
-        print("Set up stenosis line sequence observer (waiting for 2 points)")
+        pass
         
     except Exception as e:
-        print(f"Error setting up stenosis line sequence observer: {e}")
+        pass
 
 def check_first_line_completion_carefully(first_line_node, second_line_node):
     """
@@ -3806,75 +3770,75 @@ def check_first_line_completion_carefully(first_line_node, second_line_node):
     """
     try:
         current_points = first_line_node.GetNumberOfControlPoints()
-        print(f"First line now has {current_points} point(s)")
+        pass
         
         if current_points == 2:
             measurement = first_line_node.GetMeasurement("length")
             if measurement:
                 length_value = measurement.GetValue()
-                print(f"First line distance: {length_value:.2f} mm")
+                pass
                 
                 if length_value > 0.0:
                     if hasattr(first_line_node, 'StenosisSequenceObserver'):
                         first_line_node.RemoveObserver(first_line_node.StenosisSequenceObserver)
                         delattr(first_line_node, 'StenosisSequenceObserver')
                     
-                    print(f"First stenosis line complete: {length_value:.2f} mm")
-                    print(f"DEBUG: About to trigger switch to second line: {second_line_node.GetName()}")
+                    pass
+                    pass
 
                     slicer.modules.StenosisSecondLineNode = second_line_node
 
                     try:
                         switch_to_second_stenosis_line(second_line_node)
                     except Exception as e:
-                        print(f"Direct switch failed: {e}, trying with timer...")
+                        pass
                         qt.QTimer.singleShot(100, lambda: switch_to_second_stenosis_line(slicer.modules.StenosisSecondLineNode))
                 else:
-                    print("First line has 2 points but distance is 0mm - waiting for proper line placement")
-                    print("Make sure you click two distinct points to create a measurable distance")
+                    pass
+                    pass
             else:
-                print("First line has 2 points but measurement not ready - waiting...")
+                pass
         elif current_points == 1:
-            print("First point placed for first line - click second point to complete the line")
+            pass
         
     except Exception as e:
-        print(f"Error checking first line completion: {e}")
+        pass
 
 def switch_to_second_stenosis_line(second_line_node):
     """
     Automatically switch to the second line measurement
     """
     try:
-        print(f"DEBUG: Attempting to switch to second line node: {second_line_node.GetName()}")
-        print(f"DEBUG: Second line node ID: {second_line_node.GetID()}")
-        print(f"DEBUG: Second line node valid: {second_line_node is not None}")
+        pass
+        pass
+        pass
         
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
-            print("DEBUG: Setting active place node class and ID")
+            pass
             selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsLineNode")
             selectionNode.SetActivePlaceNodeID(second_line_node.GetID())
-            print(f"DEBUG: Active place node ID set to: {selectionNode.GetActivePlaceNodeID()}")
+            pass
         else:
-            print("ERROR: Selection node not found!")
+            pass
         
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
-            print("DEBUG: Setting interaction mode to Place")
+            pass
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
             interactionNode.SetPlaceModePersistence(1)
-            print(f"DEBUG: Current interaction mode: {interactionNode.GetCurrentInteractionMode()}")
-            print(f"DEBUG: Place mode persistence: {interactionNode.GetPlaceModePersistence()}")
+            pass
+            pass
         else:
-            print("ERROR: Interaction node not found!")
+            pass
         
-        print(f"Automatically switched to second line: {second_line_node.GetName()}")
-        print("Place second line measurement (green)")
+        pass
+        pass
         
         setup_second_line_completion_observer(second_line_node)
         
     except Exception as e:
-        print(f"Error switching to second stenosis line: {e}")
+        pass
 
 def setup_second_line_completion_observer(second_line_node):
     """
@@ -3888,7 +3852,7 @@ def setup_second_line_completion_observer(second_line_node):
         second_line_node.StenosisSequenceObserver = observer_id
         
     except Exception as e:
-        print(f"Error setting up second line completion observer: {e}")
+        pass
 
 def check_second_line_completion_carefully(second_line_node):
     """
@@ -3896,12 +3860,12 @@ def check_second_line_completion_carefully(second_line_node):
     """
     try:
         current_points = second_line_node.GetNumberOfControlPoints()
-        print(f"Second line now has {current_points} point(s)")
+        pass
         if current_points == 2:
             measurement = second_line_node.GetMeasurement("length")
             if measurement:
                 length_value = measurement.GetValue()
-                print(f"Second line distance: {length_value:.2f} mm")
+                pass
                 
                 if length_value > 0.0:  # Only complete if distance is greater than 0mm
                     # Remove the observer to avoid multiple triggers
@@ -3909,22 +3873,22 @@ def check_second_line_completion_carefully(second_line_node):
                         second_line_node.RemoveObserver(second_line_node.StenosisSequenceObserver)
                         delattr(second_line_node, 'StenosisSequenceObserver')
                     
-                    print(f"Second stenosis line complete: {length_value:.2f} mm")
-                    print("Both stenosis lines completed successfully")
+                    pass
+                    pass
                     
                     # Stop the measurement tool automatically instead of showing dialog
                     stop_stenosis_measurement_tool()
-                    print("Stenosis measurement pair completed - tool automatically stopped")
+                    pass
                 else:
-                    print("Second line has 2 points but distance is 0mm - waiting for proper line placement")
-                    print("Make sure you click two distinct points to create a measurable distance")
+                    pass
+                    pass
             else:
-                print("Second line has 2 points but measurement not ready - waiting...")
+                pass
         elif current_points == 1:
-            print("First point placed for second line - click second point to complete the line")
+            pass
         
     except Exception as e:
-        print(f"Error checking second line completion: {e}")
+        pass
 
 
 
@@ -3936,14 +3900,14 @@ def on_continue_stenosis_measurements(dialog):
         dialog.close()
         dialog.setParent(None)
         
-        print("User chose to continue stenosis measurements")
-        print("Creating next stenosis measurement pair...")
+        pass
+        pass
         
         # Create another pair of stenosis measurements
         create_stenosis_ratio_measurement()
         
     except Exception as e:
-        print(f"Error continuing stenosis measurements: {e}")
+        pass
 
 def on_stop_stenosis_measurements(dialog):
     """
@@ -3953,12 +3917,12 @@ def on_stop_stenosis_measurements(dialog):
         dialog.close()
         dialog.setParent(None)
         
-        print("User chose to stop stenosis measurements")
+        pass
         stop_stenosis_measurement_tool()
         show_stenosis_measurements_summary()
         
     except Exception as e:
-        print(f"Error stopping stenosis measurements: {e}")
+        pass
 
 def stop_stenosis_measurement_tool():
     """
@@ -3975,7 +3939,7 @@ def stop_stenosis_measurement_tool():
             selectionNode.SetActivePlaceNodeID(None)
         
     except Exception as e:
-        print(f"Error stopping stenosis measurement tool: {e}")
+        pass
 
 def show_stenosis_measurements_summary():
     """
@@ -3993,13 +3957,13 @@ def show_stenosis_measurements_summary():
                     stenosis_lines.append((node.GetName(), length_value))
         
         if stenosis_lines:
-            print("=" * 50)
-            print("STENOSIS MEASUREMENTS SUMMARY")
-            print("=" * 50)
+            pass
+            pass
+            pass
             for name, length in stenosis_lines:
-                print(f"{name}: {length:.2f} mm")
-            print("=" * 50)
-            print(f"Total stenosis measurements: {len(stenosis_lines)}")
+                pass
+            pass
+            pass
             
             # Show summary dialog
             summary_text = "Stenosis Measurements Complete!\n\n"
@@ -4010,10 +3974,10 @@ def show_stenosis_measurements_summary():
             
             slicer.util.infoDisplay(summary_text)
         else:
-            print("No completed stenosis measurements found")
+            pass
         
     except Exception as e:
-        print(f"Error showing stenosis measurements summary: {e}")
+        pass
 
 def disable_all_placement_tools():
     """
@@ -4025,22 +3989,22 @@ def disable_all_placement_tools():
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
             interactionNode.SetPlaceModePersistence(0)
-            print("Set interaction mode to ViewTransform (normal mode)")
+            pass
         
         # Clear any active placement node
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             selectionNode.SetActivePlaceNodeID(None)
             selectionNode.SetReferenceActivePlaceNodeClassName("")
-            print("Cleared active placement node")
+            pass
         
         # Process events to ensure UI is updated
         slicer.app.processEvents()
         
-        print("All placement tools disabled - returned to normal interaction mode")
+        pass
         
     except Exception as e:
-        print(f"Error disabling placement tools: {e}")
+        pass
 
 def export_project_and_continue():
     """
@@ -4056,71 +4020,71 @@ def export_project_and_continue():
                 lesion_analysis_nodes.append(node)
         
         if not lesion_analysis_nodes:
-            print("No F-1 point list found - saving project anyway")
+            pass
         else:
             total_points = sum(node.GetNumberOfControlPoints() for node in lesion_analysis_nodes)
-            print(f"Exporting project with {len(lesion_analysis_nodes)} F-1 point list(s) containing {total_points} points")
+            pass
 
         # Remove transforms from point lists before saving
         if lesion_analysis_nodes:
-            print("Preparing F-1 point lists for export...")
-            debug_point_list_transforms()
+            pass
+            
             transforms_removed = remove_transforms_from_point_lists()
             
             if not transforms_removed:
-                print("Forcing transform removal...")
+                pass
                 force_remove_all_transforms()
             
-            print("Verifying pre and post lesion points are transform-free...")
+            pass
             verification_passed = verify_pre_post_lesion_points_transform_free()
             
             if not verification_passed:
-                print("ERROR: Pre and post lesion points still have transforms - attempting additional cleanup...")
+                pass
                 force_remove_all_transforms()
                 verification_passed = verify_pre_post_lesion_points_transform_free()
                 
             if verification_passed:
-                print("Pre and post lesion points confirmed transform-free - ready for saving")
+                pass
             else:
-                print("Warning: Could not fully verify pre and post lesion points are transform-free")
+                pass
             
-            print("Transform removal verification complete")
+            pass
 
         success = slicer.app.ioManager().openSaveDataDialog()
         
         if success:
-            print("Project saved successfully")
+            pass
             
             # Deselect placement tools and return to normal interaction mode
-            print("Deselecting point placement tools...")
+            pass
             disable_all_placement_tools()
 
             # Reapply transforms after saving
             if lesion_analysis_nodes:
-                print("Reapplying transforms after save...")
+                pass
                 reapply_transforms_to_point_lists()
                 reapply_transforms_to_circles()
 
-            print("Project saved - starting centerline and tube mask creation workflow...")
+            pass
             cleanup_all_workflow_ui()
 
             # Run workflow2 functionality directly
             try:
-                print("Starting centerline and tube mask creation workflow...")
+                pass
                 create_centerline_and_tube_mask()
                 
             except Exception as e:
-                print(f"Error running workflow2 functionality: {e}")
+                pass
                 slicer.util.errorDisplay(f"Could not run workflow2 functionality: {str(e)}\n\nPlease check the console for details.")
             
         else:
-            print("Save dialog was cancelled or failed")
+            pass
             # Still deselect tools even if save was cancelled
-            print("Deselecting point placement tools...")
+            pass
             disable_all_placement_tools()
         
     except Exception as e:
-        print(f"Error exporting project: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not export project: {str(e)}")
 
 def cleanup_all_workflow_ui():
@@ -4146,10 +4110,10 @@ def cleanup_all_workflow_ui():
             timer.timeout.disconnect()
             del slicer.modules.CropMonitorTimer
         
-        print("All workflow UI elements cleaned up")
+        pass
         
     except Exception as e:
-        print(f"Error during UI cleanup: {e}")
+        pass
 
 
 def show_centerline_completion_dialog(centerline_model=None, centerline_curve=None):
@@ -4278,7 +4242,7 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         dialog.exec_()
         
     except Exception as e:
-        print(f"Error showing centerline completion dialog: {e}")
+        pass
         switch_to_cpr_module(centerline_model, centerline_curve)
 
 def on_retry_centerline(dialog):
@@ -4299,10 +4263,10 @@ def on_retry_centerline(dialog):
         
         setup_centerline_completion_monitor()
         
-        print("User chose to retry centerline extraction")
+        pass
         
     except Exception as e:
-        print(f"Error during centerline retry: {e}")
+        pass
 
 def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
     """
@@ -4315,10 +4279,10 @@ def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
         
         draw_circles_on_centerline()
         
-        print("User chose to continue to CPR analysis")
+        pass
         
     except Exception as e:
-        print(f"Error continuing to CPR: {e}")
+        pass
 
 def on_add_more_centerlines(dialog):
     """
@@ -4331,10 +4295,10 @@ def on_add_more_centerlines(dialog):
         # Create a new centerline extraction setup for additional centerlines
         create_additional_centerline_setup()
         
-        print("User chose to add more centerlines")
+        pass
         
     except Exception as e:
-        print(f"Error adding more centerlines: {e}")
+        pass
 
 def create_additional_centerline_setup():
     """
@@ -4350,7 +4314,7 @@ def create_additional_centerline_setup():
         
         centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
         if not centerline_widget:
-            print("Error: Could not access Extract Centerline module")
+            pass
             return
             
         centerline_module = centerline_widget.self()
@@ -4376,8 +4340,8 @@ def create_additional_centerline_setup():
             display_node.SetLineWidth(3.0)
             display_node.SetVisibility(True)
         
-        print(f"Created new centerline model: {new_centerline_model.GetName()}")
-        print(f"Created new centerline curve: {new_centerline_curve.GetName()}")
+        pass
+        pass
         
         # Configure the Extract Centerline module with the new nodes
         setup_centerline_for_additional_extraction(centerline_module, new_centerline_model, new_centerline_curve)
@@ -4391,7 +4355,7 @@ def create_additional_centerline_setup():
         return new_centerline_model, new_centerline_curve
         
     except Exception as e:
-        print(f"Error creating additional centerline setup: {e}")
+        pass
         return None, None
 
 def count_existing_centerlines():
@@ -4419,7 +4383,7 @@ def count_existing_centerlines():
         return centerline_count // 2 if centerline_count > 0 else 0
         
     except Exception as e:
-        print(f"Error counting existing centerlines: {e}")
+        pass
         return 0
 
 def setup_centerline_for_additional_extraction(centerline_module, new_model, new_curve):
@@ -4436,50 +4400,50 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
                 break
         
         if workflow_segmentation:
-            print(f"Using existing segmentation: {workflow_segmentation.GetName()}")
+            pass
             
             # Set input segmentation
             segmentation_set = False
             for selector_name in ['inputSegmentationSelector', 'inputSurfaceSelector', 'segmentationSelector']:
                 if hasattr(centerline_module, 'ui') and hasattr(centerline_module.ui, selector_name):
                     getattr(centerline_module.ui, selector_name).setCurrentNode(workflow_segmentation)
-                    print(f"Set input segmentation using {selector_name}")
+                    pass
                     segmentation_set = True
                     break
             
             if not segmentation_set:
-                print("Warning: Could not find segmentation selector in centerline module")
+                pass
                 
         # Set output nodes for the new centerline
         try:
             # Set output centerline model
             if hasattr(centerline_module.ui, 'outputCenterlineModelSelector'):
                 centerline_module.ui.outputCenterlineModelSelector.setCurrentNode(new_model)
-                print(f"Set output centerline model: {new_model.GetName()}")
+                pass
             elif hasattr(centerline_module.ui, 'centerlineModelSelector'):
                 centerline_module.ui.centerlineModelSelector.setCurrentNode(new_model)
-                print(f"Set centerline model: {new_model.GetName()}")
+                pass
                 
             # Set output centerline curve
             if hasattr(centerline_module.ui, 'outputCenterlineCurveSelector'):
                 centerline_module.ui.outputCenterlineCurveSelector.setCurrentNode(new_curve)
-                print(f"Set output centerline curve: {new_curve.GetName()}")
+                pass
             elif hasattr(centerline_module.ui, 'centerlineCurveSelector'):
                 centerline_module.ui.centerlineCurveSelector.setCurrentNode(new_curve)
-                print(f"Set centerline curve: {new_curve.GetName()}")
+                pass
                 
         except Exception as e:
-            print(f"Error setting output selectors: {e}")
+            pass
         
         slicer.app.processEvents()
         
         # Add the large Apply button again
         add_large_centerline_apply_button()
         
-        print("Extract Centerline module configured for additional centerline extraction")
+        pass
         
     except Exception as e:
-        print(f"Error setting up centerline for additional extraction: {e}")
+        pass
 
 def clear_centerline_endpoints():
     """
@@ -4495,15 +4459,15 @@ def clear_centerline_endpoints():
             if any(keyword in node_name for keyword in ['endpoint', 'start', 'end', 'centerline']):
                 node.RemoveAllControlPoints()
                 endpoints_cleared += 1
-                print(f"Cleared endpoints from: {node.GetName()}")
+                pass
         
         if endpoints_cleared == 0:
-            print("No endpoint nodes found to clear")
+            pass
         else:
-            print(f"Cleared endpoints from {endpoints_cleared} node(s)")
+            pass
             
     except Exception as e:
-        print(f"Error clearing centerline endpoints: {e}")
+        pass
 
 def setup_apply_button_monitoring():
     """
@@ -4520,7 +4484,7 @@ def setup_apply_button_monitoring():
         # Clear the dialog shown flag for new extraction cycle
         if hasattr(slicer.modules, 'CenterlineDialogShown'):
             del slicer.modules.CenterlineDialogShown
-            print("Cleared dialog shown flag for new extraction cycle")
+            pass
         
         # Get baseline counts before user starts
         current_models = find_all_centerline_models()
@@ -4539,11 +4503,11 @@ def setup_apply_button_monitoring():
         slicer.modules.ApplyButtonMonitorTimer = timer
         slicer.modules.ApplyMonitorCheckCount = 0
         
-        print("Apply button monitoring started - waiting for user to click Apply")
-        print(f"Baseline: {len(current_models)} models, {len(current_curves)} curves")
+        pass
+        pass
         
     except Exception as e:
-        print(f"Error setting up Apply button monitoring: {e}")
+        pass
 
 def check_for_apply_button_click():
     """
@@ -4572,11 +4536,11 @@ def check_for_apply_button_click():
         
         # If we have truly new centerlines, Apply was clicked and processing started/completed
         if new_models or new_curves:
-            print(f"New centerlines detected! Found {len(new_models)} new models, {len(new_curves)} new curves")
+            pass
             for model in new_models:
-                print(f"  New model: {model.GetName()}")
+                pass
             for curve in new_curves:
-                print(f"  New curve: {curve.GetName()}")
+                pass
             
             # Stop Apply button monitoring
             stop_apply_button_monitoring()
@@ -4600,11 +4564,11 @@ def check_for_apply_button_click():
             
             # If we have sufficient data, show dialog immediately
             if best_model or best_curve:
-                print(f"Found centerlines with sufficient data - showing completion dialog")
+                pass
                 if best_model:
-                    print(f"  Best model: {best_model.GetName()} with {best_model.GetPolyData().GetNumberOfPoints()} points")
+                    pass
                 if best_curve:
-                    print(f"  Best curve: {best_curve.GetName()} with {best_curve.GetNumberOfControlPoints()} control points")
+                    pass
                 
                 # Stop any existing centerline monitoring to prevent duplicate dialogs
                 stop_centerline_monitoring()
@@ -4616,7 +4580,7 @@ def check_for_apply_button_click():
                 return
             else:
                 # No sufficient data yet, continue monitoring for completion
-                print("New centerlines detected but insufficient data - continuing to monitor for completion")
+                pass
                 # Don't clear the dialog flag - we still want to show dialog when sufficient data is available
                 # Set up monitoring but don't reset baseline (keep existing baseline)
                 setup_centerline_completion_monitor_without_reset(new_models, new_curves)
@@ -4630,13 +4594,13 @@ def check_for_apply_button_click():
                 current_time = time.time() * 1000  # Convert to milliseconds
                 time_since_modified = current_time - model.GetMTime()
                 if time_since_modified < 5000:  # Modified within last 5 seconds
-                    print(f"Recent processing activity detected on {model.GetName()}")
+                    pass
                     stop_apply_button_monitoring()
                     setup_centerline_completion_monitor()
                     return
         
     except Exception as e:
-        print(f"Error checking for Apply button click: {e}")
+        pass
 
 def stop_apply_button_monitoring():
     """
@@ -4655,10 +4619,10 @@ def stop_apply_button_monitoring():
             if hasattr(slicer.modules, attr):
                 delattr(slicer.modules, attr)
             
-        print("Apply button monitoring stopped")
+        pass
         
     except Exception as e:
-        print(f"Error stopping Apply button monitoring: {e}")
+        pass
 
 def start_centerline_monitoring_for_additional():
     """
@@ -4666,8 +4630,8 @@ def start_centerline_monitoring_for_additional():
     """
     try:
         setup_centerline_completion_monitor()
-        print("Centerline completion monitoring started manually")
-        print("The workflow will now automatically detect when centerline extraction completes")
+        pass
+        pass
         
         # Update button to indicate monitoring is active
         if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
@@ -4690,7 +4654,7 @@ def start_centerline_monitoring_for_additional():
                 """)
         
     except Exception as e:
-        print(f"Error starting centerline monitoring: {e}")
+        pass
 
 def cleanup_centerline_monitoring_button():
     """
@@ -4703,361 +4667,28 @@ def cleanup_centerline_monitoring_button():
                 button.close()
                 button.setParent(None)
                 del slicer.modules.CenterlineMonitoringButton
-                print("Centerline monitoring button cleaned up")
+                pass
         
     except Exception as e:
-        print(f"Error cleaning up centerline monitoring button: {e}")
-
-def test_centerline_completion_dialog():
-    """
-    Console helper to manually test the centerline completion dialog
-    """
-    try:
-        print("=== Testing Centerline Completion Dialog ===")
-        
-        # Find the most recent centerlines
-        all_models = find_all_centerline_models()
-        all_curves = find_all_centerline_curves()
-        
-        latest_model = all_models[-1] if all_models else None
-        latest_curve = all_curves[-1] if all_curves else None
-        
-        if latest_model or latest_curve:
-            print(f"Showing dialog with latest centerlines:")
-            if latest_model:
-                print(f"  Model: {latest_model.GetName()}")
-            if latest_curve:
-                print(f"  Curve: {latest_curve.GetName()}")
-            
-            show_centerline_completion_dialog(latest_model, latest_curve)
-        else:
-            print("No centerlines found - creating test dialog anyway")
-            show_centerline_completion_dialog(None, None)
-            
-        return True
-        
-    except Exception as e:
-        print(f"Error testing centerline completion dialog: {e}")
-        return False
-
-def test_multiple_centerlines_workflow():
-    """
-    Console helper to test the multiple centerlines workflow and dialog showing
-    """
-    try:
-        print("=== Testing Multiple Centerlines Workflow ===")
-        
-        # Check current state
-        all_models = find_all_centerline_models()
-        all_curves = find_all_centerline_curves()
-        
-        print(f"Current state: {len(all_models)} models, {len(all_curves)} curves")
-        for model in all_models:
-            polydata = model.GetPolyData()
-            points = polydata.GetNumberOfPoints() if polydata else 0
-            print(f"  Model: {model.GetName()} ({points} points)")
-        for curve in all_curves:
-            print(f"  Curve: {curve.GetName()} ({curve.GetNumberOfControlPoints()} control points)")
-        
-        # Check if monitoring is active
-        if hasattr(slicer.modules, 'ApplyButtonMonitorTimer'):
-            print("Apply button monitoring is ACTIVE")
-        else:
-            print("Apply button monitoring is NOT active")
-            
-        if hasattr(slicer.modules, 'CenterlineMonitorTimer'):
-            print("Centerline completion monitoring is ACTIVE")
-        else:
-            print("Centerline completion monitoring is NOT active")
-        
-        # Test the add more centerlines function
-        print("\nTesting add more centerlines setup...")
-        create_additional_centerline_setup()
-        
-        print("=== Test Complete ===")
-        print("Now extract a centerline to test the dialog showing")
-        
-    except Exception as e:
-        print(f"Error testing multiple centerlines workflow: {e}")
-
-def test_centerline_completion_dialog():
-    """
-    Console helper to manually test the centerline completion dialog
-    """
-    try:
-        print("=== Testing Centerline Completion Dialog ===")
-        
-        # Find the most recent centerlines
-        all_models = find_all_centerline_models()
-        all_curves = find_all_centerline_curves()
-        
-        latest_model = all_models[-1] if all_models else None
-        latest_curve = all_curves[-1] if all_curves else None
-        
-        if latest_model or latest_curve:
-            print(f"Showing dialog with latest centerlines:")
-            if latest_model:
-                print(f"  Model: {latest_model.GetName()}")
-            if latest_curve:
-                print(f"  Curve: {latest_curve.GetName()}")
-            
-            show_centerline_completion_dialog(latest_model, latest_curve)
-        else:
-            print("No centerlines found - creating test dialog anyway")
-            show_centerline_completion_dialog(None, None)
-            
-        return True
-        
-    except Exception as e:
-        print(f"Error testing centerline completion dialog: {e}")
-        return False
-
-def force_show_completion_dialog():
-    """
-    Console helper to force show the completion dialog regardless of state
-    """
-    try:
-        # Stop any existing monitoring
-        stop_apply_button_monitoring()
-        stop_centerline_monitoring()
-        
-        # Get latest centerlines
-        all_models = find_all_centerline_models()
-        all_curves = find_all_centerline_curves()
-        
-        latest_model = all_models[-1] if all_models else None
-        latest_curve = all_curves[-1] if all_curves else None
-        
-        print(f"Forcing completion dialog with latest centerlines...")
-        show_centerline_completion_dialog(latest_model, latest_curve)
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error forcing completion dialog: {e}")
-        return False
-
-def test_specific_centerline_monitoring():
-    """
-    Console helper to test the specific centerline monitoring system
-    """
-    try:
-        print("=== Testing Specific Centerline Monitoring ===")
-        
-        # Find some existing centerlines to test with
-        all_models = find_all_centerline_models()
-        all_curves = find_all_centerline_curves()
-        
-        if not all_models and not all_curves:
-            print("No centerlines found to test with")
-            return False
-        
-        # Use last centerlines as test targets
-        test_models = all_models[-1:] if all_models else []
-        test_curves = all_curves[-1:] if all_curves else []
-        
-        print(f"Testing with {len(test_models)} models and {len(test_curves)} curves")
-        
-        # Set up specific monitoring
-        setup_centerline_completion_monitor_without_reset(test_models, test_curves)
-        
-        print("Specific monitoring started - it should detect sufficient data and show dialog")
-        return True
-        
-    except Exception as e:
-        print(f"Error testing specific centerline monitoring: {e}")
-        return False
-
-def test_duplicate_dialog_prevention():
-    """
-    Console helper to test that duplicate dialogs are prevented
-    """
-    try:
-        print("=== Testing Duplicate Dialog Prevention ===")
-        
-        # Check current flag state
-        dialog_shown = getattr(slicer.modules, 'CenterlineDialogShown', 'Not set')
-        print(f"Current CenterlineDialogShown flag: {dialog_shown}")
-        
-        # Check monitoring states
-        apply_timer_active = hasattr(slicer.modules, 'ApplyButtonMonitorTimer')
-        completion_timer_active = hasattr(slicer.modules, 'CenterlineMonitorTimer')
-        
-        print(f"Apply button monitoring active: {apply_timer_active}")
-        print(f"Centerline completion monitoring active: {completion_timer_active}")
-        
-        if apply_timer_active and completion_timer_active:
-            print("WARNING: Both monitoring systems are active - this could cause duplicate dialogs!")
-        elif apply_timer_active:
-            print("Only apply button monitoring is active - good for additional centerlines")
-        elif completion_timer_active:
-            print("Only centerline completion monitoring is active - good for initial centerlines")
-        else:
-            print("No monitoring is active")
-        
-        # Test clearing the flag
-        if hasattr(slicer.modules, 'CenterlineDialogShown'):
-            del slicer.modules.CenterlineDialogShown
-            print("Cleared CenterlineDialogShown flag for testing")
-        
-        print("=== Test Complete ===")
-        return True
-        
-    except Exception as e:
-        print(f"Error testing duplicate dialog prevention: {e}")
-        return False
-
-def debug_centerline_monitoring():
-    """
-    Console helper to debug centerline monitoring state
-    """
-    try:
-        print("=== Centerline Monitoring Debug Info ===")
-        
-        # Check monitoring timers
-        apply_timer_active = hasattr(slicer.modules, 'ApplyButtonMonitorTimer')
-        completion_timer_active = hasattr(slicer.modules, 'CenterlineMonitorTimer')
-        
-        print(f"Apply button monitoring active: {apply_timer_active}")
-        print(f"Centerline completion monitoring active: {completion_timer_active}")
-        
-        # Check the dialog flag
-        dialog_shown = getattr(slicer.modules, 'CenterlineDialogShown', 'Not set')
-        print(f"Dialog shown flag: {dialog_shown}")
-        
-        # Check baseline counts
-        baseline_models = getattr(slicer.modules, 'BaselineCenterlineModelCount', 'Not set')
-        baseline_curves = getattr(slicer.modules, 'BaselineCenterlineCurveCount', 'Not set')
-        apply_baseline_models = getattr(slicer.modules, 'ApplyButtonBaselineModels', 'Not set')
-        apply_baseline_curves = getattr(slicer.modules, 'ApplyButtonBaselineCurves', 'Not set')
-        
-        print(f"Centerline monitoring baseline - Models: {baseline_models}, Curves: {baseline_curves}")
-        print(f"Apply monitoring baseline - Models: {apply_baseline_models}, Curves: {apply_baseline_curves}")
-        
-        # Check current counts
-        current_models = find_all_centerline_models()
-        current_curves = find_all_centerline_curves()
-        print(f"Current centerlines - Models: {len(current_models)}, Curves: {len(current_curves)}")
-        
-        # Check existing IDs for apply monitoring
-        existing_model_ids = getattr(slicer.modules, 'ExistingModelIDs', [])
-        existing_curve_ids = getattr(slicer.modules, 'ExistingCurveIDs', [])
-        print(f"Tracked existing IDs - Models: {len(existing_model_ids)}, Curves: {len(existing_curve_ids)}")
-        
-        # Check target centerline tracking
-        target_model_ids = getattr(slicer.modules, 'TargetCenterlineModels', [])
-        target_curve_ids = getattr(slicer.modules, 'TargetCenterlineCurves', [])
-        print(f"Target centerlines being monitored - Models: {len(target_model_ids)}, Curves: {len(target_curve_ids)}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"Error debugging centerline monitoring: {e}")
-        return False
-
-def show_centerline_workflow_help():
-    """
-    Console helper to show help for centerline workflow and testing functions
-    """
-    help_text = """
-=== CENTERLINE WORKFLOW HELP ===
-
-The workflow supports multiple centerlines with automatic dialog showing after each extraction.
-
-WORKFLOW STEPS:
-1. Extract first centerline using Extract Centerline module
-2. After completion, dialog appears with options to retry, add more, or continue
-3. Choose "Add More Centerlines" to extract additional centerlines
-4. New centerline extraction setup is prepared automatically
-5. Repeat steps 1-4 for each additional centerline
-
-CONSOLE HELPER FUNCTIONS:
-• test_multiple_centerlines_workflow() - Test the multiple centerlines workflow
-• test_centerline_completion_dialog() - Test the completion dialog manually
-• force_show_completion_dialog() - Force show dialog with latest centerlines
-• debug_centerline_monitoring() - Debug monitoring state and baseline counts
-• test_duplicate_dialog_prevention() - Test that duplicate dialogs are prevented
-• test_specific_centerline_monitoring() - Test the specific centerline monitoring system
-• show_centerline_info() - Show information about all centerlines in scene
-• stop_monitoring() - Stop centerline completion monitoring
-• stop_apply_monitoring() - Stop apply button monitoring
-• show_centerline_workflow_help() - Show this help message
-
-TROUBLESHOOTING:
-• If dialog doesn't show after second centerline, use debug_centerline_monitoring()
-• If seeing duplicate dialogs, use test_duplicate_dialog_prevention()
-• Use force_show_completion_dialog() to manually show the dialog
-• Check console output for monitoring status and baseline count changes
-• Ensure sufficient centerline data (>10 points for models, >5 for curves)
-
-FEATURES:
-• Automatic detection of centerline extraction completion
-• Support for multiple centerlines with proper baseline tracking
-• Visual progress indication and status updates
-• Ability to retry, add more, or continue to next step
-• Robust monitoring system with fallback detection methods
-
-For more help, see the workflow module documentation.
-"""
-    print(help_text)
-    return True
-
-# Console helpers for testing
-def test_add_centerlines():
-    """Console helper to test adding centerlines"""
-    create_additional_centerline_setup()
-
-def show_centerline_info():
-    """Console helper to show centerline information"""
-    summary = get_centerline_summary()
-    print(summary)
-
-def stop_monitoring():
-    """Console helper to stop centerline monitoring"""
-    stop_centerline_monitoring()
-
-def stop_apply_monitoring():
-    """Console helper to stop Apply button monitoring"""
-    stop_apply_button_monitoring()
-
-def test_dicom_workflow():
-    """Console helper to test the DICOM workflow start"""
-    try:
-        print("=== Testing DICOM Workflow Start ===")
-        start_with_dicom_data()
-        return True
-    except Exception as e:
-        print(f"Error testing DICOM workflow: {e}")
-        return False
-
-def test_volume_monitoring():
-    """Console helper to test volume addition monitoring"""
-    try:
-        print("=== Testing Volume Addition Monitoring ===")
-        setup_volume_addition_monitor()
-        print("Monitoring started. Load a volume to test detection.")
-        return True
-    except Exception as e:
-        print(f"Error testing volume monitoring: {e}")
-        return False
+        pass
 
 def stop_volume_monitoring():
     """Console helper to manually stop volume addition monitoring"""
     try:
-        print("Manually stopping volume addition monitoring...")
+        pass
         stop_volume_addition_monitoring()
         return True
     except Exception as e:
-        print(f"Error stopping volume monitoring: {e}")
+        pass
         return False
 
 def skip_to_volume_crop():
     """Console helper to skip DICOM loading and go directly to volume crop"""
     try:
-        print("=== Skipping to Volume Crop Workflow ===")
+        pass
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         if not volume_nodes:
-            print("No volumes found in scene. Please load a volume first.")
+            pass
             return False
         
         # Stop any existing monitoring
@@ -5067,70 +4698,18 @@ def skip_to_volume_crop():
         start_with_volume_crop()
         return True
     except Exception as e:
-        print(f"Error skipping to volume crop: {e}")
-        return False
-
-def test_status_widget():
-    """Console helper to test the volume waiting status widget"""
-    try:
-        print("=== Testing Volume Waiting Status Widget ===")
-        create_volume_waiting_status_widget()
-        print("Status widget created. Call cleanup_volume_waiting_status_widget() to remove it.")
-        return True
-    except Exception as e:
-        print(f"Error testing status widget: {e}")
+        pass
         return False
 
 def cleanup_status_widget():
     """Console helper to clean up the status widget"""
     try:
         cleanup_volume_waiting_status_widget()
-        print("Status widget cleaned up.")
+        pass
         return True
     except Exception as e:
-        print(f"Error cleaning up status widget: {e}")
+        pass
         return False
-
-def show_dicom_workflow_help():
-    """Console helper to show help for the new DICOM workflow"""
-    help_text = """
-=== DICOM WORKFLOW HELP ===
-
-The workflow now starts with the Add DICOM Data module and automatically continues when a volume is loaded.
-
-WORKFLOW STEPS:
-1. Click "Start Workflow" button in the Workflow module
-2. DICOM module opens automatically
-3. Import and load your DICOM data using the DICOM module
-4. When a volume is detected in the scene, workflow continues automatically
-5. Volume Crop module opens with ROI ready for cropping
-
-CONSOLE HELPER FUNCTIONS:
-• test_dicom_workflow() - Test the DICOM workflow start
-• test_volume_monitoring() - Test volume addition monitoring
-• stop_volume_monitoring() - Stop volume monitoring manually
-• skip_to_volume_crop() - Skip DICOM loading and go directly to volume crop
-• test_status_widget() - Test the status widget display
-• cleanup_status_widget() - Clean up the status widget
-• show_dicom_workflow_help() - Show this help message
-
-FEATURES:
-• Automatic detection of existing volumes in the scene
-• Real-time monitoring for new volume addition
-• Visual status widget with progress indication
-• Ability to cancel the workflow at any time
-• Automatic continuation to volume crop workflow
-
-NOTES:
-• If volumes already exist in the scene, you'll be asked if you want to continue with them
-• The workflow monitors for ANY new volume addition, not just DICOM volumes
-• You can manually stop monitoring using stop_volume_monitoring()
-• The status widget provides visual feedback and can be cancelled
-
-For more help, see the workflow module documentation.
-"""
-    print(help_text)
-    return True
 
 def clear_existing_centerlines():
     """
@@ -5153,21 +4732,21 @@ def clear_existing_centerlines():
         removed_count = 0
         for model in centerline_models:
             slicer.mrmlScene.RemoveNode(model)
-            print(f"Removed centerline model: {model.GetName()}")
+            pass
             removed_count += 1
         
         for curve in centerline_curves:
             slicer.mrmlScene.RemoveNode(curve)
-            print(f"Removed centerline curve: {curve.GetName()}")
+            pass
             removed_count += 1
         
         if removed_count > 0:
-            print(f"Cleared {removed_count} existing centerline result(s)")
+            pass
         else:
-            print("No existing centerline results to clear")
+            pass
             
     except Exception as e:
-        print(f"Error clearing existing centerlines: {e}")
+        pass
 
 def get_centerline_summary():
     """
@@ -5197,7 +4776,7 @@ def get_centerline_summary():
         return summary
         
     except Exception as e:
-        print(f"Error getting centerline summary: {e}")
+        pass
         return "Error retrieving centerline information"
 
 
@@ -5216,7 +4795,7 @@ def remove_transforms_from_point_lists():
                 # First, ensure individual pre and post lesion points have no transforms
                 point_count = node.GetNumberOfControlPoints()
                 if point_count >= 2:  # At least pre-lesion and post-lesion points
-                    print(f"Processing F-1 point list with {point_count} points - ensuring pre and post lesion points are transform-free")
+                    pass
                     
                     # Check points 1 and 2 (pre-lesion and post-lesion)
                     for point_index in [0, 1]:  # 0 = pre-lesion, 1 = post-lesion
@@ -5227,10 +4806,10 @@ def remove_transforms_from_point_lists():
                         if point_index < point_count:
                             point_pos = [0.0, 0.0, 0.0]
                             node.GetNthControlPointPosition(point_index, point_pos)
-                            print(f"  - {point_name} point position: [{point_pos[0]:.2f}, {point_pos[1]:.2f}, {point_pos[2]:.2f}]")
+                            pass
                             pre_post_lesion_processed += 1
                         else:
-                            print(f"  - Warning: {point_name} point not found (index {point_index})")
+                            pass
                 
                 # Remove transform from the entire point list
                 if node.GetTransformNodeID():
@@ -5239,30 +4818,30 @@ def remove_transforms_from_point_lists():
                     if transform_node:
                         transform_name = transform_node.GetName()
                     
-                    print(f"Removing transform '{transform_name}' from F-1 point list (affects all points including pre and post lesion)")
+                    pass
                     node.SetAndObserveTransformNodeID(None)
                     node.Modified()
                     removed_count += 1
-                    print(f"✓ Transform removed from F-1 point list - pre and post lesion points are now in original coordinate space")
+                    pass
                 else:
-                    print("F-1 point list has no transform - pre and post lesion points already in original coordinate space")
+                    pass
         
         if removed_count > 0:
             slicer.app.processEvents()
-            print(f"Successfully removed transforms from {removed_count} F-1 point list(s)")
-            print(f"Processed {pre_post_lesion_processed} pre and post lesion points")
-            print("All pre and post lesion points are now transform-free for saving")
+            pass
+            pass
+            pass
             return True
         else:
             if pre_post_lesion_processed > 0:
-                print(f"Verified {pre_post_lesion_processed} pre and post lesion points - no transforms to remove")
+                pass
                 return True
             else:
-                print("No F-1 point lists or pre/post lesion points found")
+                pass
                 return False
             
     except Exception as e:
-        print(f"Error removing transforms from point lists: {e}")
+        pass
         return False
 
 def verify_pre_post_lesion_points_transform_free():
@@ -5281,7 +4860,7 @@ def verify_pre_post_lesion_points_transform_free():
                 if node.GetTransformNodeID():
                     transform_node = node.GetTransformNode()
                     transform_name = transform_node.GetName() if transform_node else "Unknown"
-                    print(f"ERROR: F-1 point list still has transform '{transform_name}' applied!")
+                    pass
                     verification_passed = False
                     continue
                 
@@ -5292,25 +4871,25 @@ def verify_pre_post_lesion_points_transform_free():
                         point_name = "pre-lesion" if point_index == 0 else "post-lesion"
                         point_pos = [0.0, 0.0, 0.0]
                         node.GetNthControlPointPosition(point_index, point_pos)
-                        print(f"{point_name} point at [{point_pos[0]:.2f}, {point_pos[1]:.2f}, {point_pos[2]:.2f}] - transform-free")
+                        pass
                         points_checked += 1
                 else:
-                    print(f"Warning: F-1 point list has only {point_count} points (expected at least 2 for pre/post lesion)")
+                    pass
                     verification_passed = False
         
         if points_checked == 0:
-            print("Warning: No pre or post lesion points found for verification")
+            pass
             return False
         
         if verification_passed:
-            print(f"Verification passed: {points_checked} pre and post lesion points are transform-free")
+            pass
             return True
         else:
-            print(f"Verification failed: Issues found with pre and post lesion point transforms")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error verifying pre and post lesion points: {e}")
+        pass
         return False
 
 def reapply_transforms_to_point_lists():
@@ -5330,7 +4909,7 @@ def reapply_transforms_to_point_lists():
                 break
         
         if not straightening_transform:
-            print("Warning: No 'Straightening transform' found to reapply")
+            pass
             return False
         
         for node in fiducial_nodes:
@@ -5339,19 +4918,19 @@ def reapply_transforms_to_point_lists():
                 node.SetAndObserveTransformNodeID(straightening_transform.GetID())
                 node.Modified()
                 applied_count += 1
-                print(f"Reapplied 'Straightening transform' to point list '{node.GetName()}'")
+                pass
         
         if applied_count > 0:
             slicer.app.processEvents()
-            print(f"Reapplied transforms to {applied_count} F-1 point list(s)")
-            print("GUI updated to reflect transform reapplication")
+            pass
+            pass
             return True
         else:
-            print("No F-1 point lists found to reapply transforms to")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error reapplying transforms to point lists: {e}")
+        pass
         return False
 
 def reapply_transforms_to_circles():
@@ -5370,7 +4949,7 @@ def reapply_transforms_to_circles():
                 break
         
         if not straightening_transform:
-            print("Warning: No 'Straightening transform' found to reapply to circles")
+            pass
             return False
         
         # Reapply to closed curve circles
@@ -5380,7 +4959,7 @@ def reapply_transforms_to_circles():
                 node.SetAndObserveTransformNodeID(straightening_transform.GetID())
                 node.Modified()
                 circles_reapplied += 1
-                print(f"Reapplied transform to circle '{node.GetName()}'")
+                pass
         
         # Reapply to regular curve circles
         curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
@@ -5389,55 +4968,28 @@ def reapply_transforms_to_circles():
                 node.SetAndObserveTransformNodeID(straightening_transform.GetID())
                 node.Modified()
                 circles_reapplied += 1
-                print(f"Reapplied transform to circle '{node.GetName()}'")
+                pass
         
         if circles_reapplied > 0:
             slicer.app.processEvents()
-            print(f"Reapplied transforms to {circles_reapplied} circle(s)")
+            pass
             return True
         else:
-            print("No circles found to reapply transforms to")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error reapplying transforms to circles: {e}")
+        pass
         return False
 
-def debug_point_list_transforms():
-    """
-    Debug function to check transform status of all F-1 point lists
-    """
-    try:
-        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
-        f1_nodes = []
-        
-        for node in fiducial_nodes:
-            if node.GetName() == "F-1":
-                f1_nodes.append(node)
-        
-        if not f1_nodes:
-            print("No F-1 point lists found in scene")
-            return
-        
-        print(f"Found {len(f1_nodes)} F-1 point list(s):")
-        for i, node in enumerate(f1_nodes):
-            transform_id = node.GetTransformNodeID()
-            if transform_id:
-                transform_node = node.GetTransformNode()
-                transform_name = transform_node.GetName() if transform_node else "Unknown"
-                print(f"  F-1 #{i+1}: HAS TRANSFORM '{transform_name}' (ID: {transform_id})")
-            else:
-                print(f"  F-1 #{i+1}: NO TRANSFORM (None)")
-                
-    except Exception as e:
-        print(f"Error in debug function: {e}")
+
 
 def force_remove_all_transforms():
     """
     Force remove all transforms from F-1 point lists and update GUI
     """
     try:
-        print("=== FORCE REMOVING ALL TRANSFORMS FROM F-1 POINT LISTS ===")
+        pass
         
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         processed_count = 0
@@ -5452,20 +5004,19 @@ def force_remove_all_transforms():
                 processed_count += 1
                 
                 if old_transform_id:
-                    print(f"Removed transform from F-1 point list (was: {old_transform_id})")
+                    pass
                 else:
-                    print(f"Ensured F-1 point list has no transform (was already None)")
+                    pass
         
         slicer.app.processEvents()
         
-        print(f"Processed {processed_count} F-1 point list(s)")
-        print("=== CHECKING FINAL STATUS ===")
-        debug_point_list_transforms()
+        pass
+
         
         return processed_count > 0
         
     except Exception as e:
-        print(f"Error in force remove function: {e}")
+        pass
         return False
 
 def set_straightened_volume_visible():
@@ -5493,7 +5044,7 @@ def set_straightened_volume_visible():
                     slice_logic = slice_widget.sliceLogic()
                     if slice_logic:
                         slice_logic.GetSliceCompositeNode().SetBackgroundVolumeID(straightened_volume.GetID())
-                        print(f"Set straightened volume visible in {slice_view_name} slice view")
+                        pass
             
             for slice_view_name in slice_view_names:
                 slice_widget = layout_manager.sliceWidget(slice_view_name)
@@ -5506,13 +5057,13 @@ def set_straightened_volume_visible():
             if selection_node:
                 selection_node.SetActiveVolumeID(straightened_volume.GetID())
             
-            print(f"Straightened volume '{straightened_volume.GetName()}' set as visible and active")
+            pass
             
         else:
-            print("Warning: Could not find straightened volume to set as visible")
+            pass
             
     except Exception as e:
-        print(f"Error setting straightened volume visible: {e}")
+        pass
 
 def draw_circles_on_centerline():
     """
@@ -5527,11 +5078,11 @@ def draw_circles_on_centerline():
                 break
         
         if not f1_points:
-            print("No F-1 point list found - circles will be created when points are placed")
+            pass
             return False
         
         if f1_points.GetNumberOfControlPoints() < 2:
-            print("Need at least 2 F-1 points (pre-lesion and post-lesion) to create circles")
+            pass
             return False
         
         centerline_model = None
@@ -5545,29 +5096,29 @@ def draw_circles_on_centerline():
             for model in all_models:
                 if 'centerline' in model.GetName().lower():
                     centerline_model = model
-                    print(f"Found centerline model: '{model.GetName()}'")
+                    pass
                     break
         
         if not centerline_model:
             for model in all_models:
                 if 'tree' in model.GetName().lower():
                     centerline_model = model
-                    print(f"Found tree model (assuming centerline): '{model.GetName()}'")
+                    pass
                     break
         
         if not centerline_model:
-            print("Warning: Could not find centerline model - cannot create circles")
+            pass
             return False
         
         points = slicer.util.arrayFromModelPoints(centerline_model)
         radii = slicer.util.arrayFromModelPointData(centerline_model, 'Radius')
         
         if points is None or len(points) == 0:
-            print("Warning: No points found in centerline model")
+            pass
             return False
             
         if radii is None or len(radii) == 0:
-            print("Warning: No radius data found in centerline model")
+            pass
             return False
         
         clear_centerline_circles()
@@ -5626,7 +5177,7 @@ def draw_circles_on_centerline():
             if success:
                 circles_created += 1
                 circle_nodes.append(circle_node)
-                print(f"Created {point_name} circle at centerline point {closest_centerline_idx}")
+                pass
         
         slicer.modules.WorkflowCenterlineCircleNodes = circle_nodes
         
@@ -5642,7 +5193,7 @@ def draw_circles_on_centerline():
         return True
         
     except Exception as e:
-        print(f"Error drawing circles on centerline: {e}")
+        pass
         return False
 
 def create_closed_curve_circle(circle_node, center_point, radius):
@@ -5660,11 +5211,11 @@ def create_closed_curve_circle(circle_node, center_point, radius):
             z = center_point[2] 
             
             circle_node.AddControlPoint([x, y, z])
-        print(f"Created closed curve circle with {num_points} points, radius {radius:.2f} at Z={center_point[2]:.2f}")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error creating closed curve circle: {e}")
+        pass
         return False
 
 def calculate_centerline_direction(centerline_points, point_index):
@@ -5704,11 +5255,11 @@ def calculate_centerline_direction(centerline_points, point_index):
             # Fallback direction if points are too close
             direction = np.array([0.0, 0.0, 1.0])
         
-        print(f"Calculated centerline direction at point {point_index}: {direction}")
+        pass
         return direction
         
     except Exception as e:
-        print(f"Error calculating centerline direction: {e}")
+        pass
         # Return default direction along Z-axis
         return np.array([0.0, 0.0, 1.0])
 
@@ -5747,13 +5298,13 @@ def create_perpendicular_circle(circle_node, center_point, radius, direction_vec
             
             circle_node.AddControlPoint([circle_point[0], circle_point[1], circle_point[2]])
         
-        print(f"Created perpendicular circle with {num_points} points, radius {radius:.2f}")
-        print(f"  Direction vector: {direction}")
-        print(f"  Perpendicular vectors: {perp1}, {perp2}")
+        pass
+        pass
+        pass
         return True
         
     except Exception as e:
-        print(f"Error creating perpendicular circle: {e}")
+        pass
         # Fallback to axial circle
         return create_closed_curve_circle(circle_node, center_point, radius)
 
@@ -5778,7 +5329,7 @@ def create_axial_circle_points(circle_node, center_point, radius):
         return True
         
     except Exception as e:
-        print(f"Error creating axial circle points: {e}")
+        pass
         return False
 
 def clear_centerline_circles():
@@ -5818,14 +5369,14 @@ def clear_centerline_circles():
                 removed_count += 1
         
         if removed_count > 0:
-            print(f"Cleared {removed_count} centerline circle markup(s)")
+            pass
         else:
-            print("No centerline circles found to clear")
+            pass
             
         return removed_count > 0
         
     except Exception as e:
-        print(f"Error clearing centerline circles: {e}")
+        pass
         return False
 
 def apply_transform_to_circle(circle_node):
@@ -5836,7 +5387,7 @@ def apply_transform_to_circle(circle_node):
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
         
         if len(transform_nodes) == 0:
-            print("No transforms found in the scene - circle will use default coordinate system")
+            pass
             return False
         straightening_transform = None
         for transform_node in transform_nodes:
@@ -5846,15 +5397,15 @@ def apply_transform_to_circle(circle_node):
         
         if straightening_transform:
             circle_node.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            print(f"Applied 'Straightening transform' to circle '{circle_node.GetName()}'")
+            pass
             return True
         else:
             transform_names = [node.GetName() for node in transform_nodes]
-            print(f"'Straightening transform' not found for circle. Available transforms: {', '.join(transform_names)}")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error applying transform to circle: {e}")
+        pass
         return False
 
 def apply_transform_to_node(node, node_description="node"):
@@ -5865,7 +5416,7 @@ def apply_transform_to_node(node, node_description="node"):
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
         
         if len(transform_nodes) == 0:
-            print(f"No transforms found in the scene - {node_description} will use default coordinate system")
+            pass
             return False
         
         straightening_transform = None
@@ -5876,15 +5427,15 @@ def apply_transform_to_node(node, node_description="node"):
         
         if straightening_transform:
             node.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            print(f"Applied 'Straightening transform' to {node_description} '{node.GetName()}'")
+            pass
             return True
         else:
             transform_names = [node.GetName() for node in transform_nodes]
-            print(f"'Straightening transform' not found for {node_description}. Available transforms: {', '.join(transform_names)}")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error applying transform to {node_description}: {e}")
+        pass
         return False
 
 # ===============================================================================
@@ -5898,14 +5449,14 @@ def create_centerline_and_tube_mask():
     
     f1_points = slicer.util.getNode('F-1')
     if not f1_points:
-        print("Error: F-1 point list not found")
+        pass
         return
 
     if f1_points.GetNumberOfControlPoints() < 4:
-        print(f"Error: F-1 has only {f1_points.GetNumberOfControlPoints()} points. Need at least 4.")
+        pass
         return
     
-    print(f"Found F-1 with {f1_points.GetNumberOfControlPoints()} points")
+    pass
     
     centerline_points = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLMarkupsFiducialNode')
     centerline_points.SetName('CenterlinePoints')
@@ -5918,7 +5469,7 @@ def create_centerline_and_tube_mask():
     f1_points.GetNthControlPointPosition(3, point4_pos)
     centerline_points.AddControlPoint(point4_pos)
     
-    print(f"Created centerline points: Point 3 at {point3_pos}, Point 4 at {point4_pos}")
+    pass
     
     centerline_curve = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLMarkupsCurveNode')
     centerline_curve.SetName('CenterlineCurve')
@@ -5931,13 +5482,13 @@ def create_centerline_and_tube_mask():
     # NOTE: Transform is NOT applied to centerline curve - it should remain in original coordinate system
     # for accurate tube mask creation and analysis
     
-    print("Created centerline curve")
+    pass
     
 
     curve_points = centerline_curve.GetCurvePointsWorld()
     
     if not curve_points or curve_points.GetNumberOfPoints() == 0:
-        print("Error: Could not get curve points")
+        pass
         return
     
     curve_polydata = vtk.vtkPolyData()
@@ -5971,7 +5522,7 @@ def create_centerline_and_tube_mask():
     tube_display.SetOpacity(0.5)
     tube_model.SetAndObserveDisplayNodeID(tube_display.GetID())
     
-    print("Created tube mask model")
+    pass
     
     stenosis_segmentation = create_segmentation_from_tube(tube_model)
     
@@ -5980,7 +5531,7 @@ def create_centerline_and_tube_mask():
     if stenosis_segmentation:
         show_segment_statistics(stenosis_segmentation)
     
-    print("Workflow completed successfully!")
+    pass
 
 def create_segmentation_from_tube(tube_model):
     """
@@ -6002,11 +5553,11 @@ def create_segmentation_from_tube(tube_model):
             segment.SetName('TubeMask')
             segment.SetColor(1.0, 0.0, 0.0)  
         
-        print("Created tube mask segmentation")
+        pass
         return segmentation_node
         
     except Exception as e:
-        print(f"Warning: Could not create segmentation from tube model: {str(e)}")
+        pass
         return None
 
 def set_tube_radius(radius):
@@ -6015,7 +5566,7 @@ def set_tube_radius(radius):
     """
     global tube_radius
     tube_radius = radius
-    print(f"Tube radius set to {radius}")
+    pass
 
 def add_cropped_volume_to_3d_scene():
     """
@@ -6031,7 +5582,7 @@ def add_cropped_volume_to_3d_scene():
                 break
         
         if not cropped_volume:
-            print("Warning: Could not find cropped volume to add to 3D scene")
+            pass
             return
         
         threeDWidget = slicer.app.layoutManager().threeDWidget(0)
@@ -6049,14 +5600,14 @@ def add_cropped_volume_to_3d_scene():
             try:
                 presetName = "CT-Chest-Contrast-Enhanced"
                 volumeRenderingLogic.ApplyVolumeRenderingDisplayPreset(displayNode, presetName)
-                print(f"Applied preset: {presetName}")
+                pass
             except:
                 try:
                     presetName = "CT-Cardiac"
                     volumeRenderingLogic.ApplyVolumeRenderingDisplayPreset(displayNode, presetName)
-                    print(f"Applied preset: {presetName}")
+                    pass
                 except:
-                    print("Using default volume rendering settings")
+                    pass
             
             volumeProperty = displayNode.GetVolumePropertyNode().GetVolumeProperty()
             if volumeProperty:
@@ -6076,12 +5627,12 @@ def add_cropped_volume_to_3d_scene():
             displayNode.SetExpectedFPS(10.0)
             displayNode.SetGPUMemorySize(1024)
             
-            print(f"Added cropped volume '{cropped_volume.GetName()}' to 3D scene with raycast rendering")
+            pass
         else:
-            print("Warning: Could not create volume rendering display node")
+            pass
             
     except Exception as e:
-        print(f"Error adding cropped volume to 3D scene: {str(e)}")
+        pass
 
 def show_segment_statistics(stenosis_segmentation):
     """
@@ -6089,7 +5640,7 @@ def show_segment_statistics(stenosis_segmentation):
     """
     try:
         if not stenosis_segmentation:
-            print("Warning: No stenosis segmentation provided for statistics")
+            pass
             return
         
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
@@ -6098,14 +5649,14 @@ def show_segment_statistics(stenosis_segmentation):
         for volume in volume_nodes:
             if 'cropped' in volume.GetName().lower():
                 analysis_volume = volume
-                print(f"Found cropped volume for analysis: {volume.GetName()}")
+                pass
                 break
         
         if not analysis_volume:
-            print("Warning: No volume with 'cropped' in name found for density analysis")
-            print("Available volumes:")
+            pass
+            pass
             for volume in volume_nodes:
-                print(f"  - {volume.GetName()}")
+                pass
             return
         
         slicer.util.selectModule('SegmentStatistics')
@@ -6117,9 +5668,9 @@ def show_segment_statistics(stenosis_segmentation):
             
             if hasattr(segmentStatisticsWidget, 'segmentationSelector'):
                 segmentStatisticsWidget.segmentationSelector.setCurrentNode(stenosis_segmentation)
-                print(f"Set segmentation: {stenosis_segmentation.GetName()}")
+                pass
             else:
-                print("Warning: Could not find segmentationSelector")
+                pass
             
             volume_set = False
             if hasattr(segmentStatisticsWidget, 'scalarVolumeSelector'):
@@ -6127,10 +5678,10 @@ def show_segment_statistics(stenosis_segmentation):
                 slicer.app.processEvents()
                 current_volume = segmentStatisticsWidget.scalarVolumeSelector.currentNode()
                 if current_volume and current_volume.GetID() == analysis_volume.GetID():
-                    print(f"Set scalar volume: {analysis_volume.GetName()}")
+                    pass
                     volume_set = True
                 else:
-                    print(f"Warning: Volume selection may not have taken effect")
+                    pass
             
 
             if not volume_set and hasattr(segmentStatisticsWidget, 'scalarVolumeSelector'):
@@ -6140,112 +5691,35 @@ def show_segment_statistics(stenosis_segmentation):
                     slicer.app.processEvents()
                     current_volume = segmentStatisticsWidget.scalarVolumeSelector.currentNode()
                     if current_volume and current_volume.GetID() == analysis_volume.GetID():
-                        print(f"Set scalar volume (method 2): {analysis_volume.GetName()}")
+                        pass
                         volume_set = True
                 except:
                     pass
             
             if not volume_set:
-                print(f"Warning: Could not automatically set scalar volume to {analysis_volume.GetName()}")
-                print("Please manually select the cropped volume in the Scalar Volume dropdown")
+                pass
+                pass
             
             if hasattr(segmentStatisticsWidget, 'labelmapStatisticsCheckBox'):
                 segmentStatisticsWidget.labelmapStatisticsCheckBox.setChecked(True)
             if hasattr(segmentStatisticsWidget, 'scalarVolumeStatisticsCheckBox'):
                 segmentStatisticsWidget.scalarVolumeStatisticsCheckBox.setChecked(True)
         except AttributeError as ae:
-            print(f"Error accessing Segment Statistics widget: {str(ae)}")
-            print("Please open the Segment Statistics module manually and configure it")
+            pass
+            pass
                
     except Exception as e:
-        print(f"Error opening Segment Statistics module: {str(e)}")
+        pass
         
         try:
             slicer.util.selectModule('SegmentStatistics')
-            print("Opened Segment Statistics module - please configure manually")
-            print(f"  Select segmentation: {stenosis_segmentation.GetName()}")
-            print(f"  Select volume: {analysis_volume.GetName()}")
+            pass
+            pass
+            pass
             
         except Exception as fallback_error:
-            print(f"Could not open Segment Statistics module: {str(fallback_error)}")
-            print("Please open the Segment Statistics module manually")
-
-# ===============================================================================
-# CONSOLE HELPER FUNCTIONS
-# ===============================================================================
-
-def test_point_placement_auto_reselection():
-    """
-    Test function to verify automatic point placement tool re-selection is working
-    """
-    try:
-        print("=== Testing Automatic Point Placement Tool Re-selection ===")
-        
-        # Check if there's a current point list
-        current_point_list = None
-        if hasattr(slicer.modules, 'CurrentLesionAnalysisPointList'):
-            current_point_list = slicer.modules.CurrentLesionAnalysisPointList
-            
-        if current_point_list:
-            print(f"Current active point list: {current_point_list.GetName()}")
-            print(f"Current point count: {current_point_list.GetNumberOfControlPoints()}")
-            
-            # Test the re-selection function
-            ensure_point_placement_mode_active(current_point_list)
-            
-            # Check interaction mode
-            interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-            if interactionNode:
-                current_mode = interactionNode.GetCurrentInteractionMode()
-                if current_mode == interactionNode.Place:
-                    print("Point placement mode is active")
-                else:
-                    print("Point placement mode is NOT active")
-            
-            print("Automatic re-selection test completed")
-            print("Place a point to verify the tool stays selected after placement")
-        else:
-            print("No active point list found")
-            print("Start point placement first using the workflow controls")
-            
-    except Exception as e:
-        print(f"Error testing point placement auto-reselection: {e}")
-
-# ===============================================================================
-# END WORKFLOW2 FUNCTIONS
-# ===============================================================================
-
-# ===============================================================================
-# CONSOLE HELPER FUNCTIONS FOR MASK SEGMENTATION
-# ===============================================================================
-
-def test_mask_segmentation(volume_name=None):
-    """
-    Test function to demonstrate creating a mask segmentation.
-    Creates a red calcification mask using default threshold values.
-    
-    Args:
-        volume_name (str, optional): Name of the volume to use for the test
-    """
-    try:
-        mask_node = create_mask_segmentation(
-            mask_name="CalcificationMask",
-            threshold_low=130,        # Typical calcification threshold
-            threshold_high=3000,      # Upper bound to exclude artifacts
-            rgb_color=(1.0, 0.0, 0.0), # Red color
-            volume_name=volume_name   # Use specified volume name
-        )
-        
-        if mask_node:
-            print(f"Successfully created test mask: {mask_node.GetName()}")
-            return mask_node
-        else:
-            print("Failed to create test mask")
-            return None
-            
-    except Exception as e:
-        print(f"Error in test mask segmentation: {e}")
-        return None
+            pass
+            pass
 
 def create_bone_mask(volume_name=None):
     """
@@ -6321,7 +5795,7 @@ def create_analysis_masks_manually(volume_name=None):
                     break
         
         if not target_volume:
-            print(f"Error: Could not find volume '{volume_name}' or any straightened volume")
+            pass
             return None
         
         # Create masks using the create_analysis_masks function
@@ -6331,7 +5805,7 @@ def create_analysis_masks_manually(volume_name=None):
         return segmentation_node
             
     except Exception as e:
-        print(f"Error creating analysis masks manually: {e}")
+        pass
         return None
 
 def hide_crop_volume_ui_elements():
@@ -6341,7 +5815,7 @@ def hide_crop_volume_ui_elements():
     try:
         crop_widget = slicer.modules.cropvolume.widgetRepresentation()
         if not crop_widget:
-            print("Error: Could not get Crop Volume widget")
+            pass
             return False
         
         # Names of the collapsible buttons to hide based on the XML structure
@@ -6368,9 +5842,9 @@ def hide_crop_volume_ui_elements():
                 for button in collapsible_buttons:
                     button.setVisible(False)
                     elements_hidden += 1
-                    print(f"Hidden: {button_name}")
+                    pass
             except Exception as e:
-                print(f"Could not hide {button_name}: {e}")
+                pass
         
         # Hide error message elements 
         for element_name in error_elements_to_hide:
@@ -6379,9 +5853,9 @@ def hide_crop_volume_ui_elements():
                 for element in elements:
                     element.setVisible(False)
                     elements_hidden += 1
-                    print(f"Hidden: {element_name}")
+                    pass
             except Exception as e:
-                print(f"Could not hide {element_name}: {e}")
+                pass
         
         # Also hide by finding ctkCollapsibleButton widgets directly
         try:
@@ -6389,9 +5863,9 @@ def hide_crop_volume_ui_elements():
             for button in collapsible_buttons:
                 button.setVisible(False)
                 elements_hidden += 1
-                print(f"Hidden collapsible button: {button.text if hasattr(button, 'text') else 'unnamed'}")
+                pass
         except Exception as e:
-            print(f"Could not hide collapsible buttons directly: {e}")
+            pass
         
         # Hide the horizontal layout containing error elements
         try:
@@ -6403,16 +5877,16 @@ def hide_crop_volume_ui_elements():
                     if parent_widget:
                         parent_widget.setVisible(False)
                         elements_hidden += 1
-                        print("Hidden error message layout")
+                        pass
         except Exception as e:
-            print(f"Could not hide error message layout: {e}")
+            pass
         
-        print(f"Successfully hidden {elements_hidden} UI elements in Crop Volume module")
-        print("Only the green Apply button should now be visible")
+        pass
+        pass
         return True
         
     except Exception as e:
-        print(f"Error hiding Crop Volume UI elements: {e}")
+        pass
         return False
 
 def setup_minimal_crop_volume_ui():
@@ -6430,219 +5904,25 @@ def setup_minimal_crop_volume_ui():
         if hide_success:
             # Add the large green Apply button
             add_large_crop_apply_button()
-            print("Crop Volume module configured with minimal UI")
+            pass
             return True
         else:
-            print("Warning: Could not fully hide all UI elements")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error setting up minimal Crop Volume UI: {e}")
+        pass
         return False
 
-# Console helper functions for testing UI modifications
-def test_hide_crop_ui():
-    """Console helper to test hiding Crop Volume UI elements"""
-    return hide_crop_volume_ui_elements()
-
-def test_minimal_crop_ui():
-    """Console helper to test setting up minimal Crop Volume UI"""
-    return setup_minimal_crop_volume_ui()
-
-def test_minimal_segment_editor_ui():
-    """Console helper to test setting up minimal Segment Editor UI"""
-    return setup_minimal_segment_editor_ui()
-
-def test_programmatic_scissors():
-    """Console helper to test the new programmatic scissors workflow"""
-    try:
-        print("=== Testing New Programmatic Scissors Workflow ===")
-        print("This test demonstrates the updated workflow that uses Segment Editor API")
-        print("without opening the GUI, and provides a scissors tool button.")
-        print("")
-        
-        # Run the main test
-        success = test_segment_editor_scissors_workflow()
-        
-        if success:
-            print("")
-            print("🎉 SUCCESS! The programmatic scissors workflow is working.")
-            print("")
-            print("What you should see:")
-            print("• A floating scissors tool button (✂️ SCISSORS TOOL)")
-            print("• A floating continue workflow button")
-            print("• No Segment Editor GUI opened")
-            print("")
-            print("How to use:")
-            print("1. Click the scissors button to activate the tool")
-            print("2. Draw in slice views to edit segmentation")
-            print("3. Click scissors button again to deactivate")
-            print("4. Click 'FINISH SEGMENTATION - CONTINUE' when done")
-            print("")
-            print("To clean up: run cleanup_all_workflow_scissors_ui()")
-        
-        return success
-        
-    except Exception as e:
-        print(f"Error in programmatic scissors test: {e}")
-        return False
-
-def test_segment_editor_scissors_workflow():
-    """Console helper to test the complete Segment Editor scissors workflow"""
-    try:
-        print("=== Testing Programmatic Segment Editor Scissors Workflow ===")
-        
-        # Test the main function
-        success = start_with_segment_editor_scissors()
-        
-        if success:
-            print("✓ Programmatic segment editor setup successful")
-            print("✓ Scissors tool button should be visible")
-            print("✓ Continue workflow button should be visible")
-            print("")
-            print("Next steps:")
-            print("1. Click the scissors tool button to activate/deactivate")
-            print("2. Use slice views to edit segmentation")
-            print("3. Click 'FINISH SEGMENTATION - CONTINUE' when done")
-        else:
-            print("✗ Failed to set up programmatic segment editor")
-        
-        return success
-        
-    except Exception as e:
-        print(f"Error testing scissors workflow: {e}")
-        return False
-
-def test_scissors_toggle():
-    """Console helper to test scissors tool toggle"""
-    try:
-        if hasattr(slicer.modules, 'WorkflowScissorsButton'):
-            button = slicer.modules.WorkflowScissorsButton
-            current_state = button.isChecked()
-            print(f"Current scissors state: {'ACTIVE' if current_state else 'INACTIVE'}")
-            
-            # Toggle the state
-            button.setChecked(not current_state)
-            print(f"Toggled scissors to: {'ACTIVE' if not current_state else 'INACTIVE'}")
-            
-            return True
-        else:
-            print("Scissors button not found. Run test_segment_editor_scissors_workflow() first.")
-            return False
-            
-    except Exception as e:
-        print(f"Error testing scissors toggle: {e}")
-        return False
 
 def cleanup_all_workflow_scissors_ui():
     """Console helper to clean up all scissors workflow UI"""
     try:
         cleanup_continue_ui()
-        print("All scissors workflow UI cleaned up")
+        pass
         return True
     except Exception as e:
-        print(f"Error cleaning up scissors workflow UI: {e}")
-        return False
-
-def test_hide_extract_centerline_ui():
-    """Console helper to test hiding Extract Centerline UI elements"""
-    return hide_extract_centerline_ui_elements()
-
-def debug_extract_centerline_widgets():
-    """
-    Debug function to list all widgets in the Extract Centerline module
-    """
-    try:
-        print("=== DEBUGGING EXTRACT CENTERLINE WIDGETS ===")
-        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
-        if not extract_centerline_widget:
-            print("Error: Could not get Extract Centerline widget")
-            return
-        
-        # Find all widgets
-        all_widgets = extract_centerline_widget.findChildren(qt.QWidget)
-        print(f"Found {len(all_widgets)} total widgets")
-        
-        # Look specifically for collapsible buttons
-        collapsible_buttons = extract_centerline_widget.findChildren("ctkCollapsibleButton")
-        print(f"\nFound {len(collapsible_buttons)} ctkCollapsibleButton widgets:")
-        for i, button in enumerate(collapsible_buttons):
-            button_text = ""
-            button_name = ""
-            button_visible = "Unknown"
-            
-            try:
-                if hasattr(button, 'text'):
-                    button_text = str(button.text)
-                if hasattr(button, 'objectName'):
-                    button_name = str(button.objectName())
-                if hasattr(button, 'isVisible'):
-                    button_visible = "Visible" if button.isVisible() else "Hidden"
-            except Exception as e:
-                print(f"    Error getting button properties: {e}")
-                
-            print(f"  {i+1}. Text: '{button_text}' | ObjectName: '{button_name}' | Status: {button_visible}")
-            
-            # If this looks like the advanced button, try to hide it aggressively
-            if "advanced" in button_text.lower() or "advanced" in button_name.lower():
-                print(f"    → FOUND ADVANCED BUTTON! Attempting to hide...")
-                try:
-                    button.setVisible(False)
-                    button.hide()
-                    if hasattr(button, 'setEnabled'):
-                        button.setEnabled(False)
-                    if hasattr(button, 'setParent'):
-                        # Try to remove it from its parent
-                        try:
-                            button.setParent(None)
-                            print(f"    → Removed from parent")
-                        except:
-                            pass
-                    print(f"    → Advanced button hidden")
-                except Exception as e:
-                    print(f"    → Error hiding advanced button: {e}")
-        
-        # Also check QPushButton widgets
-        push_buttons = extract_centerline_widget.findChildren("QPushButton")
-        print(f"\nFound {len(push_buttons)} QPushButton widgets:")
-        for i, button in enumerate(push_buttons):
-            button_text = ""
-            button_name = ""
-            button_visible = "Unknown"
-            
-            try:
-                if hasattr(button, 'text'):
-                    button_text = str(button.text)
-                if hasattr(button, 'objectName'):
-                    button_name = str(button.objectName())
-                if hasattr(button, 'isVisible'):
-                    button_visible = "Visible" if button.isVisible() else "Hidden"
-            except Exception as e:
-                print(f"    Error getting button properties: {e}")
-                
-            print(f"  {i+1}. Text: '{button_text}' | ObjectName: '{button_name}' | Status: {button_visible}")
-            
-            # Note: Apply button is intentionally left visible and functional
-        
-        print("=== DEBUG COMPLETE ===")
-        
-    except Exception as e:
-        print(f"Error in debug function: {e}")
-
-def test_minimal_extract_centerline_ui():
-    """Console helper to test setting up minimal Extract Centerline UI"""
-    return setup_minimal_extract_centerline_ui()
-
-def test_centerline_monitoring():
-    """Console helper to test the centerline monitoring system"""
-    try:
-        print("=== Testing Centerline Monitoring System ===")
-        setup_centerline_completion_monitor()
-        print("Monitoring started successfully!")
-        print("Now click Apply in the Extract Centerline module to test detection")
-        return True
-    except Exception as e:
-        print(f"Error testing centerline monitoring: {e}")
+        pass
         return False
 
 def restore_crop_ui():
@@ -6650,7 +5930,7 @@ def restore_crop_ui():
     try:
         crop_widget = slicer.modules.cropvolume.widgetRepresentation()
         if not crop_widget:
-            print("Error: Could not get Crop Volume widget")
+            pass
             return False
         
         # Find all widgets and make them visible
@@ -6662,11 +5942,11 @@ def restore_crop_ui():
                 widget.setVisible(True)
                 restored_count += 1
         
-        print(f"Restored visibility for {restored_count} widgets in Crop Volume module")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error restoring Crop Volume UI: {e}")
+        pass
         return False
 
 def hide_extract_centerline_ui_elements():
@@ -6677,11 +5957,9 @@ def hide_extract_centerline_ui_elements():
     try:
         extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
         if not extract_centerline_widget:
-            print("Error: Could not get Extract Centerline widget")
+            pass
             return False
         
-        # First, debug what widgets we actually have
-        debug_extract_centerline_widgets()
         
         # Elements to hide completely (Apply button is NOT included - keep it visible)
         elements_to_hide = [
@@ -6703,9 +5981,9 @@ def hide_extract_centerline_ui_elements():
                     if hasattr(element, 'setEnabled'):
                         element.setEnabled(False)  # Also disable the element
                     elements_hidden += 1
-                    print(f"Hidden element: {element_name}")
+                    pass
             except Exception as e:
-                print(f"Could not hide {element_name}: {e}")
+                pass
         
         # Handle the outputs section - make sure it's visible but collapsed
         try:
@@ -6719,28 +5997,28 @@ def hide_extract_centerline_ui_elements():
                 if hasattr(button, 'collapsed'):
                     button.collapsed = True
                     collapsed_successfully = True
-                    print("Collapsed outputs section using 'collapsed' property")
+                    pass
                 
                 # Method 2: Use setCollapsed method
                 elif hasattr(button, 'setCollapsed'):
                     button.setCollapsed(True)
                     collapsed_successfully = True
-                    print("Collapsed outputs section using 'setCollapsed()' method")
+                    pass
                 
                 # Method 3: Try Qt property system
                 else:
                     try:
                         button.setProperty("collapsed", True)
                         collapsed_successfully = True
-                        print("Collapsed outputs section using setProperty")
+                        pass
                     except:
                         pass
                 
                 if not collapsed_successfully:
-                    print(f"Warning: Could not collapse outputs section. Available methods: {[method for method in dir(button) if 'collapse' in method.lower()]}")
+                    pass
                     
         except Exception as e:
-            print(f"Could not collapse outputs section: {e}")
+            pass
         
         # Double-check advanced section is completely hidden
         try:
@@ -6749,9 +6027,9 @@ def hide_extract_centerline_ui_elements():
                 button.setVisible(False)
                 button.hide()  # Also explicitly call hide()
                 elements_hidden += 1
-                print("Ensured advanced section is completely hidden")
+                pass
         except Exception as e:
-            print(f"Could not ensure advanced section is hidden: {e}")
+            pass
         
         # Also hide the form layout rows containing parameter set elements (row 0)
         try:
@@ -6770,7 +6048,7 @@ def hide_extract_centerline_ui_elements():
                         field_item.widget().hide()
                         elements_hidden += 1
         except Exception as e:
-            print(f"Could not hide parameter set row: {e}")
+            pass
         
         # Additional comprehensive search for elements to hide
         try:
@@ -6782,9 +6060,9 @@ def hide_extract_centerline_ui_elements():
                         widget.setVisible(False)
                         widget.hide()
                         elements_hidden += 1
-                        print(f"Hidden widget by objectName: {element_name}")
+                        pass
         except Exception as e:
-            print(f"Could not hide elements by comprehensive search: {e}")
+            pass
         
         # Ensure the inputs collapsible button is visible and expanded
         try:
@@ -6796,9 +6074,9 @@ def hide_extract_centerline_ui_elements():
                 # Also try the 'collapsed' property directly
                 if hasattr(button, 'collapsed'):
                     button.collapsed = False
-                print("Ensured inputs section is visible and expanded")
+                pass
         except Exception as e:
-            print(f"Could not ensure inputs section visibility: {e}")
+            pass
         
         # Double-check that advanced section is completely hidden (but keep Apply button visible)
         try:
@@ -6808,12 +6086,12 @@ def hide_extract_centerline_ui_elements():
                 element.setVisible(False)
                 element.hide()  # Also call hide() method
                 elements_hidden += 1
-                print("Confirmed advanced section is hidden")
+                pass
                 
             # Note: Apply button is intentionally left visible and functional
                     
         except Exception as e:
-            print(f"Could not ensure advanced elements are hidden: {e}")
+            pass
         
         # Force a GUI update and try alternative collapse approach
         slicer.app.processEvents()
@@ -6835,25 +6113,25 @@ def hide_extract_centerline_ui_elements():
                     button_text = button.getText()
                 
                 if "output" in button_text.lower():
-                    print(f"Found outputs button with text: '{button_text}'")
+                    pass
                     # Try to collapse it if it's currently expanded
                     if hasattr(button, 'collapsed'):
                         if not button.collapsed:  # If currently expanded
                             button.collapsed = True
-                            print(f"Successfully collapsed '{button_text}' section")
+                            pass
                     elif hasattr(button, 'setCollapsed'):
                         button.setCollapsed(True)
-                        print(f"Successfully collapsed '{button_text}' section using setCollapsed")
+                        pass
                         
         except Exception as e:
-            print(f"Alternative collapse approach failed: {e}")
+            pass
         
         # Force a GUI update
         slicer.app.processEvents()
         
         # FINAL STEP: Aggressively hide advanced section one more time (but keep Apply button visible)
         try:
-            print("=== FINAL CLEANUP: Ensuring Advanced section is hidden ===")
+            pass
             
             # Find ALL widgets that might be the advanced section
             all_widgets = extract_centerline_widget.findChildren(qt.QWidget)
@@ -6872,9 +6150,9 @@ def hide_extract_centerline_ui_elements():
                         widget.hide()
                         if hasattr(widget, 'setEnabled'):
                             widget.setEnabled(False)
-                        print(f"FINAL: Hidden advanced widget: {widget_name}")
+                        pass
                     except Exception as e:
-                        print(f"FINAL: Error hiding advanced widget {widget_name}: {e}")
+                        pass
                 
                 # Note: Apply button widgets are intentionally left visible and functional
             
@@ -6894,28 +6172,22 @@ def hide_extract_centerline_ui_elements():
                         button.hide()
                         if hasattr(button, 'setEnabled'):
                             button.setEnabled(False)
-                        print(f"FINAL: Hidden advanced button by text: '{button.text}'")
+                        pass
                     except Exception as e:
-                        print(f"FINAL: Error hiding advanced button by text: {e}")
+                        pass
             
             # Note: Apply button widgets are intentionally left visible and functional
                     
         except Exception as e:
-            print(f"Error in final cleanup: {e}")
+            pass
         
         # One more GUI update
         slicer.app.processEvents()
         
-        print(f"Successfully modified {elements_hidden} UI elements in Extract Centerline module")
-        print("✓ Inputs section: expanded and visible")
-        print("✓ Outputs section: visible but collapsed (contains Network and Tree)")
-        print("✓ Advanced section: completely hidden")
-        print("✓ Parameter set row: hidden")
-        print("✓ Apply button: visible and functional")
         return True
         
     except Exception as e:
-        print(f"Error hiding Extract Centerline UI elements: {e}")
+        pass
         return False
 
 def setup_minimal_extract_centerline_ui():
@@ -6931,14 +6203,14 @@ def setup_minimal_extract_centerline_ui():
         hide_success = hide_extract_centerline_ui_elements()
         
         if hide_success:
-            print("Extract Centerline module configured with minimal UI")
+            pass
             return True
         else:
-            print("Warning: Could not fully hide all UI elements")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error setting up minimal Extract Centerline UI: {e}")
+        pass
         return False
 
 def restore_extract_centerline_ui():
@@ -6948,7 +6220,7 @@ def restore_extract_centerline_ui():
     try:
         extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
         if not extract_centerline_widget:
-            print("Error: Could not get Extract Centerline widget")
+            pass
             return False
         
         # Find all widgets and make them visible
@@ -6960,11 +6232,11 @@ def restore_extract_centerline_ui():
                 widget.setVisible(True)
                 restored_count += 1
         
-        print(f"Restored visibility for {restored_count} widgets in Extract Centerline module")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error restoring Extract Centerline UI: {e}")
+        pass
         return False
 
 def start_with_segment_editor_scissors():
@@ -6988,7 +6260,7 @@ def start_with_segment_editor_scissors():
             volume_node = volume_nodes[0]
         
         if not volume_node:
-            print("Error: No volume found. Please load a volume first.")
+            pass
             return False
         
         # Create or get segmentation node
@@ -7040,13 +6312,13 @@ def start_with_segment_editor_scissors():
         # Create scissors tool button in the workflow UI
         create_scissors_tool_button()
         
-        print(f"Programmatic segment editor set up for volume: {volume_node.GetName()}")
-        print("Scissors tool available via workflow button - no GUI opened")
+        pass
+        pass
         
         return True
         
     except Exception as e:
-        print(f"Error setting up programmatic segment editor: {e}")
+        pass
         return False
 
 def setup_minimal_segment_editor_ui():
@@ -7061,7 +6333,7 @@ def setup_minimal_segment_editor_ui():
         # Get the segment editor widget
         segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
         if not segment_editor_widget:
-            print("Error: Could not get Segment Editor widget")
+            pass
             return False
         
         # Hide all effect buttons except scissors
@@ -7081,10 +6353,10 @@ def setup_minimal_segment_editor_ui():
                         button.hide()
                         hidden_count += 1
             
-            print(f"Hidden {hidden_count} effect buttons, keeping scissors tool visible")
+            pass
             
         except Exception as e:
-            print(f"Error hiding effect buttons: {e}")
+            pass
         
         # Hide other UI sections we don't need
         try:
@@ -7096,15 +6368,15 @@ def setup_minimal_segment_editor_ui():
                     button.collapsed = True
                     button.hide()
             
-            print("Minimized Segment Editor UI - scissors tool ready")
+            pass
             
         except Exception as e:
-            print(f"Error minimizing UI: {e}")
+            pass
         
         return True
         
     except Exception as e:
-        print(f"Error setting up minimal Segment Editor UI: {e}")
+        pass
         return False
 
 def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
@@ -7164,13 +6436,13 @@ def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
             if layout:
                 # Insert at the top of the module
                 layout.insertWidget(0, final_container)
-                print("Added workflow buttons to Crop Volume module layout")
+                pass
                 return True
             else:
                 # Try to create a new layout
                 new_layout = qt.QVBoxLayout(main_ui_widget)
                 new_layout.insertWidget(0, final_container)
-                print("Created new layout and added workflow buttons to Crop Volume module")
+                pass
                 return True
         else:
             # Fallback: try to find a suitable container widget
@@ -7178,14 +6450,14 @@ def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
             for widget in container_widgets:
                 if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
                     widget.layout().insertWidget(0, final_container)
-                    print("Added workflow buttons to Crop Volume container widget")
+                    pass
                     return True
         
-        print("Could not find suitable location in Crop Volume module for buttons")
+        pass
         return False
         
     except Exception as e:
-        print(f"Error adding buttons to crop module: {e}")
+        pass
         return False
 
 def remove_original_crop_apply_button(crop_widget):
@@ -7213,7 +6485,7 @@ def remove_original_crop_apply_button(crop_widget):
                 # Remove the reference
                 del slicer.modules.CropLargeApplyButton
                 removed_count += 1
-                print("Removed stored CropLargeApplyButton")
+                pass
         
         # Method 2: Search for and remove any "APPLY CROP" buttons in the crop widget
         if crop_widget:
@@ -7233,9 +6505,9 @@ def remove_original_crop_apply_button(crop_widget):
                         button.hide()
                         button.setParent(None)
                         removed_count += 1
-                        print(f"Removed 'APPLY CROP' button: {button_text}")
+                        pass
                 except Exception as e:
-                    print(f"Error removing button: {e}")
+                    pass
         
         # Method 3: Also look for and hide any other large green buttons that might be apply buttons
         if crop_widget:
@@ -7253,19 +6525,19 @@ def remove_original_crop_apply_button(crop_widget):
                         # Hide the button instead of removing it completely (safer)
                         button.hide()
                         removed_count += 1
-                        print(f"Hidden large green apply button: {button_text}")
+                        pass
                 except Exception as e:
-                    print(f"Error hiding button: {e}")
+                    pass
         
         if removed_count > 0:
-            print(f"Successfully removed/hidden {removed_count} original apply button(s)")
+            pass
         else:
-            print("No original apply buttons found to remove")
+            pass
         
         return removed_count > 0
         
     except Exception as e:
-        print(f"Error removing original crop apply button: {e}")
+        pass
         return False
 
 def create_scissors_tool_button():
@@ -7276,7 +6548,7 @@ def create_scissors_tool_button():
         # Find a suitable parent widget (main window or workflow panel)
         main_window = slicer.util.mainWindow()
         if not main_window:
-            print("Error: Could not find main window for scissors button")
+            pass
             return False
         
         # Create scissors tool button
@@ -7376,7 +6648,7 @@ def create_scissors_tool_button():
                 if success:
                     # Store finish button reference
                     slicer.modules.WorkflowFinishButton = finish_button
-                    print("Added scissors and finish cropping buttons to Crop Volume module GUI")
+                    pass
                 else:
                     # Fallback to floating widget
                     create_floating_scissors_widget(scissors_button)
@@ -7385,17 +6657,17 @@ def create_scissors_tool_button():
                 create_floating_scissors_widget(scissors_button)
                 
         except Exception as e:
-            print(f"Could not add to crop module, creating floating widget: {e}")
+            pass
             create_floating_scissors_widget(scissors_button)
         
         # Store button reference
         slicer.modules.WorkflowScissorsButton = scissors_button
         
-        print("Scissors tool button created and ready")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error creating scissors tool button: {e}")
+        pass
         return False
 
 def create_floating_scissors_widget(scissors_button):
@@ -7462,10 +6734,10 @@ def create_floating_scissors_widget(scissors_button):
         slicer.modules.WorkflowScissorsWidget = floating_widget
         slicer.modules.WorkflowFinishButton = finish_button
         
-        print("Created floating scissors tool widget with finish cropping button")
+        pass
         
     except Exception as e:
-        print(f"Error creating floating scissors widget: {e}")
+        pass
 
 def toggle_scissors_tool(activated):
     """
@@ -7473,7 +6745,7 @@ def toggle_scissors_tool(activated):
     """
     try:
         if not hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
-            print("Error: Segment editor not initialized. Run start_with_segment_editor_scissors() first.")
+            pass
             return False
         
         segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
@@ -7494,9 +6766,9 @@ def toggle_scissors_tool(activated):
                     interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
                 
                 slicer.modules.WorkflowScissorsActive = True
-                print("Scissors tool ACTIVATED - Ready for ERASING/SUBTRACTING")
-                print("   • Click and drag in slice views to ERASE/CUT segments")
-                print("   • Right-click for tool options")
+                pass
+                pass
+                pass
                 
                 # Update button appearance
                 if hasattr(slicer.modules, 'WorkflowScissorsButton'):
@@ -7504,7 +6776,7 @@ def toggle_scissors_tool(activated):
                     button.setText("✂️ SCISSORS ACTIVE (ERASE)")
                 
             else:
-                print("Error: Could not activate scissors effect")
+                pass
                 return False
                 
         else:
@@ -7517,7 +6789,7 @@ def toggle_scissors_tool(activated):
                 interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
             
             slicer.modules.WorkflowScissorsActive = False
-            print("Scissors tool DEACTIVATED - Normal navigation mode")
+            pass
             
             # Update button appearance
             if hasattr(slicer.modules, 'WorkflowScissorsButton'):
@@ -7527,7 +6799,7 @@ def toggle_scissors_tool(activated):
         return True
         
     except Exception as e:
-        print(f"Error toggling scissors tool: {e}")
+        pass
         return False
 
 def cleanup_scissors_tool_ui():
@@ -7585,10 +6857,10 @@ def cleanup_scissors_tool_ui():
         # Restore the original crop apply button if needed
         restore_original_crop_apply_button()
         
-        print("Cleaned up scissors tool UI and components")
+        pass
         
     except Exception as e:
-        print(f"Error cleaning up scissors tool UI: {e}")
+        pass
 
 def restore_original_crop_apply_button():
     """
@@ -7598,7 +6870,7 @@ def restore_original_crop_apply_button():
         # Check if we're still in the Crop Volume module
         current_module = slicer.util.selectedModule()
         if current_module != "CropVolume":
-            print("Not in Crop Volume module, skipping apply button restoration")
+            pass
             return
         
         # Check if the button already exists
@@ -7607,20 +6879,20 @@ def restore_original_crop_apply_button():
             if button and button.parent():
                 # Button already exists and is visible
                 button.show()
-                print("Original apply button already exists, made it visible")
+                pass
                 return
         
         # Recreate the original apply button
-        print("Recreating original APPLY CROP button...")
+        pass
         success = add_large_crop_apply_button()
         
         if success:
-            print("Successfully restored original APPLY CROP button")
+            pass
         else:
-            print("Could not restore original APPLY CROP button")
+            pass
         
     except Exception as e:
-        print(f"Error restoring original crop apply button: {e}")
+        pass
 
 def remove_crop_apply_button_manually():
     """
@@ -7631,15 +6903,15 @@ def remove_crop_apply_button_manually():
         if crop_widget:
             success = remove_original_crop_apply_button(crop_widget)
             if success:
-                print("Successfully removed original crop apply button")
+                pass
             else:
-                print("No original crop apply button found to remove")
+                pass
             return success
         else:
-            print("Crop Volume module widget not found")
+            pass
             return False
     except Exception as e:
-        print(f"Error manually removing crop apply button: {e}")
+        pass
         return False
         
         # Automatically select the scissors tool if available
@@ -7652,24 +6924,24 @@ def remove_crop_apply_button_manually():
                 scissors_effect = segment_editor.effectByName('Scissors')
                 if scissors_effect:
                     segment_editor.setActiveEffect(scissors_effect)
-                    print("Automatically selected scissors tool")
+                    pass
                 else:
-                    print("Scissors tool not found, trying alternative names")
+                    pass
                     # Try alternative names
                     for effect_name in ['Cut', 'Scissor', 'Clip']:
                         effect = segment_editor.effectByName(effect_name)
                         if effect:
                             segment_editor.setActiveEffect(effect)
-                            print(f"Selected {effect_name} tool")
+                            pass
                             break
         except Exception as e:
-            print(f"Could not auto-select scissors tool: {e}")
+            pass
         
-        print("Segment Editor module configured")
+        pass
         return True
             
     except Exception as e:
-        print(f"Error setting up minimal Segment Editor UI: {e}")
+        pass
         return False
 
 def restore_segment_editor_ui():
@@ -7677,7 +6949,7 @@ def restore_segment_editor_ui():
     try:
         segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
         if not segment_editor_widget:
-            print("Error: Could not get Segment Editor widget")
+            pass
             return False
         
         # Find all widgets and make them visible
@@ -7689,11 +6961,11 @@ def restore_segment_editor_ui():
                 widget.setVisible(True)
                 restored_count += 1
         
-        print(f"Restored visibility for {restored_count} widgets in Segment Editor module")
+        pass
         return True
         
     except Exception as e:
-        print(f"Error restoring Segment Editor UI: {e}")
+        pass
         return False
 
 def verify_extract_centerline_point_list_autoselection():
@@ -7707,12 +6979,12 @@ def verify_extract_centerline_point_list_autoselection():
         dict: Verification results with status and details
     """
     try:
-        print("=== VERIFYING EXTRACT CENTERLINE POINT LIST AUTO-SELECTION ===")
+        pass
         
         # Ensure we're in the Extract Centerline module
         current_module = slicer.util.selectedModule()
         if current_module != "ExtractCenterline":
-            print(f"Warning: Current module is '{current_module}', switching to ExtractCenterline")
+            pass
             slicer.util.selectModule("ExtractCenterline")
             slicer.app.processEvents()
         
@@ -7733,7 +7005,7 @@ def verify_extract_centerline_point_list_autoselection():
         }
         
         # 1. Check if the CenterlineEndpoints point list is auto-selected
-        print("--- Checking Point List Auto-Selection ---")
+        pass
         
         # Look for the endpoints selector (from XML: endPointsMarkupsSelector)
         endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
@@ -7743,7 +7015,7 @@ def verify_extract_centerline_point_list_autoselection():
                 current_node = endpoints_selector.currentNode()
                 if current_node:
                     node_name = current_node.GetName()
-                    print(f"✓ Point list selector found with current node: '{node_name}'")
+                    pass
                     if "CenterlineEndpoints" in node_name or "Endpoints" in node_name:
                         verification_results["point_list_selected"] = True
                         verification_results["details"].append(f"✓ Correct point list auto-selected: {node_name}")
@@ -7757,18 +7029,18 @@ def verify_extract_centerline_point_list_autoselection():
             verification_results["details"].append("✗ Could not find endPointsMarkupsSelector widget")
         
         # 2. Check if the point placement tool is auto-selected
-        print("--- Checking Point Placement Tool Activation ---")
+        pass
         
         # Look for the place widget (from XML: endPointsMarkupsPlaceWidget)
         place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
         if place_widget:
-            print(f"✓ Found endPointsMarkupsPlaceWidget: {type(place_widget)}")
+            pass
             verification_results["details"].append("✓ Point placement widget found")
             
             # Check if the place widget is in active placement mode
             if hasattr(place_widget, 'placeModeEnabled'):
                 place_mode_enabled = place_widget.placeModeEnabled
-                print(f"Place mode enabled: {place_mode_enabled}")
+                pass
                 if place_mode_enabled:
                     verification_results["point_placement_active"] = True
                     verification_results["details"].append("✓ Point placement tool is active")
@@ -7780,13 +7052,13 @@ def verify_extract_centerline_point_list_autoselection():
             verification_results["details"].append("✗ Could not find endPointsMarkupsPlaceWidget")
         
         # 3. Check if "place multiple control points" option is enabled
-        print("--- Checking Multiple Points Placement Mode ---")
+        pass
         
         # Check the interaction node for place mode persistence
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             place_mode_persistence = interactionNode.GetPlaceModePersistence()
-            print(f"Place mode persistence: {place_mode_persistence}")
+            pass
             if place_mode_persistence == 1:
                 verification_results["multiple_points_enabled"] = True
                 verification_results["details"].append("✓ Multiple control points placement is enabled")
@@ -7795,7 +7067,7 @@ def verify_extract_centerline_point_list_autoselection():
             
             # Also check current interaction mode
             current_mode = interactionNode.GetCurrentInteractionMode()
-            print(f"Current interaction mode: {current_mode}")
+            pass
             if current_mode == interactionNode.Place:
                 verification_results["details"].append("✓ Interaction mode is set to Place")
             else:
@@ -7804,13 +7076,13 @@ def verify_extract_centerline_point_list_autoselection():
             verification_results["details"].append("✗ Could not access interaction node")
         
         # 4. Additional checks - verify the point list exists and is properly configured
-        print("--- Additional Point List Verification ---")
+        pass
         
         # Look for CenterlineEndpoints point list in the scene
         endpoints_node = slicer.util.getNode("CenterlineEndpoints")
         if endpoints_node:
-            print(f"✓ Found CenterlineEndpoints node: {endpoints_node.GetName()}")
-            print(f"  Current point count: {endpoints_node.GetNumberOfControlPoints()}")
+            pass
+            pass
             verification_results["details"].append(f"✓ CenterlineEndpoints node exists with {endpoints_node.GetNumberOfControlPoints()} points")
             
             # Check if it's the active markup node
@@ -7827,7 +7099,7 @@ def verify_extract_centerline_point_list_autoselection():
             verification_results["details"].append("✗ CenterlineEndpoints node not found in scene")
         
         # 5. Summary evaluation
-        print("--- Verification Summary ---")
+        pass
         
         all_checks_passed = (
             verification_results["point_list_selected"] and
@@ -7838,28 +7110,28 @@ def verify_extract_centerline_point_list_autoselection():
         verification_results["success"] = all_checks_passed
         
         if all_checks_passed:
-            print("🎉 ALL VERIFICATIONS PASSED!")
-            print("✓ Point list is auto-selected")
-            print("✓ Point placement tool is active")
-            print("✓ Multiple control points mode is enabled")
+            pass
+            pass
+            pass
+            pass
         else:
-            print("⚠️ SOME VERIFICATIONS FAILED:")
+            pass
             if not verification_results["point_list_selected"]:
-                print("✗ Point list auto-selection failed")
+                pass
             if not verification_results["point_placement_active"]:
-                print("✗ Point placement tool activation failed")
+                pass
             if not verification_results["multiple_points_enabled"]:
-                print("✗ Multiple control points mode not enabled")
+                pass
         
         # Print all details
-        print("\nDetailed Results:")
+        pass
         for detail in verification_results["details"]:
-            print(f"  {detail}")
+            pass
         
         return verification_results
         
     except Exception as e:
-        print(f"Error during verification: {e}")
+        pass
         return {
             "success": False,
             "error": str(e)
@@ -7870,7 +7142,7 @@ def setup_extract_centerline_with_verification():
     Set up the Extract Centerline module and verify proper auto-selection functionality
     """
     try:
-        print("=== SETTING UP EXTRACT CENTERLINE WITH VERIFICATION ===")
+        pass
         
         # First set up the module as usual
         setup_centerline_module()
@@ -7883,30 +7155,30 @@ def setup_extract_centerline_with_verification():
         verification_results = verify_extract_centerline_point_list_autoselection()
         
         if verification_results["success"]:
-            print("\n🎉 Extract Centerline setup and verification completed successfully!")
+            pass
             return True
         else:
-            print("\n⚠️ Extract Centerline setup completed but verification found issues:")
+            pass
             if "error" in verification_results:
-                print(f"Error: {verification_results['error']}")
+                pass
             
             # Try to fix common issues
-            print("\nAttempting to fix detected issues...")
+            pass
             fix_extract_centerline_setup_issues()
             
             # Re-verify after fixes
-            print("\nRe-verifying after fixes...")
+            pass
             verification_results = verify_extract_centerline_point_list_autoselection()
             
             if verification_results["success"]:
-                print("🎉 Issues fixed successfully!")
+                pass
                 return True
             else:
-                print("⚠️ Some issues could not be automatically fixed")
+                pass
                 return False
         
     except Exception as e:
-        print(f"Error in setup with verification: {e}")
+        pass
         return False
 
 def fix_extract_centerline_setup_issues():
@@ -7914,12 +7186,12 @@ def fix_extract_centerline_setup_issues():
     Attempt to fix common issues with Extract Centerline module setup
     """
     try:
-        print("--- Attempting to Fix Extract Centerline Setup Issues ---")
+        pass
         
         # 1. Ensure CenterlineEndpoints point list exists and is selected
         endpoints_node = slicer.util.getNode("CenterlineEndpoints")
         if not endpoints_node:
-            print("Creating missing CenterlineEndpoints node...")
+            pass
             endpoints_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
             endpoints_node.SetName("CenterlineEndpoints")
         
@@ -7927,14 +7199,14 @@ def fix_extract_centerline_setup_issues():
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode and endpoints_node:
             selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
-            print("Set CenterlineEndpoints as active place node")
+            pass
         
         # 3. Ensure point placement mode is active
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
             interactionNode.SetPlaceModePersistence(1)  # Enable multiple points placement
-            print("Activated point placement mode with multiple points enabled")
+            pass
         
         # 4. Try to set the point list in the Extract Centerline widget
         extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
@@ -7942,7 +7214,7 @@ def fix_extract_centerline_setup_issues():
             endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
             if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
                 endpoints_selector.setCurrentNode(endpoints_node)
-                print("Set CenterlineEndpoints in the Extract Centerline selector")
+                pass
             
             # Also try to activate the place widget
             place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
@@ -7951,73 +7223,11 @@ def fix_extract_centerline_setup_issues():
                     place_widget.setCurrentNode(endpoints_node)
                 if hasattr(place_widget, 'setPlaceModeEnabled'):
                     place_widget.setPlaceModeEnabled(True)
-                print("Configured place widget")
+                pass
         
         slicer.app.processEvents()
-        print("Fix attempt completed")
+        pass
         
     except Exception as e:
-        print(f"Error fixing Extract Centerline setup: {e}")
+        pass
 
-# Console helper functions for testing the verification
-def test_extract_centerline_verification():
-    """Console helper to test the Extract Centerline verification"""
-    return verify_extract_centerline_point_list_autoselection()
-
-def test_extract_centerline_setup_with_verification():
-    """Console helper to test the full setup with verification"""
-    return setup_extract_centerline_with_verification()
-
-def fix_centerline_issues():
-    """Console helper to fix Extract Centerline issues"""
-    return fix_extract_centerline_setup_issues()
-
-def test_scissors_and_finish_buttons():
-    """Console helper to test the scissors tool and finish cropping buttons"""
-    try:
-        print("=== Testing Scissors Tool and Finish Cropping Buttons ===")
-        
-        # Test the scissors tool setup
-        success = start_with_segment_editor_scissors()
-        
-        if success:
-            print("✓ Scissors tool and finish cropping buttons created successfully")
-            print("✓ Both buttons should be visible in the floating widget")
-            print("✓ Scissors button: Toggle ERASE/SUBTRACT segmentation tool")
-            print("✓ Finish Cropping button: Continue to next workflow step + collapse crop GUI")
-            print("")
-            print("Key Features:")
-            print("  • Scissors tool is configured for ERASING/SUBTRACTING (not adding)")
-            print("  • When Finish Cropping is clicked, Crop Volume GUI will collapse")
-            print("  • Workflow automatically transitions to centerline extraction")
-            return True
-        else:
-            print("✗ Failed to create scissors tool buttons")
-            return False
-            
-    except Exception as e:
-        print(f"Error testing scissors and finish buttons: {e}")
-        return False
-
-def test_crop_volume_collapse():
-    """Console helper to test the crop volume GUI collapse functionality"""
-    try:
-        print("=== Testing Crop Volume GUI Collapse ===")
-        collapse_crop_volume_gui()
-        return True
-    except Exception as e:
-        print(f"Error testing crop volume collapse: {e}")
-        return False
-
-def main():
-    """
-    Main entry point for the workflow
-    """
-    try:
-        start_with_volume_crop()
-    except Exception as e:
-        slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
-        print(f"Error: {e}")
-
-if __name__ == "__main__":
-    main()
