@@ -429,7 +429,77 @@ def add_continue_button_to_segment_editor():
 
 def create_continue_workflow_button():
     """
-    Create a floating continue button for the workflow
+    Create a continue button and add it to the Crop Volume module GUI
+    """
+    try:
+        # Get the crop volume module widget
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            print("Warning: Crop Volume module not available, creating floating continue button")
+            create_floating_continue_button()
+            return
+        
+        # Create continue button
+        continue_button = qt.QPushButton("FINISH SEGMENTATION - CONTINUE")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: 2px solid #1e7e34; 
+                padding: 18px; 
+                font-weight: bold;
+                border-radius: 8px;
+                margin: 5px;
+                font-size: 16px;
+                min-height: 60px;
+                min-width: 300px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+                border: 2px solid #155724;
+                transform: scale(1.02);
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+                border: 2px solid #0f4c2c;
+            }
+        """)
+        
+        # Connect to continue function
+        continue_button.connect('clicked()', lambda: on_continue_from_scissors())
+        
+        # Add status label
+        status_label = qt.QLabel("Segmentation tools active. Use scissors button to edit segments.")
+        status_label.setWordWrap(True)
+        status_label.setStyleSheet("color: #333; font-size: 14px; padding: 10px; font-weight: bold;")
+        
+        # Create container for continue workflow elements
+        continue_container = qt.QWidget()
+        continue_layout = qt.QVBoxLayout(continue_container)
+        continue_layout.addWidget(status_label)
+        continue_layout.addWidget(continue_button)
+        
+        # Try to add to the crop module GUI
+        success = add_continue_button_to_crop_module(crop_widget, continue_container)
+        
+        if success:
+            # Store references
+            slicer.modules.WorkflowContinueButton = continue_button
+            slicer.modules.WorkflowContinueWidget = continue_container
+            print("Added continue workflow button to Crop Volume module GUI")
+        else:
+            # Fallback to floating widget
+            print("Could not add to Crop Volume module, creating floating continue button")
+            create_floating_continue_button()
+        
+    except Exception as e:
+        print(f"Error creating continue workflow button: {e}")
+        # Fallback to floating widget
+        create_floating_continue_button()
+
+def create_floating_continue_button():
+    """
+    Create a floating continue button as fallback
     """
     try:
         # Create continue button
@@ -489,10 +559,71 @@ def create_continue_workflow_button():
         slicer.modules.WorkflowContinueButton = continue_button
         slicer.modules.WorkflowContinueWidget = continue_widget
         
-        print("Created continue workflow button")
+        print("Created floating continue workflow button")
         
     except Exception as e:
-        print(f"Error creating continue workflow button: {e}")
+        print(f"Error creating floating continue workflow button: {e}")
+
+def add_continue_button_to_crop_module(crop_widget, continue_container):
+    """
+    Add the continue button container to the Crop Volume module GUI
+    """
+    try:
+        # Try to get the crop module
+        crop_module = None
+        if hasattr(crop_widget, 'self'):
+            try:
+                crop_module = crop_widget.self()
+            except Exception:
+                pass
+        
+        if not crop_module:
+            crop_module = crop_widget
+        
+        # Find the main UI container in the crop module
+        main_ui_widget = None
+        
+        # Strategy 1: Look for the main widget container
+        if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
+            main_ui_widget = crop_module.ui.widget
+        elif hasattr(crop_module, 'widget'):
+            main_ui_widget = crop_module.widget
+        elif hasattr(crop_widget, 'widget'):
+            main_ui_widget = crop_widget.widget
+        
+        # Strategy 2: Get the module widget representation directly
+        if not main_ui_widget:
+            main_ui_widget = crop_widget
+        
+        # Try to add to the GUI layout
+        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+            layout = main_ui_widget.layout()
+            if layout:
+                # Add after the scissors buttons (towards bottom)
+                layout.addWidget(continue_container)
+                print("Added continue button to Crop Volume module layout")
+                return True
+            else:
+                # Try to create a new layout
+                new_layout = qt.QVBoxLayout(main_ui_widget)
+                new_layout.addWidget(continue_container)
+                print("Created new layout and added continue button to Crop Volume module")
+                return True
+        else:
+            # Fallback: try to find a suitable container widget
+            container_widgets = crop_widget.findChildren(qt.QWidget)
+            for widget in container_widgets:
+                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                    widget.layout().addWidget(continue_container)
+                    print("Added continue button to Crop Volume container widget")
+                    return True
+        
+        print("Could not find suitable location in Crop Volume module for continue button")
+        return False
+        
+    except Exception as e:
+        print(f"Error adding continue button to crop module: {e}")
+        return False
 
 def on_continue_from_scissors():
     """
@@ -6172,6 +6303,84 @@ def setup_minimal_segment_editor_ui():
         print(f"Error setting up minimal Segment Editor UI: {e}")
         return False
 
+def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
+    """
+    Add scissors and finish buttons to the Crop Volume module GUI
+    """
+    try:
+        # Try to get the crop module
+        crop_module = None
+        if hasattr(crop_widget, 'self'):
+            try:
+                crop_module = crop_widget.self()
+            except Exception:
+                pass
+        
+        if not crop_module:
+            crop_module = crop_widget
+        
+        # Find the main UI container in the crop module
+        main_ui_widget = None
+        
+        # Strategy 1: Look for the main widget container
+        if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
+            main_ui_widget = crop_module.ui.widget
+        elif hasattr(crop_module, 'widget'):
+            main_ui_widget = crop_module.widget
+        elif hasattr(crop_widget, 'widget'):
+            main_ui_widget = crop_widget.widget
+        
+        # Strategy 2: Get the module widget representation directly
+        if not main_ui_widget:
+            main_ui_widget = crop_widget
+        
+        # Create a container widget for our buttons
+        button_container = qt.QWidget()
+        button_layout = qt.QHBoxLayout(button_container)
+        button_layout.addWidget(scissors_button)
+        button_layout.addWidget(finish_button)
+        
+        # Add some instructions
+        instructions = qt.QLabel("Workflow: Use scissors to edit segmentation, then finish cropping")
+        instructions.setStyleSheet("color: #666; font-size: 12px; padding: 5px; font-weight: bold;")
+        instructions.setWordWrap(True)
+        
+        # Create final container with instructions and buttons
+        final_container = qt.QWidget()
+        final_layout = qt.QVBoxLayout(final_container)
+        final_layout.addWidget(instructions)
+        final_layout.addWidget(button_container)
+        
+        # Try to add to the GUI layout
+        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
+            layout = main_ui_widget.layout()
+            if layout:
+                # Insert at the top of the module
+                layout.insertWidget(0, final_container)
+                print("Added workflow buttons to Crop Volume module layout")
+                return True
+            else:
+                # Try to create a new layout
+                new_layout = qt.QVBoxLayout(main_ui_widget)
+                new_layout.insertWidget(0, final_container)
+                print("Created new layout and added workflow buttons to Crop Volume module")
+                return True
+        else:
+            # Fallback: try to find a suitable container widget
+            container_widgets = crop_widget.findChildren(qt.QWidget)
+            for widget in container_widgets:
+                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
+                    widget.layout().insertWidget(0, final_container)
+                    print("Added workflow buttons to Crop Volume container widget")
+                    return True
+        
+        print("Could not find suitable location in Crop Volume module for buttons")
+        return False
+        
+    except Exception as e:
+        print(f"Error adding buttons to crop module: {e}")
+        return False
+
 def create_scissors_tool_button():
     """
     Create a scissors tool toggle button for the workflow UI
@@ -6215,49 +6424,81 @@ def create_scissors_tool_button():
         # Connect button to toggle function
         scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool(checked))
         
-        # Add button to main toolbar or create floating widget
+        # Add buttons to Crop Volume module GUI
         try:
-            # Try to add to main toolbar
-            toolbar = main_window.findChild("QToolBar", "MainToolBar")
-            if toolbar:
-                # Create finish cropping button for toolbar
+            # Get the crop volume module widget
+            crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+            if crop_widget:
+                # Create finish cropping button for crop module
                 finish_button = qt.QPushButton("✅ FINISH CROPPING")
                 finish_button.setStyleSheet("""
                     QPushButton { 
                         background-color: #28a745; 
                         color: white; 
-                        border: none; 
-                        padding: 12px 20px; 
+                        border: 2px solid #1e7e34; 
+                        padding: 15px 20px; 
                         font-weight: bold;
-                        border-radius: 6px;
+                        border-radius: 8px;
                         margin: 5px;
-                        font-size: 14px;
-                        min-height: 40px;
-                        min-width: 150px;
+                        font-size: 16px;
+                        min-height: 50px;
+                        min-width: 180px;
                     }
                     QPushButton:hover { 
                         background-color: #218838; 
+                        border: 2px solid #155724;
                     }
                     QPushButton:pressed { 
                         background-color: #1e7e34; 
+                        border: 2px solid #0f4c2c;
                     }
                 """)
                 finish_button.connect('clicked()', lambda: on_finish_cropping())
                 
-                # Add both buttons to toolbar
-                toolbar.addWidget(scissors_button)
-                toolbar.addWidget(finish_button)
+                # Update scissors button styling to match the crop module look
+                scissors_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #007bff; 
+                        color: white; 
+                        border: 2px solid #0056b3; 
+                        padding: 15px 20px; 
+                        font-weight: bold;
+                        border-radius: 8px;
+                        margin: 5px;
+                        font-size: 16px;
+                        min-height: 50px;
+                        min-width: 180px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #0056b3; 
+                        border: 2px solid #004085;
+                    }
+                    QPushButton:checked { 
+                        background-color: #dc3545; 
+                        border: 2px solid #c82333;
+                    }
+                    QPushButton:checked:hover { 
+                        background-color: #c82333; 
+                        border: 2px solid #bd2130;
+                    }
+                """)
                 
-                # Store finish button reference
-                slicer.modules.WorkflowFinishButton = finish_button
+                # Add both buttons to the crop module GUI
+                success = add_buttons_to_crop_module(crop_widget, scissors_button, finish_button)
                 
-                print("Added scissors and finish cropping buttons to main toolbar")
+                if success:
+                    # Store finish button reference
+                    slicer.modules.WorkflowFinishButton = finish_button
+                    print("Added scissors and finish cropping buttons to Crop Volume module GUI")
+                else:
+                    # Fallback to floating widget
+                    create_floating_scissors_widget(scissors_button)
             else:
-                # Create floating widget
+                # Fallback to floating widget if crop module not available
                 create_floating_scissors_widget(scissors_button)
                 
         except Exception as e:
-            print(f"Could not add to toolbar, creating floating widget: {e}")
+            print(f"Could not add to crop module, creating floating widget: {e}")
             create_floating_scissors_widget(scissors_button)
         
         # Store button reference
