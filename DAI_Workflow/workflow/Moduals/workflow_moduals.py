@@ -1410,15 +1410,8 @@ def remove_default_segment(segmentation_node):
                     segment_id != workflow_segment_id and 
                     not segment_name.startswith("ThresholdSegment_")):
                     segments_to_remove.append(segment_id)
-                    pass
         for segment_id in segments_to_remove:
             segmentation.RemoveSegment(segment_id)
-            pass
-        
-        if segments_to_remove:
-            pass
-        else:
-            pass
             
     except Exception as e:
         pass
@@ -1441,14 +1434,8 @@ def remove_segment_from_all_segmentations(segment_name):
                 segment = segmentation.GetSegment(segment_id)
                 if segment and segment.GetName() == segment_name:
                     segmentation.RemoveSegment(segment_id)
-                    pass
                     removed_count += 1
                     break 
-        
-        if removed_count == 0:
-            pass
-        else:
-            pass
             
     except Exception as e:
         pass
@@ -1462,13 +1449,11 @@ def add_large_crop_apply_button():
     try:
         # Check if scissors workflow is active - if so, don't create the apply button
         if hasattr(slicer.modules, 'WorkflowScissorsButton') or hasattr(slicer.modules, 'WorkflowFinishButton'):
-            pass
             return True
         
         if hasattr(slicer.modules, 'CropLargeApplyButton'):
             existing_button = slicer.modules.CropLargeApplyButton
             if existing_button and existing_button.parent():
-                pass
                 return True
         
         def create_large_button():
@@ -1476,15 +1461,10 @@ def add_large_crop_apply_button():
                 if hasattr(slicer.modules, 'CropLargeApplyButton'):
                     existing_button = slicer.modules.CropLargeApplyButton
                     if existing_button and existing_button.parent():
-                        pass
                         return True
                 
-                pass
                 crop_widget = slicer.modules.cropvolume.widgetRepresentation()
-                pass
-                pass
-                pass
-                
+
                 if crop_widget:
                     crop_module = None
                     
