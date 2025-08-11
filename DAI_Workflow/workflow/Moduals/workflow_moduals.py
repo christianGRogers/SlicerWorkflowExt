@@ -1829,37 +1829,29 @@ def add_large_cpr_apply_button():
                             
                             def open_cross_section_analysis():
                                 try:
-                                    print("🔄 Opening Cross-Section Analysis (Path 1) - applying CPR transforms...")
                                     # Apply transform to centerline nodes before opening Cross-Section Analysis
                                     transform_result = apply_cpr_transform_to_centerlines()
-                                    print(f"✅ CPR transform application result: {transform_result}")
                                     
                                     # Switch to Cross-Section Analysis module
                                     slicer.util.selectModule("CrossSectionAnalysis")
-                                    print("✅ Successfully opened CrossSectionAnalysis module")
                                     
                                     # Configure the Cross-Section Analysis module
                                     setup_cross_section_analysis_module()
                                     
                                     pass
                                 except Exception as e:
-                                    print(f"❌ Failed to open CrossSectionAnalysis: {e}")
                                     # Try alternative module names if the first doesn't work
                                     try:
                                         slicer.util.selectModule("Cross-sectionanalysis")
-                                        print("✅ Successfully opened Cross-sectionanalysis module")
                                         setup_cross_section_analysis_module()
                                         pass
                                     except Exception as e2:
-                                        print(f"❌ Failed to open Cross-sectionanalysis: {e2}")
                                         try:
                                             slicer.util.selectModule("CrossSection")
-                                            print("✅ Successfully opened CrossSection module")
                                             setup_cross_section_analysis_module()
                                             pass
                                         except Exception as e3:
-                                            print(f"❌ Failed to open CrossSection: {e3}")
-                                            print("❌ Cross-Section Analysis module not found. Please ensure the extension is installed.")
+                                            print("Cross-Section Analysis module not found. Please ensure the extension is installed.")
                             
                             cross_section_button.connect('clicked()', open_cross_section_analysis)
                             
@@ -1942,37 +1934,28 @@ def add_large_cpr_apply_button():
                             
                             def open_cross_section_analysis():
                                 try:
-                                    print("🔄 Opening Cross-Section Analysis (Path 2) - applying CPR transforms...")
                                     # Apply transform to centerline nodes before opening Cross-Section Analysis
-                                    transform_result = apply_cpr_transform_to_centerlines()
-                                    print(f"✅ CPR transform application result: {transform_result}")
-                                    
+                                    transform_result = apply_cpr_transform_to_centerlines()                                    
                                     # Switch to Cross-Section Analysis module
                                     slicer.util.selectModule("CrossSectionAnalysis")
-                                    print("✅ Successfully opened CrossSectionAnalysis module")
                                     
                                     # Configure the Cross-Section Analysis module
                                     setup_cross_section_analysis_module()
                                     
                                     pass
                                 except Exception as e:
-                                    print(f"❌ Failed to open CrossSectionAnalysis: {e}")
-                                    # Try alternative module names if the first doesn't work
                                     try:
                                         slicer.util.selectModule("Cross-sectionanalysis")
-                                        print("✅ Successfully opened Cross-sectionanalysis module")
                                         setup_cross_section_analysis_module()
                                         pass
                                     except Exception as e2:
-                                        print(f"❌ Failed to open Cross-sectionanalysis: {e2}")
+                                        
                                         try:
                                             slicer.util.selectModule("CrossSection")
-                                            print("✅ Successfully opened CrossSection module")
                                             setup_cross_section_analysis_module()
                                             pass
                                         except Exception as e3:
-                                            print(f"❌ Failed to open CrossSection: {e3}")
-                                            print("❌ Cross-Section Analysis module not found. Please ensure the extension is installed.")
+                                            print("Cross-Section Analysis module not found. Please ensure the extension is installed.")
                             
                             cross_section_button.connect('clicked()', open_cross_section_analysis)
                         
@@ -2046,24 +2029,18 @@ def open_cross_section_analysis_module():
         
         # Try the most likely module name first
         slicer.util.selectModule("CrossSectionAnalysis")
-        print("✓ Successfully opened CrossSectionAnalysis module")
         return True
     except Exception as e:
-        print(f"✗ Failed to open CrossSectionAnalysis: {e}")
         # Try alternative module names
         try:
             slicer.util.selectModule("Cross-sectionanalysis")
-            print("✓ Successfully opened Cross-sectionanalysis module")
             return True
         except Exception as e2:
-            print(f"✗ Failed to open Cross-sectionanalysis: {e2}")
             try:
                 slicer.util.selectModule("CrossSection")
-                print("✓ Successfully opened CrossSection module")
                 return True
             except Exception as e3:
-                print(f"✗ Failed to open CrossSection: {e3}")
-                print("❌ Cross-Section Analysis module not found. Please ensure the extension is installed.")
+
                 return False
 
 def test_cpr_buttons():
@@ -2079,9 +2056,6 @@ def test_cpr_buttons():
         success = add_large_cpr_apply_button()
         
         if success:
-            print("✓ Successfully added CPR buttons")
-            print("  - Large green 'APPLY CPR' button")
-            print("  - Large green 'OPEN CROSS-SECTION ANALYSIS' button")
             return True
         else:
             print("✗ Failed to add CPR buttons")
@@ -2098,7 +2072,6 @@ def apply_cpr_transform_to_centerlines():
     the specific centerline nodes: "CenterlineCurve" and "CenterlineModel".
     """
     try:
-        print("🔧 apply_cpr_transform_to_centerlines() called")
         
         # Find the straightening transform created by CPR
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
@@ -2111,11 +2084,9 @@ def apply_cpr_transform_to_centerlines():
             print(f"  - Transform: {transform_node.GetName()}")
             if transform_node.GetName() == "Straightening transform":
                 straightening_transform = transform_node
-                print("✅ Found 'Straightening transform'")
                 break
         
         if not straightening_transform:
-            print("❌ No 'Straightening transform' found!")
             return False
         
         print("🔍 Searching for centerline nodes...")
@@ -2128,7 +2099,6 @@ def apply_cpr_transform_to_centerlines():
             centerline_curve = slicer.util.getNode("CenterlineCurve (0)")
             if centerline_curve:
                 nodes_to_transform.append(centerline_curve)
-                print("✅ Found 'CenterlineCurve (0)'")
         except:
             # Try to find by pattern if exact name doesn't exist
             curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
@@ -2169,10 +2139,7 @@ def apply_cpr_transform_to_centerlines():
                 pass
         
         if not nodes_to_transform:
-            print("❌ No centerline nodes found to transform!")
             return False
-        
-        print(f"🎯 Found {len(nodes_to_transform)} centerline nodes to transform")
         
         # Apply the transform to each centerline node
         transformed_count = 0
@@ -2194,7 +2161,6 @@ def apply_cpr_transform_to_centerlines():
                 pass
         
         if transformed_count > 0:
-            print(f"✅ Successfully applied transforms to {transformed_count} nodes")
             
             # Force update of the 3D view
             slicer.app.processEvents()
@@ -2210,11 +2176,9 @@ def apply_cpr_transform_to_centerlines():
             
             return True
         else:
-            print("❌ No transforms were applied")
             return False
             
     except Exception as e:
-        print(f"❌ Error in apply_cpr_transform_to_centerlines: {e}")
         return False
 
 def setup_cross_section_analysis_module():
@@ -2226,19 +2190,16 @@ def setup_cross_section_analysis_module():
     3. Configures browse cross sections: Axial: Red, Long: Green, Point Index: half of total
     """
     try:
-        print("🔧 setup_cross_section_analysis_module() called")
         
         # Give the module a moment to fully load
         qt.QTimer.singleShot(500, lambda: configure_cross_section_module())
         
     except Exception as e:
-        print(f"❌ Error in setup_cross_section_analysis_module: {e}")
         return False
 
 def configure_cross_section_module():
     """Helper function to configure the Cross-Section Analysis module"""
     try:
-        print("⚙️ Configuring Cross-Section Analysis module...")
         
         # Find the Cross-Section Analysis module widget
         module_widget = None
@@ -2248,17 +2209,12 @@ def configure_cross_section_module():
             module = module_manager.module('CrossSectionAnalysis')
             if module:
                 module_widget = module.widgetRepresentation()
-                print("✅ Found Cross-Section Analysis module widget")
         except:
-            print("❌ Could not find Cross-Section Analysis module widget")
             return False
         
         if not module_widget:
-            print("❌ Module widget is None")
             return False
         
-        # Step 0: First handle Parameter set selector (if present)
-        print("🎯 Step 0: Checking Parameter set selector...")
         try:
             # Look for parameter set selector (might be a combo box with parameter set options)
             combo_boxes = module_widget.findChildren(qt.QComboBox)
@@ -2282,7 +2238,6 @@ def configure_cross_section_module():
                     item_text = parameter_set_selector.itemText(j)
                     if item_text and ('default' in item_text.lower() or 'standard' in item_text.lower() or j == 0):
                         parameter_set_selector.setCurrentIndex(j)
-                        print(f"✅ Set parameter set to: {item_text}")
                         break
                 
                 # Give UI time to update after parameter set selection
@@ -2293,9 +2248,8 @@ def configure_cross_section_module():
                 
         except Exception as e:
             print(f"  Error handling parameter set: {e}")
-        
-        # Step 1: Find and select the centerline curve in the input selector
-        print("🎯 Step 1: Selecting centerline curve...")
+    
+
         try:
             # Look for the input curve selector (first qMRMLNodeComboBox)
             curve_selectors = module_widget.findChildren(slicer.qMRMLNodeComboBox)
@@ -2315,7 +2269,6 @@ def configure_cross_section_module():
                             break
                 
                 if not centerline_curve:
-                    print("❌ Could not find centerline curve")
                     return False
                 
                 # Try to find the correct input selector by looking for one that accepts curves
@@ -2347,7 +2300,6 @@ def configure_cross_section_module():
                 # Set the centerline curve
                 try:
                     input_curve_selector.setCurrentNode(centerline_curve)
-                    print(f"✅ Selected centerline curve: {centerline_curve.GetName()}")
                     
                     # Give the UI more time to update and enable the Apply button
                     slicer.app.processEvents()
@@ -2359,15 +2311,11 @@ def configure_cross_section_module():
                     slicer.app.processEvents()
                     
                 except Exception as e:
-                    print(f"❌ Error setting curve in selector: {e}")
+                    
                     return False
                     
-            else:
-                print("❌ Could not find curve selector")
-                return False
         
         except Exception as e:
-            print(f"❌ Error selecting centerline curve: {e}")
             return False
         
         # Step 2: Click Apply button
@@ -2408,20 +2356,15 @@ def configure_cross_section_module():
             if apply_button:
                 if apply_button.enabled:
                     apply_button.click()
-                    print("✅ Clicked Apply button")
                     
                     # Give the module immediate processing time
                     slicer.app.processEvents()
                     qt.QApplication.instance().processEvents()
                     
-                    # Check if Apply operation created any outputs
-                    print("🔍 Checking Apply operation results...")
-                    
                     # Look for any new nodes that might have been created
                     all_nodes_after = slicer.mrmlScene.GetNumberOfNodes()
                     print(f"  Total nodes in scene after Apply: {all_nodes_after}")
                     
-                    # Check for slice nodes specifically (these might populate the selectors)
                     slice_nodes = slicer.util.getNodesByClass('vtkMRMLSliceNode')
                     print(f"  Found {len(slice_nodes)} slice nodes:")
                     for i, slice_node in enumerate(slice_nodes):
@@ -2443,19 +2386,13 @@ def configure_cross_section_module():
                     # Wait for processing to complete
                     qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
                     return True
-                else:
-                    print(f"❌ Apply button found but not enabled: '{apply_button.text}'")
-                    return False
-            else:
-                print("❌ No Apply button found")
-                return False
+
+
                 
         except Exception as e:
-            print(f"❌ Error clicking Apply button: {e}")
             return False
             
     except Exception as e:
-        print(f"❌ Error in configure_cross_section_module: {e}")
         return False
 
 def configure_browse_cross_sections():
@@ -2515,21 +2452,8 @@ def configure_browse_cross_sections():
                         red_slice_node = slicer.mrmlScene.GetNodeByID('vtkMRMLSliceNodeRed')
                         if red_slice_node:
                             axial_selector.setCurrentNode(red_slice_node)
-                            print(f"✅ Set Axial view to: {red_slice_node.GetName()} (ID: {red_slice_node.GetID()})")
-                        else:
-                            print("  Red slice node not found, falling back to text search")
-                            # Fallback to original method
-                            for i in range(axial_selector.count()):
-                                item_text = axial_selector.itemText(i)
-                                if item_text and "Red" in item_text:
-                                    axial_selector.setCurrentIndex(i)
-                                    print(f"✅ Set Axial view to: {item_text}")
-                                    break
-                    else:
-                        print("  Axial selector not found by name")
                 except Exception as axial_error:
                     print(f"  Error configuring axial selector: {axial_error}")
-                
                 try:
                     if longitudinal_selector:
                         print(f"    Found longitudinal selector: {longitudinal_selector.__class__.__name__}")
