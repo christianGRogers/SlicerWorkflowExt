@@ -2440,55 +2440,12 @@ def configure_cross_section_module():
                     except Exception as logic_error:
                         print(f"  Error accessing module logic: {logic_error}")
                     
-                    # Wait for processing to complete with retry mechanism
-                    qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections_with_retry(0))
+                    # Wait for processing to complete
+                    qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
                     return True
                 else:
                     print(f"❌ Apply button found but not enabled: '{apply_button.text}'")
-                    print("  Trying multiple strategies to enable the button...")
-                    
-                    # Strategy 1: Force module to update its state
-                    try:
-                        module_manager = slicer.app.moduleManager()
-                        module = module_manager.module('CrossSectionAnalysis')
-                        if module and hasattr(module, 'logic'):
-                            module_logic = module.logic()
-                            if hasattr(module_logic, 'updateGUIFromMRML'):
-                                module_logic.updateGUIFromMRML()
-                                print("  Tried updating GUI from MRML")
-                    except Exception as e:
-                        print(f"  Strategy 1 failed: {e}")
-                    
-                    # Strategy 2: Re-select the curve to trigger validation
-                    try:
-                        if input_curve_selector and centerline_curve:
-                            input_curve_selector.setCurrentNode(None)
-                            slicer.app.processEvents()
-                            input_curve_selector.setCurrentNode(centerline_curve)
-                            slicer.app.processEvents()
-                            print("  Re-selected centerline curve")
-                    except Exception as e:
-                        print(f"  Strategy 2 failed: {e}")
-                    
-                    # Strategy 3: Wait longer and try multiple times
-                    def retry_apply_multiple_times(attempt=1, max_attempts=5):
-                        print(f"  Retry attempt {attempt}/{max_attempts}")
-                        slicer.app.processEvents()
-                        
-                        if apply_button.enabled:
-                            apply_button.click()
-                            print("Clicked Apply button after retry")
-                            qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
-                        elif attempt < max_attempts:
-                            # Try again after 1 second
-                            qt.QTimer.singleShot(1000, lambda: retry_apply_multiple_times(attempt + 1, max_attempts))
-                        else:
-                            print("❌ Apply button never became enabled after all retries")
-                            print("  This might indicate missing required inputs or module logic issues")
-                    
-                    # Start the retry process
-                    qt.QTimer.singleShot(1000, lambda: retry_apply_multiple_times())
-                    return True
+                    return False
             else:
                 print("❌ No Apply button found")
                 return False
@@ -2554,144 +2511,32 @@ def configure_browse_cross_sections():
                 try:
                     if axial_selector:
                         print(f"    Found axial selector: {axial_selector.__class__.__name__}")
-                        # Debug: Show all available items
-                        try:
-                            item_count = axial_selector.count()
-                        except:
-                            item_count = 0
-                        print(f"    Axial selector has {item_count} items:")
-                        for i in range(item_count):
-                            try:
-                                item_text = axial_selector.itemText(i)
-                                print(f"      Item {i}: '{item_text}'")
-                            except:
-                                continue
-                        
-                        # Set Axial to Red (try multiple patterns)
-                        found_red = False
-                        try:
+                        # Set Axial to Red using direct node selection (similar to provided script)
+                        red_slice_node = slicer.mrmlScene.GetNodeByID('vtkMRMLSliceNodeRed')
+                        if red_slice_node:
+                            axial_selector.setCurrentNode(red_slice_node)
+                            print(f"✅ Set Axial view to: {red_slice_node.GetName()} (ID: {red_slice_node.GetID()})")
+                        else:
+                            print("  Red slice node not found, falling back to text search")
+                            # Fallback to original method
                             for i in range(axial_selector.count()):
                                 item_text = axial_selector.itemText(i)
-                                if item_text and (item_text == "Red" or "red" in item_text.lower() or "r" == item_text.lower() or "axial" in item_text.lower()):
+                                if item_text and "Red" in item_text:
                                     axial_selector.setCurrentIndex(i)
                                     print(f"✅ Set Axial view to: {item_text}")
-                                    found_red = True
                                     break
-                        except Exception as e:
-                            print(f"    Error in axial pattern matching: {e}")
-                        
-                        if not found_red:
-                            # Try to set to the first non-empty item as fallback
-                            try:
-                                for i in range(axial_selector.count()):
-                                    item_text = axial_selector.itemText(i)
-                                    if item_text and item_text.strip():
-                                        axial_selector.setCurrentIndex(i)
-                                        print(f"🟡 Set Axial view to first available: {item_text}")
-                                        break
-                            except Exception as e:
-                                print(f"    Error in axial fallback: {e}")
                     else:
-                        print("  Axial selector not found by name, trying generic search...")
-                        # Fallback: look for combo boxes and try to identify by position
-                        combo_boxes = widget.findChildren(slicer.qMRMLNodeComboBox)
-                        print(f"    Found {len(combo_boxes)} combo boxes for axial search")
-                        for j, combo in enumerate(combo_boxes):
-                            try:
-                                print(f"    Checking combo {j}: {combo.__class__.__name__}")
-                                # Check if this combo has slice node options
-                                try:
-                                    item_count = combo.count()
-                                except:
-                                    item_count = 0
-                                print(f"    Combo {j} has {item_count} items")
-                                # Debug: Show all items in this combo
-                                for i in range(item_count):
-                                    item_text = combo.itemText(i)
-                                    print(f"      Item {i}: '{item_text}'")
-                                
-                                # Look for red/axial options
-                                for i in range(item_count):
-                                    item_text = combo.itemText(i)
-                                    if item_text and ("red" in item_text.lower() or "r" == item_text.lower() or "axial" in item_text.lower()):
-                                        combo.setCurrentIndex(i)
-                                        print(f"✅ Set slice view to Red (generic): {item_text}")
-                                        break
-                            except Exception as combo_error:
-                                print(f"    Error with combo {j}: {combo_error}")
-                                continue
+                        print("  Axial selector not found by name")
                 except Exception as axial_error:
                     print(f"  Error configuring axial selector: {axial_error}")
                 
                 try:
                     if longitudinal_selector:
                         print(f"    Found longitudinal selector: {longitudinal_selector.__class__.__name__}")
-                        # Debug: Show all available items
-                        try:
-                            item_count = longitudinal_selector.count()
-                        except:
-                            item_count = 0
-                        print(f"    Longitudinal selector has {item_count} items:")
-                        for i in range(item_count):
-                            try:
-                                item_text = longitudinal_selector.itemText(i)
-                                print(f"      Item {i}: '{item_text}'")
-                            except:
-                                continue
-                        
-                        # Set Longitudinal to Green (try multiple patterns)
-                        found_green = False
-                        try:
-                            for i in range(longitudinal_selector.count()):
-                                item_text = longitudinal_selector.itemText(i)
-                                if item_text and (item_text == "Green" or "green" in item_text.lower() or "g" == item_text.lower() or "longitudinal" in item_text.lower() or "yellow" in item_text.lower()):
-                                    longitudinal_selector.setCurrentIndex(i)
-                                    print(f"✅ Set Longitudinal view to: {item_text}")
-                                    found_green = True
-                                    break
-                        except Exception as e:
-                            print(f"    Error in longitudinal pattern matching: {e}")
-                        
-                        if not found_green:
-                            # Try to set to the second item or first non-empty item as fallback
-                            try:
-                                for i in range(1, longitudinal_selector.count()):  # Start from index 1 to avoid same as axial
-                                    item_text = longitudinal_selector.itemText(i)
-                                    if item_text and item_text.strip():
-                                        longitudinal_selector.setCurrentIndex(i)
-                                        print(f"🟡 Set Longitudinal view to: {item_text}")
-                                        break
-                            except Exception as e:
-                                print(f"    Error in longitudinal fallback: {e}")
-                    else:
-                        print("  Longitudinal selector not found by name, trying generic search...")
-                        # Fallback: look for combo boxes and try to identify
-                        combo_boxes = widget.findChildren(slicer.qMRMLNodeComboBox)
-                        print(f"    Found {len(combo_boxes)} combo boxes for longitudinal search")
-                        for j, combo in enumerate(combo_boxes):
-                            try:
-                                print(f"    Checking combo {j}: {combo.__class__.__name__}")
-                                # Check if this combo has slice node options
-                                try:
-                                    item_count = combo.count()
-                                except:
-                                    item_count = 0
-                                print(f"    Combo {j} has {item_count} items")
-                                # Debug: Show all items in this combo
-                                for i in range(item_count):
-                                    item_text = combo.itemText(i)
-                                    print(f"      Item {i}: '{item_text}'")
-                                
-                                # Look for green/longitudinal options
-                                for i in range(item_count):
-                                    item_text = combo.itemText(i)
-                                    if item_text and ("green" in item_text.lower() or "g" == item_text.lower() or "longitudinal" in item_text.lower() or "yellow" in item_text.lower()):
-                                        combo.setCurrentIndex(i)
-                                        print(f"✅ Set slice view to Green (generic): {item_text}")
-                                        break
-                            except Exception as combo_error:
-                                print(f"    Error with combo {j}: {combo_error}")
-                                continue
+                        # Set Longitudinal to Green using direct node selection (similar to provided script)
+                        green_slice_node = slicer.mrmlScene.GetNodeByID('vtkMRMLSliceNodeGreen')
+                        if green_slice_node:
+                            longitudinal_selector.setCurrentNode(green_slice_node)
                 except Exception as longitudinal_error:
                     print(f"  Error configuring longitudinal selector: {longitudinal_error}")
                 
@@ -2711,44 +2556,7 @@ def configure_browse_cross_sections():
                         else:
                             print("  Point slider found but maximum is 0 or unavailable")
                     else:
-                        print("  Point slider not found by name, trying generic search...")
-                        # Fallback: look for any sliders
-                        try:
-                            import ctk
-                            sliders = widget.findChildren(ctk.ctkSliderWidget)
-                            print(f"    Found {len(sliders)} ctkSliderWidgets")
-                            for k, slider in enumerate(sliders):
-                                try:
-                                    print(f"    Checking slider {k}: {slider.__class__.__name__}")
-                                    if hasattr(slider, 'maximum') and slider.maximum > 0:
-                                        # Set point index to 230, but ensure it's within the slider's range
-                                        target_value = min(230, slider.maximum)
-                                        slider.setValue(target_value)
-                                        print(f"✅ Set slider to {target_value} (target: 230, max: {slider.maximum})")
-                                        break
-                                except Exception as slider_error:
-                                    print(f"    Error with slider {k}: {slider_error}")
-                                    continue
-                        except Exception as ctk_error:
-                            print(f"    Error with ctkSliderWidget search: {ctk_error}")
-                            # Try Qt sliders as fallback
-                            try:
-                                qt_sliders = widget.findChildren(qt.QSlider)
-                                print(f"    Found {len(qt_sliders)} QSliders")
-                                for k, slider in enumerate(qt_sliders):
-                                    try:
-                                        print(f"    Checking Qt slider {k}: {slider.__class__.__name__}")
-                                        if hasattr(slider, 'maximum') and slider.maximum() > 0:
-                                            # Set point index to 230, but ensure it's within the slider's range
-                                            target_value = min(230, slider.maximum())
-                                            slider.setValue(target_value)
-                                            print(f"✅ Set QSlider to {target_value} (target: 230, max: {slider.maximum()})")
-                                            break
-                                    except Exception as qt_slider_error:
-                                        print(f"    Error with Qt slider {k}: {qt_slider_error}")
-                                        continue
-                            except Exception as qt_error:
-                                print(f"    Error with QSlider search: {qt_error}")
+                        print("  Point slider not found by name")
                 except Exception as slider_error:
                     print(f"  Error configuring point slider: {slider_error}")
                         
@@ -2763,149 +2571,6 @@ def configure_browse_cross_sections():
         
     except Exception as e:
         print(f"❌ Error in configure_browse_cross_sections: {e}")
-        return False
-
-def configure_browse_cross_sections_with_retry(retry_count=0):
-    """
-    Configure browse cross sections - simplified to just set point index to 230
-    """
-    try:
-        print("🎯 Configuring browse cross sections...")
-        
-        # Find the Cross-Section Analysis module widget
-        module_manager = slicer.app.moduleManager()
-        module = module_manager.module('CrossSectionAnalysis')
-        if not module:
-            print("❌ Could not find Cross-Section Analysis module")
-            return False
-            
-        module_widget = module.widgetRepresentation()
-        if not module_widget:
-            print("❌ Module widget is None")
-            return False
-        
-        # Find any browse widgets
-        browse_widgets = []
-        
-        # Look for collapsible buttons
-        try:
-            import ctk
-            collapsible_buttons = module_widget.findChildren(ctk.ctkCollapsibleButton)
-            for cb in collapsible_buttons:
-                if "browse" in cb.text.lower() or "cross" in cb.text.lower():
-                    browse_widgets.append(cb)
-                    print(f"  Found browse widget: {cb.text}")
-        except Exception as e:
-            print(f"  Could not access ctkCollapsibleButton: {e}")
-        
-        # Look for group boxes as fallback
-        group_boxes = module_widget.findChildren(qt.QGroupBox)
-        for gb in group_boxes:
-            if "browse" in gb.title.lower() or "cross" in gb.title.lower():
-                browse_widgets.append(gb)
-                print(f"  Found browse widget: {gb.title}")
-        
-        if not browse_widgets:
-            print("❌ No browse widgets found")
-            return False
-        
-        # Set point index to 230 and configure slice selectors
-        point_set = False
-        selectors_configured = False
-        
-        for widget in browse_widgets:
-            # First, try to set the slice selectors to Red and Green
-            if not selectors_configured:
-                try:
-                    # Look for axial and longitudinal selectors
-                    axial_selector = widget.findChild(slicer.qMRMLNodeComboBox, "axialSliceViewSelector")
-                    longitudinal_selector = widget.findChild(slicer.qMRMLNodeComboBox, "longitudinalSliceViewSelector")
-                    
-                    # If not found by name, try to find any combo boxes
-                    if not axial_selector or not longitudinal_selector:
-                        all_combos = widget.findChildren(slicer.qMRMLNodeComboBox)
-                        if len(all_combos) >= 2:
-                            axial_selector = all_combos[0]  # First combo for axial
-                            longitudinal_selector = all_combos[1]  # Second combo for longitudinal
-                    
-                    # Set axial to Red
-                    if axial_selector:
-                        for i in range(axial_selector.count()):
-                            item_text = axial_selector.itemText(i)
-                            if "Red" in item_text:
-                                axial_selector.setCurrentIndex(i)
-                                print(f"✅ Set Axial selector to: {item_text}")
-                                break
-                    
-                    # Set longitudinal to Green
-                    if longitudinal_selector:
-                        for i in range(longitudinal_selector.count()):
-                            item_text = longitudinal_selector.itemText(i)
-                            if "Green" in item_text:
-                                longitudinal_selector.setCurrentIndex(i)
-                                print(f"✅ Set Longitudinal selector to: {item_text}")
-                                break
-                    
-                    selectors_configured = True
-                    
-                except Exception as e:
-                    print(f"  Could not configure selectors: {e}")
-            
-            # Set point index to 230 on any available slider
-            if not point_set:
-                # Try CTK sliders first (more likely to work in Slicer)
-                try:
-                    import ctk
-                    ctk_sliders = widget.findChildren(ctk.ctkSliderWidget)
-                    for slider in ctk_sliders:
-                        try:
-                            if hasattr(slider, 'setValue') and hasattr(slider, 'maximum'):
-                                max_val = slider.maximum
-                                if max_val > 230:
-                                    slider.setValue(230)
-                                    print(f"✅ Set point index to 230 (max: {max_val})")
-                                    point_set = True
-                                    break
-                        except Exception as e:
-                            continue
-                except:
-                    pass
-                
-                # Try Qt sliders as fallback
-                if not point_set:
-                    qt_sliders = widget.findChildren(qt.QSlider)
-                    for slider in qt_sliders:
-                        try:
-                            if hasattr(slider, 'setValue'):
-                                try:
-                                    max_val = slider.maximum()
-                                except:
-                                    max_val = slider.maximum
-                                
-                                if max_val > 230:
-                                    slider.setValue(230)
-                                    print(f"✅ Set point index to 230 (max: {max_val})")
-                                    point_set = True
-                                    break
-                        except Exception as e:
-                            continue
-            
-            if point_set and selectors_configured:
-                break
-        
-        if point_set or selectors_configured:
-            print("✅ Cross-Section Analysis configuration completed")
-            if point_set:
-                print("  - Point index set to 230")
-            if selectors_configured:
-                print("  - Slice selectors configured (Axial: Red, Longitudinal: Green)")
-            return True
-        else:
-            print("❌ Could not configure any settings")
-            return False
-        
-    except Exception as e:
-        print(f"❌ Error in configure_browse_cross_sections_with_retry: {e}")
         return False
 
 def apply_transform_to_specific_centerline_nodes(centerline_model=None, centerline_curve=None):
