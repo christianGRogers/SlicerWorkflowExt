@@ -1781,7 +1781,87 @@ def add_large_cpr_apply_button():
                                 }
                             """)
                             
-                            large_apply_button.connect('clicked()', lambda: original_apply_button.click())
+                            def apply_cpr_and_transform():
+                                """
+                                Apply CPR only - transform application moved to Cross-Section Analysis button
+                                """
+                                try:
+                                    # Apply the original CPR
+                                    original_apply_button.click()
+                                    
+                                    # Give time for CPR processing
+                                    slicer.app.processEvents()
+                                    import time
+                                    time.sleep(1.0)
+                                    
+                                    pass
+                                    
+                                except Exception as e:
+                                    pass
+                            
+                            large_apply_button.connect('clicked()', apply_cpr_and_transform)
+                            
+                            # Create Cross-Section Analysis button
+                            cross_section_button = qt.QPushButton("OPEN CROSS-SECTION ANALYSIS")
+                            cross_section_button.setStyleSheet("""
+                                QPushButton { 
+                                    background-color: #28a745; 
+                                    color: white; 
+                                    border: 2px solid #1e7e34; 
+                                    padding: 20px; 
+                                    font-weight: bold;
+                                    border-radius: 10px;
+                                    margin: 10px;
+                                    font-size: 18px;
+                                    min-height: 70px;
+                                    min-width: 300px;
+                                }
+                                QPushButton:hover { 
+                                    background-color: #218838; 
+                                    border: 2px solid #155724;
+                                    transform: scale(1.05);
+                                }
+                                QPushButton:pressed { 
+                                    background-color: #1e7e34; 
+                                    border: 2px solid #0f4c2c;
+                                }
+                            """)
+                            
+                            def open_cross_section_analysis():
+                                try:
+                                    print("🔄 Opening Cross-Section Analysis (Path 1) - applying CPR transforms...")
+                                    # Apply transform to centerline nodes before opening Cross-Section Analysis
+                                    transform_result = apply_cpr_transform_to_centerlines()
+                                    print(f"✅ CPR transform application result: {transform_result}")
+                                    
+                                    # Switch to Cross-Section Analysis module
+                                    slicer.util.selectModule("CrossSectionAnalysis")
+                                    print("✅ Successfully opened CrossSectionAnalysis module")
+                                    
+                                    # Configure the Cross-Section Analysis module
+                                    setup_cross_section_analysis_module()
+                                    
+                                    pass
+                                except Exception as e:
+                                    print(f"❌ Failed to open CrossSectionAnalysis: {e}")
+                                    # Try alternative module names if the first doesn't work
+                                    try:
+                                        slicer.util.selectModule("Cross-sectionanalysis")
+                                        print("✅ Successfully opened Cross-sectionanalysis module")
+                                        setup_cross_section_analysis_module()
+                                        pass
+                                    except Exception as e2:
+                                        print(f"❌ Failed to open Cross-sectionanalysis: {e2}")
+                                        try:
+                                            slicer.util.selectModule("CrossSection")
+                                            print("✅ Successfully opened CrossSection module")
+                                            setup_cross_section_analysis_module()
+                                            pass
+                                        except Exception as e3:
+                                            print(f"❌ Failed to open CrossSection: {e3}")
+                                            print("❌ Cross-Section Analysis module not found. Please ensure the extension is installed.")
+                            
+                            cross_section_button.connect('clicked()', open_cross_section_analysis)
                             
                         else:
                             pass
@@ -1812,6 +1892,7 @@ def add_large_cpr_apply_button():
 
                             def trigger_cpr_apply():
                                 try:
+                                    # Apply CPR using fallback method
                                     if hasattr(cpr_module, 'onApplyButton'):
                                         cpr_module.onApplyButton()
                                         pass
@@ -1820,10 +1901,80 @@ def add_large_cpr_apply_button():
                                         pass
                                     else:
                                         pass
+                                    
+                                    # Give time for CPR processing
+                                    slicer.app.processEvents()
+                                    import time
+                                    time.sleep(1.0)
+                                    
+                                    pass
+                                    
                                 except Exception as e:
                                     pass
                             
                             large_apply_button.connect('clicked()', trigger_cpr_apply)
+                            
+                            # Create Cross-Section Analysis button
+                            cross_section_button = qt.QPushButton("OPEN CROSS-SECTION ANALYSIS")
+                            cross_section_button.setStyleSheet("""
+                                QPushButton { 
+                                    background-color: #28a745; 
+                                    color: white; 
+                                    border: 2px solid #1e7e34; 
+                                    padding: 20px; 
+                                    font-weight: bold;
+                                    border-radius: 10px;
+                                    margin: 10px;
+                                    font-size: 18px;
+                                    min-height: 70px;
+                                    min-width: 300px;
+                                }
+                                QPushButton:hover { 
+                                    background-color: #218838; 
+                                    border: 2px solid #155724;
+                                    transform: scale(1.05);
+                                }
+                                QPushButton:pressed { 
+                                    background-color: #1e7e34; 
+                                    border: 2px solid #0f4c2c;
+                                }
+                            """)
+                            
+                            def open_cross_section_analysis():
+                                try:
+                                    print("🔄 Opening Cross-Section Analysis (Path 2) - applying CPR transforms...")
+                                    # Apply transform to centerline nodes before opening Cross-Section Analysis
+                                    transform_result = apply_cpr_transform_to_centerlines()
+                                    print(f"✅ CPR transform application result: {transform_result}")
+                                    
+                                    # Switch to Cross-Section Analysis module
+                                    slicer.util.selectModule("CrossSectionAnalysis")
+                                    print("✅ Successfully opened CrossSectionAnalysis module")
+                                    
+                                    # Configure the Cross-Section Analysis module
+                                    setup_cross_section_analysis_module()
+                                    
+                                    pass
+                                except Exception as e:
+                                    print(f"❌ Failed to open CrossSectionAnalysis: {e}")
+                                    # Try alternative module names if the first doesn't work
+                                    try:
+                                        slicer.util.selectModule("Cross-sectionanalysis")
+                                        print("✅ Successfully opened Cross-sectionanalysis module")
+                                        setup_cross_section_analysis_module()
+                                        pass
+                                    except Exception as e2:
+                                        print(f"❌ Failed to open Cross-sectionanalysis: {e2}")
+                                        try:
+                                            slicer.util.selectModule("CrossSection")
+                                            print("✅ Successfully opened CrossSection module")
+                                            setup_cross_section_analysis_module()
+                                            pass
+                                        except Exception as e3:
+                                            print(f"❌ Failed to open CrossSection: {e3}")
+                                            print("❌ Cross-Section Analysis module not found. Please ensure the extension is installed.")
+                            
+                            cross_section_button.connect('clicked()', open_cross_section_analysis)
                         
                         main_ui_widget = None
                         
@@ -1837,23 +1988,30 @@ def add_large_cpr_apply_button():
                         if not main_ui_widget:
                             main_ui_widget = cpr_widget
 
+                        # Create a container widget for both buttons
+                        button_container = qt.QWidget()
+                        button_layout = qt.QVBoxLayout(button_container)
+                        button_layout.addWidget(large_apply_button)
+                        button_layout.addWidget(cross_section_button)
+
                         if main_ui_widget and hasattr(main_ui_widget, 'layout'):
                             layout = main_ui_widget.layout()
                             if layout:
-                                layout.insertWidget(0, large_apply_button)
+                                layout.insertWidget(0, button_container)
                             else:
                                 new_layout = qt.QVBoxLayout(main_ui_widget)
-                                new_layout.insertWidget(0, large_apply_button)
+                                new_layout.insertWidget(0, button_container)
                         else:
                             container_widgets = cpr_widget.findChildren(qt.QWidget)
                             for widget in container_widgets:
                                 if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
-                                    widget.layout().insertWidget(0, large_apply_button)
+                                    widget.layout().insertWidget(0, button_container)
                                     break
                             else:
                                 return False
                         
                         slicer.modules.CPRLargeApplyButton = large_apply_button
+                        slicer.modules.CPRCrossSectionButton = cross_section_button
                         return True
                     else:
                         if cpr_widget:
@@ -1876,6 +2034,999 @@ def add_large_cpr_apply_button():
             
     except Exception as e:
         pass
+
+def open_cross_section_analysis_module():
+    """
+    Helper function to open the Cross-Section Analysis module.
+    Can be called from console to test the module switching functionality.
+    """
+    try:
+        # Apply transform to centerline nodes before opening Cross-Section Analysis
+        apply_cpr_transform_to_centerlines()
+        
+        # Try the most likely module name first
+        slicer.util.selectModule("CrossSectionAnalysis")
+        print("✓ Successfully opened CrossSectionAnalysis module")
+        return True
+    except Exception as e:
+        print(f"✗ Failed to open CrossSectionAnalysis: {e}")
+        # Try alternative module names
+        try:
+            slicer.util.selectModule("Cross-sectionanalysis")
+            print("✓ Successfully opened Cross-sectionanalysis module")
+            return True
+        except Exception as e2:
+            print(f"✗ Failed to open Cross-sectionanalysis: {e2}")
+            try:
+                slicer.util.selectModule("CrossSection")
+                print("✓ Successfully opened CrossSection module")
+                return True
+            except Exception as e3:
+                print(f"✗ Failed to open CrossSection: {e3}")
+                print("❌ Cross-Section Analysis module not found. Please ensure the extension is installed.")
+                return False
+
+def test_cpr_buttons():
+    """
+    Console helper function to test the CPR module buttons
+    """
+    try:
+        # First switch to CPR module
+        slicer.util.selectModule("CurvedPlanarReformat")
+        slicer.app.processEvents()
+        
+        # Add the large buttons
+        success = add_large_cpr_apply_button()
+        
+        if success:
+            print("✓ Successfully added CPR buttons")
+            print("  - Large green 'APPLY CPR' button")
+            print("  - Large green 'OPEN CROSS-SECTION ANALYSIS' button")
+            return True
+        else:
+            print("✗ Failed to add CPR buttons")
+            return False
+            
+    except Exception as e:
+        print(f"✗ Error testing CPR buttons: {e}")
+        return False
+
+def apply_cpr_transform_to_centerlines():
+    """
+    Apply the CPR (Curved Planar Reformat) transform to centerline curve and model nodes.
+    This function finds the straightening transform created by CPR and applies it to 
+    the specific centerline nodes: "CenterlineCurve" and "CenterlineModel".
+    """
+    try:
+        print("🔧 apply_cpr_transform_to_centerlines() called")
+        
+        # Find the straightening transform created by CPR
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        straightening_transform = None
+        
+        print(f"🔍 Found {len(transform_nodes)} transform nodes in scene")
+        
+        # Look specifically for "Straightening transform"
+        for transform_node in transform_nodes:
+            print(f"  - Transform: {transform_node.GetName()}")
+            if transform_node.GetName() == "Straightening transform":
+                straightening_transform = transform_node
+                print("✅ Found 'Straightening transform'")
+                break
+        
+        if not straightening_transform:
+            print("❌ No 'Straightening transform' found!")
+            return False
+        
+        print("🔍 Searching for centerline nodes...")
+        
+        # Find the specific centerline nodes to transform
+        nodes_to_transform = []
+        
+        # Look for "CenterlineCurve" (and variations with numbers like "CenterlineCurve (0)")
+        try:
+            centerline_curve = slicer.util.getNode("CenterlineCurve (0)")
+            if centerline_curve:
+                nodes_to_transform.append(centerline_curve)
+                print("✅ Found 'CenterlineCurve (0)'")
+        except:
+            # Try to find by pattern if exact name doesn't exist
+            curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+            for curve_node in curve_nodes:
+                node_name = curve_node.GetName()
+                if node_name.startswith("CenterlineCurve (0)"):
+                    nodes_to_transform.append(curve_node)
+                    pass
+                    break
+        
+        # Look for "CenterlineModel"
+        try:
+            centerline_model = slicer.util.getNode("CenterlineModel")
+            if centerline_model:
+                nodes_to_transform.append(centerline_model)
+                pass
+        except:
+            # Try to find by pattern if exact name doesn't exist
+            model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+            for model_node in model_nodes:
+                node_name = model_node.GetName()
+                if node_name.startswith("CenterlineModel"):
+                    nodes_to_transform.append(model_node)
+                    pass
+                    break
+        
+        # Also check stored workflow references as fallback
+        if hasattr(slicer.modules, 'WorkflowCenterlineModel'):
+            centerline_model = slicer.modules.WorkflowCenterlineModel
+            if centerline_model and centerline_model not in nodes_to_transform:
+                nodes_to_transform.append(centerline_model)
+                pass
+        
+        if hasattr(slicer.modules, 'WorkflowCenterlineCurve'):
+            centerline_curve = slicer.modules.WorkflowCenterlineCurve
+            if centerline_curve and centerline_curve not in nodes_to_transform:
+                nodes_to_transform.append(centerline_curve)
+                pass
+        
+        if not nodes_to_transform:
+            print("❌ No centerline nodes found to transform!")
+            return False
+        
+        print(f"🎯 Found {len(nodes_to_transform)} centerline nodes to transform")
+        
+        # Apply the transform to each centerline node
+        transformed_count = 0
+        for node in nodes_to_transform:
+            try:
+                print(f"  Applying transform to: {node.GetName()}")
+                # Check if node already has this transform applied
+                current_transform = node.GetParentTransformNode()
+                if current_transform and current_transform.GetID() == straightening_transform.GetID():
+                    pass
+                    continue
+                
+                # Apply the transform
+                node.SetAndObserveTransformNodeID(straightening_transform.GetID())
+                transformed_count += 1
+                pass
+                
+            except Exception as e:
+                pass
+        
+        if transformed_count > 0:
+            print(f"✅ Successfully applied transforms to {transformed_count} nodes")
+            
+            # Force update of the 3D view
+            slicer.app.processEvents()
+            
+            # Force render the 3D view
+            layout_manager = slicer.app.layoutManager()
+            if layout_manager:
+                threeDWidget = layout_manager.threeDWidget(0)
+                if threeDWidget:
+                    threeDView = threeDWidget.threeDView()
+                    if threeDView:
+                        threeDView.forceRender()
+            
+            return True
+        else:
+            print("❌ No transforms were applied")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error in apply_cpr_transform_to_centerlines: {e}")
+        return False
+
+def setup_cross_section_analysis_module():
+    """
+    Automatically configure the Cross-Section Analysis module after it opens.
+    This function:
+    1. Selects the centerline curve (everything else default)
+    2. Clicks Apply
+    3. Configures browse cross sections: Axial: Red, Long: Green, Point Index: half of total
+    """
+    try:
+        print("🔧 setup_cross_section_analysis_module() called")
+        
+        # Give the module a moment to fully load
+        qt.QTimer.singleShot(500, lambda: configure_cross_section_module())
+        
+    except Exception as e:
+        print(f"❌ Error in setup_cross_section_analysis_module: {e}")
+        return False
+
+def configure_cross_section_module():
+    """Helper function to configure the Cross-Section Analysis module"""
+    try:
+        print("⚙️ Configuring Cross-Section Analysis module...")
+        
+        # Find the Cross-Section Analysis module widget
+        module_widget = None
+        try:
+            # Try to get the module widget directly
+            module_manager = slicer.app.moduleManager()
+            module = module_manager.module('CrossSectionAnalysis')
+            if module:
+                module_widget = module.widgetRepresentation()
+                print("✅ Found Cross-Section Analysis module widget")
+        except:
+            print("❌ Could not find Cross-Section Analysis module widget")
+            return False
+        
+        if not module_widget:
+            print("❌ Module widget is None")
+            return False
+        
+        # Step 0: First handle Parameter set selector (if present)
+        print("🎯 Step 0: Checking Parameter set selector...")
+        try:
+            # Look for parameter set selector (might be a combo box with parameter set options)
+            combo_boxes = module_widget.findChildren(qt.QComboBox)
+            parameter_set_selector = None
+            
+            for i, combo in enumerate(combo_boxes):
+                # Look for combo box that might contain parameter sets
+                for j in range(combo.count()):
+                    item_text = combo.itemText(j)
+                    if item_text and ('parameter' in item_text.lower() or 'default' in item_text.lower() or 'standard' in item_text.lower()):
+                        parameter_set_selector = combo
+                        print(f"  Found potential parameter set selector: combo box {i}")
+                        break
+                if parameter_set_selector:
+                    break
+            
+            # If we found a parameter set selector, set it to a reasonable default
+            if parameter_set_selector:
+                # Try to find and select a default or standard parameter set
+                for j in range(parameter_set_selector.count()):
+                    item_text = parameter_set_selector.itemText(j)
+                    if item_text and ('default' in item_text.lower() or 'standard' in item_text.lower() or j == 0):
+                        parameter_set_selector.setCurrentIndex(j)
+                        print(f"✅ Set parameter set to: {item_text}")
+                        break
+                
+                # Give UI time to update after parameter set selection
+                slicer.app.processEvents()
+                time.sleep(0.2)
+            else:
+                print("  No parameter set selector found (this might be normal)")
+                
+        except Exception as e:
+            print(f"  Error handling parameter set: {e}")
+        
+        # Step 1: Find and select the centerline curve in the input selector
+        print("🎯 Step 1: Selecting centerline curve...")
+        try:
+            # Look for the input curve selector (first qMRMLNodeComboBox)
+            curve_selectors = module_widget.findChildren(slicer.qMRMLNodeComboBox)
+            if curve_selectors:
+                print(f"  Found {len(curve_selectors)} node selectors")
+                
+                # Find centerline curve node first
+                centerline_curve = None
+                try:
+                    centerline_curve = slicer.util.getNode("CenterlineCurve (0)")
+                except:
+                    # Try to find any curve node with "Centerline" in the name
+                    curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+                    for curve_node in curve_nodes:
+                        if "Centerline" in curve_node.GetName():
+                            centerline_curve = curve_node
+                            break
+                
+                if not centerline_curve:
+                    print("❌ Could not find centerline curve")
+                    return False
+                
+                # Try to find the correct input selector by looking for one that accepts curves
+                input_curve_selector = None
+                for i, selector in enumerate(curve_selectors):
+                    try:
+                        # Check if this selector accepts the type of node we have
+                        if hasattr(selector, 'nodeTypes'):
+                            node_types = selector.nodeTypes  # Fixed: removed () - it's a property not method
+                            print(f"    Selector {i} accepts: {node_types}")
+                            if node_types and any('Curve' in node_type or 'Markup' in node_type for node_type in node_types):
+                                input_curve_selector = selector
+                                print(f"    Selector {i} looks like it accepts curves")
+                                break
+                        else:
+                            # If we can't check types, try the first one
+                            if i == 0:
+                                input_curve_selector = selector
+                                print(f"    Using selector {i} as fallback (first selector)")
+                    except Exception as e:
+                        print(f"    Error checking selector {i}: {e}")
+                        continue
+                
+                if not input_curve_selector:
+                    # Fallback to first selector
+                    input_curve_selector = curve_selectors[0]
+                    print("    Using first selector as last resort")
+                
+                # Set the centerline curve
+                try:
+                    input_curve_selector.setCurrentNode(centerline_curve)
+                    print(f"✅ Selected centerline curve: {centerline_curve.GetName()}")
+                    
+                    # Give the UI more time to update and enable the Apply button
+                    slicer.app.processEvents()
+                    qt.QApplication.instance().processEvents()
+                    
+                    # Additional wait to ensure module processes the selection
+                    import time
+                    time.sleep(0.5)
+                    slicer.app.processEvents()
+                    
+                except Exception as e:
+                    print(f"❌ Error setting curve in selector: {e}")
+                    return False
+                    
+            else:
+                print("❌ Could not find curve selector")
+                return False
+        
+        except Exception as e:
+            print(f"❌ Error selecting centerline curve: {e}")
+            return False
+        
+        # Step 2: Click Apply button
+        print("🎯 Step 2: Clicking Apply button...")
+        try:
+            # Give the module a moment to update after setting the curve
+            slicer.app.processEvents()
+            qt.QApplication.instance().processEvents()
+            
+            # Look for Apply button with more flexible search
+            apply_buttons = module_widget.findChildren(qt.QPushButton)
+            apply_button = None
+            
+            print(f"  Found {len(apply_buttons)} total buttons in module")
+            
+            for i, button in enumerate(apply_buttons):
+                button_text = button.text if hasattr(button, 'text') else ""
+                print(f"    Button {i}: '{button_text}' (enabled: {button.enabled if hasattr(button, 'enabled') else 'N/A'})")
+                
+                if button_text and 'apply' in button_text.lower():
+                    apply_button = button
+                    print(f"  Found potential Apply button: '{button_text}'")
+                    break
+            
+            if not apply_button:
+                # Try a broader search for buttons that might be Apply buttons
+                for i, button in enumerate(apply_buttons):
+                    button_text = button.text if hasattr(button, 'text') else ""
+                    # Look for common Apply button patterns
+                    if (button_text and 
+                        (button_text.lower() in ['apply', 'run', 'execute', 'start', 'compute'] or
+                         'apply' in button_text.lower() or
+                         'run' in button_text.lower())):
+                        apply_button = button
+                        print(f"  Found broader match Apply button: '{button_text}'")
+                        break
+            
+            if apply_button:
+                if apply_button.enabled:
+                    apply_button.click()
+                    print("✅ Clicked Apply button")
+                    
+                    # Give the module immediate processing time
+                    slicer.app.processEvents()
+                    qt.QApplication.instance().processEvents()
+                    
+                    # Check if Apply operation created any outputs
+                    print("🔍 Checking Apply operation results...")
+                    
+                    # Look for any new nodes that might have been created
+                    all_nodes_after = slicer.mrmlScene.GetNumberOfNodes()
+                    print(f"  Total nodes in scene after Apply: {all_nodes_after}")
+                    
+                    # Check for slice nodes specifically (these might populate the selectors)
+                    slice_nodes = slicer.util.getNodesByClass('vtkMRMLSliceNode')
+                    print(f"  Found {len(slice_nodes)} slice nodes:")
+                    for i, slice_node in enumerate(slice_nodes):
+                        print(f"    Slice {i}: {slice_node.GetName()}")
+                    
+                    # Look for any error messages or status updates in the module
+                    try:
+                        # Try to get the module logic to check if Apply succeeded
+                        module_manager = slicer.app.moduleManager()
+                        module = module_manager.module('CrossSectionAnalysis')
+                        if module and hasattr(module, 'logic'):
+                            module_logic = module.logic()
+                            print(f"  Module logic found: {module_logic.__class__.__name__}")
+                        else:
+                            print("  No module logic found")
+                    except Exception as logic_error:
+                        print(f"  Error accessing module logic: {logic_error}")
+                    
+                    # Wait for processing to complete with retry mechanism
+                    qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections_with_retry(0))
+                    return True
+                else:
+                    print(f"❌ Apply button found but not enabled: '{apply_button.text}'")
+                    print("  Trying multiple strategies to enable the button...")
+                    
+                    # Strategy 1: Force module to update its state
+                    try:
+                        module_manager = slicer.app.moduleManager()
+                        module = module_manager.module('CrossSectionAnalysis')
+                        if module and hasattr(module, 'logic'):
+                            module_logic = module.logic()
+                            if hasattr(module_logic, 'updateGUIFromMRML'):
+                                module_logic.updateGUIFromMRML()
+                                print("  Tried updating GUI from MRML")
+                    except Exception as e:
+                        print(f"  Strategy 1 failed: {e}")
+                    
+                    # Strategy 2: Re-select the curve to trigger validation
+                    try:
+                        if input_curve_selector and centerline_curve:
+                            input_curve_selector.setCurrentNode(None)
+                            slicer.app.processEvents()
+                            input_curve_selector.setCurrentNode(centerline_curve)
+                            slicer.app.processEvents()
+                            print("  Re-selected centerline curve")
+                    except Exception as e:
+                        print(f"  Strategy 2 failed: {e}")
+                    
+                    # Strategy 3: Wait longer and try multiple times
+                    def retry_apply_multiple_times(attempt=1, max_attempts=5):
+                        print(f"  Retry attempt {attempt}/{max_attempts}")
+                        slicer.app.processEvents()
+                        
+                        if apply_button.enabled:
+                            apply_button.click()
+                            print("Clicked Apply button after retry")
+                            qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
+                        elif attempt < max_attempts:
+                            # Try again after 1 second
+                            qt.QTimer.singleShot(1000, lambda: retry_apply_multiple_times(attempt + 1, max_attempts))
+                        else:
+                            print("❌ Apply button never became enabled after all retries")
+                            print("  This might indicate missing required inputs or module logic issues")
+                    
+                    # Start the retry process
+                    qt.QTimer.singleShot(1000, lambda: retry_apply_multiple_times())
+                    return True
+            else:
+                print("❌ No Apply button found")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Error clicking Apply button: {e}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error in configure_cross_section_module: {e}")
+        return False
+
+def configure_browse_cross_sections():
+    """Configure the browse cross sections settings"""
+    try:
+        print("🎯 Step 3: Configuring browse cross sections...")
+        
+        # Find the Cross-Section Analysis module widget again
+        module_manager = slicer.app.moduleManager()
+        module = module_manager.module('CrossSectionAnalysis')
+        if not module:
+            print("❌ Could not find Cross-Section Analysis module")
+            return False
+            
+        module_widget = module.widgetRepresentation()
+        if not module_widget:
+            print("❌ Module widget is None")
+            return False
+        
+        # Look for the browse cross sections area (likely a collapsible button or group box)
+        browse_widgets = []
+        
+        # Try to find collapsible buttons or group boxes
+        # Import ctk module for collapsible button access
+        try:
+            import ctk
+            collapsible_buttons = module_widget.findChildren(ctk.ctkCollapsibleButton)
+            for cb in collapsible_buttons:
+                if "browse" in cb.text.lower() or "cross" in cb.text.lower():
+                    browse_widgets.append(cb)
+                    print(f"  Found collapsible button: {cb.text}")
+        except Exception as e:
+            print(f"  Could not access ctkCollapsibleButton: {e}")
+        
+        group_boxes = module_widget.findChildren(qt.QGroupBox)
+        for gb in group_boxes:
+            if "browse" in gb.title.lower() or "cross" in gb.title.lower():
+                browse_widgets.append(gb)
+                print(f"  Found group box: {gb.title}")
+        
+        print(f"  Found {len(browse_widgets)} potential browse widgets")
+        
+        # Configure the settings
+        for widget in browse_widgets:
+            try:
+                print(f"  Configuring widget: {widget.__class__.__name__}")
+                
+                # Look for the axial and longitudinal slice view selectors
+                # Based on XML: axialSliceViewSelector and longitudinalSliceViewSelector
+                axial_selector = widget.findChild(slicer.qMRMLNodeComboBox, "axialSliceViewSelector")
+                longitudinal_selector = widget.findChild(slicer.qMRMLNodeComboBox, "longitudinalSliceViewSelector")
+                
+                try:
+                    if axial_selector:
+                        print(f"    Found axial selector: {axial_selector.__class__.__name__}")
+                        # Debug: Show all available items
+                        try:
+                            item_count = axial_selector.count()
+                        except:
+                            item_count = 0
+                        print(f"    Axial selector has {item_count} items:")
+                        for i in range(item_count):
+                            try:
+                                item_text = axial_selector.itemText(i)
+                                print(f"      Item {i}: '{item_text}'")
+                            except:
+                                continue
+                        
+                        # Set Axial to Red (try multiple patterns)
+                        found_red = False
+                        try:
+                            for i in range(axial_selector.count()):
+                                item_text = axial_selector.itemText(i)
+                                if item_text and (item_text == "Red" or "red" in item_text.lower() or "r" == item_text.lower() or "axial" in item_text.lower()):
+                                    axial_selector.setCurrentIndex(i)
+                                    print(f"✅ Set Axial view to: {item_text}")
+                                    found_red = True
+                                    break
+                        except Exception as e:
+                            print(f"    Error in axial pattern matching: {e}")
+                        
+                        if not found_red:
+                            # Try to set to the first non-empty item as fallback
+                            try:
+                                for i in range(axial_selector.count()):
+                                    item_text = axial_selector.itemText(i)
+                                    if item_text and item_text.strip():
+                                        axial_selector.setCurrentIndex(i)
+                                        print(f"🟡 Set Axial view to first available: {item_text}")
+                                        break
+                            except Exception as e:
+                                print(f"    Error in axial fallback: {e}")
+                    else:
+                        print("  Axial selector not found by name, trying generic search...")
+                        # Fallback: look for combo boxes and try to identify by position
+                        combo_boxes = widget.findChildren(slicer.qMRMLNodeComboBox)
+                        print(f"    Found {len(combo_boxes)} combo boxes for axial search")
+                        for j, combo in enumerate(combo_boxes):
+                            try:
+                                print(f"    Checking combo {j}: {combo.__class__.__name__}")
+                                # Check if this combo has slice node options
+                                try:
+                                    item_count = combo.count()
+                                except:
+                                    item_count = 0
+                                print(f"    Combo {j} has {item_count} items")
+                                # Debug: Show all items in this combo
+                                for i in range(item_count):
+                                    item_text = combo.itemText(i)
+                                    print(f"      Item {i}: '{item_text}'")
+                                
+                                # Look for red/axial options
+                                for i in range(item_count):
+                                    item_text = combo.itemText(i)
+                                    if item_text and ("red" in item_text.lower() or "r" == item_text.lower() or "axial" in item_text.lower()):
+                                        combo.setCurrentIndex(i)
+                                        print(f"✅ Set slice view to Red (generic): {item_text}")
+                                        break
+                            except Exception as combo_error:
+                                print(f"    Error with combo {j}: {combo_error}")
+                                continue
+                except Exception as axial_error:
+                    print(f"  Error configuring axial selector: {axial_error}")
+                
+                try:
+                    if longitudinal_selector:
+                        print(f"    Found longitudinal selector: {longitudinal_selector.__class__.__name__}")
+                        # Debug: Show all available items
+                        try:
+                            item_count = longitudinal_selector.count()
+                        except:
+                            item_count = 0
+                        print(f"    Longitudinal selector has {item_count} items:")
+                        for i in range(item_count):
+                            try:
+                                item_text = longitudinal_selector.itemText(i)
+                                print(f"      Item {i}: '{item_text}'")
+                            except:
+                                continue
+                        
+                        # Set Longitudinal to Green (try multiple patterns)
+                        found_green = False
+                        try:
+                            for i in range(longitudinal_selector.count()):
+                                item_text = longitudinal_selector.itemText(i)
+                                if item_text and (item_text == "Green" or "green" in item_text.lower() or "g" == item_text.lower() or "longitudinal" in item_text.lower() or "yellow" in item_text.lower()):
+                                    longitudinal_selector.setCurrentIndex(i)
+                                    print(f"✅ Set Longitudinal view to: {item_text}")
+                                    found_green = True
+                                    break
+                        except Exception as e:
+                            print(f"    Error in longitudinal pattern matching: {e}")
+                        
+                        if not found_green:
+                            # Try to set to the second item or first non-empty item as fallback
+                            try:
+                                for i in range(1, longitudinal_selector.count()):  # Start from index 1 to avoid same as axial
+                                    item_text = longitudinal_selector.itemText(i)
+                                    if item_text and item_text.strip():
+                                        longitudinal_selector.setCurrentIndex(i)
+                                        print(f"🟡 Set Longitudinal view to: {item_text}")
+                                        break
+                            except Exception as e:
+                                print(f"    Error in longitudinal fallback: {e}")
+                    else:
+                        print("  Longitudinal selector not found by name, trying generic search...")
+                        # Fallback: look for combo boxes and try to identify
+                        combo_boxes = widget.findChildren(slicer.qMRMLNodeComboBox)
+                        print(f"    Found {len(combo_boxes)} combo boxes for longitudinal search")
+                        for j, combo in enumerate(combo_boxes):
+                            try:
+                                print(f"    Checking combo {j}: {combo.__class__.__name__}")
+                                # Check if this combo has slice node options
+                                try:
+                                    item_count = combo.count()
+                                except:
+                                    item_count = 0
+                                print(f"    Combo {j} has {item_count} items")
+                                # Debug: Show all items in this combo
+                                for i in range(item_count):
+                                    item_text = combo.itemText(i)
+                                    print(f"      Item {i}: '{item_text}'")
+                                
+                                # Look for green/longitudinal options
+                                for i in range(item_count):
+                                    item_text = combo.itemText(i)
+                                    if item_text and ("green" in item_text.lower() or "g" == item_text.lower() or "longitudinal" in item_text.lower() or "yellow" in item_text.lower()):
+                                        combo.setCurrentIndex(i)
+                                        print(f"✅ Set slice view to Green (generic): {item_text}")
+                                        break
+                            except Exception as combo_error:
+                                print(f"    Error with combo {j}: {combo_error}")
+                                continue
+                except Exception as longitudinal_error:
+                    print(f"  Error configuring longitudinal selector: {longitudinal_error}")
+                
+                # Find slider for Point Index (moveToPointSliderWidget in XML)
+                try:
+                    print("  Looking for point slider...")
+                    # Import ctk module first
+                    import ctk
+                    point_slider = widget.findChild(ctk.ctkSliderWidget, "moveToPointSliderWidget")
+                    if point_slider:
+                        print(f"    Found point slider: {point_slider.__class__.__name__}")
+                        if hasattr(point_slider, 'maximum') and point_slider.maximum > 0:
+                            # Set point index to 230, but ensure it's within the slider's range
+                            target_value = min(230, point_slider.maximum)
+                            point_slider.setValue(target_value)
+                            print(f"✅ Set Point Index to {target_value} (target: 230, max: {point_slider.maximum})")
+                        else:
+                            print("  Point slider found but maximum is 0 or unavailable")
+                    else:
+                        print("  Point slider not found by name, trying generic search...")
+                        # Fallback: look for any sliders
+                        try:
+                            import ctk
+                            sliders = widget.findChildren(ctk.ctkSliderWidget)
+                            print(f"    Found {len(sliders)} ctkSliderWidgets")
+                            for k, slider in enumerate(sliders):
+                                try:
+                                    print(f"    Checking slider {k}: {slider.__class__.__name__}")
+                                    if hasattr(slider, 'maximum') and slider.maximum > 0:
+                                        # Set point index to 230, but ensure it's within the slider's range
+                                        target_value = min(230, slider.maximum)
+                                        slider.setValue(target_value)
+                                        print(f"✅ Set slider to {target_value} (target: 230, max: {slider.maximum})")
+                                        break
+                                except Exception as slider_error:
+                                    print(f"    Error with slider {k}: {slider_error}")
+                                    continue
+                        except Exception as ctk_error:
+                            print(f"    Error with ctkSliderWidget search: {ctk_error}")
+                            # Try Qt sliders as fallback
+                            try:
+                                qt_sliders = widget.findChildren(qt.QSlider)
+                                print(f"    Found {len(qt_sliders)} QSliders")
+                                for k, slider in enumerate(qt_sliders):
+                                    try:
+                                        print(f"    Checking Qt slider {k}: {slider.__class__.__name__}")
+                                        if hasattr(slider, 'maximum') and slider.maximum() > 0:
+                                            # Set point index to 230, but ensure it's within the slider's range
+                                            target_value = min(230, slider.maximum())
+                                            slider.setValue(target_value)
+                                            print(f"✅ Set QSlider to {target_value} (target: 230, max: {slider.maximum()})")
+                                            break
+                                    except Exception as qt_slider_error:
+                                        print(f"    Error with Qt slider {k}: {qt_slider_error}")
+                                        continue
+                            except Exception as qt_error:
+                                print(f"    Error with QSlider search: {qt_error}")
+                except Exception as slider_error:
+                    print(f"  Error configuring point slider: {slider_error}")
+                        
+            except Exception as e:
+                print(f"❌ Error configuring browse widget: {e}")
+                import traceback
+                print(f"  Traceback: {traceback.format_exc()}")
+                continue
+        
+        print("✅ Cross-Section Analysis module configuration completed")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error in configure_browse_cross_sections: {e}")
+        return False
+
+def configure_browse_cross_sections_with_retry(retry_count=0):
+    """
+    Configure browse cross sections - simplified to just set point index to 230
+    """
+    try:
+        print("🎯 Configuring browse cross sections...")
+        
+        # Find the Cross-Section Analysis module widget
+        module_manager = slicer.app.moduleManager()
+        module = module_manager.module('CrossSectionAnalysis')
+        if not module:
+            print("❌ Could not find Cross-Section Analysis module")
+            return False
+            
+        module_widget = module.widgetRepresentation()
+        if not module_widget:
+            print("❌ Module widget is None")
+            return False
+        
+        # Find any browse widgets
+        browse_widgets = []
+        
+        # Look for collapsible buttons
+        try:
+            import ctk
+            collapsible_buttons = module_widget.findChildren(ctk.ctkCollapsibleButton)
+            for cb in collapsible_buttons:
+                if "browse" in cb.text.lower() or "cross" in cb.text.lower():
+                    browse_widgets.append(cb)
+                    print(f"  Found browse widget: {cb.text}")
+        except Exception as e:
+            print(f"  Could not access ctkCollapsibleButton: {e}")
+        
+        # Look for group boxes as fallback
+        group_boxes = module_widget.findChildren(qt.QGroupBox)
+        for gb in group_boxes:
+            if "browse" in gb.title.lower() or "cross" in gb.title.lower():
+                browse_widgets.append(gb)
+                print(f"  Found browse widget: {gb.title}")
+        
+        if not browse_widgets:
+            print("❌ No browse widgets found")
+            return False
+        
+        # Set point index to 230 and configure slice selectors
+        point_set = False
+        selectors_configured = False
+        
+        for widget in browse_widgets:
+            # First, try to set the slice selectors to Red and Green
+            if not selectors_configured:
+                try:
+                    # Look for axial and longitudinal selectors
+                    axial_selector = widget.findChild(slicer.qMRMLNodeComboBox, "axialSliceViewSelector")
+                    longitudinal_selector = widget.findChild(slicer.qMRMLNodeComboBox, "longitudinalSliceViewSelector")
+                    
+                    # If not found by name, try to find any combo boxes
+                    if not axial_selector or not longitudinal_selector:
+                        all_combos = widget.findChildren(slicer.qMRMLNodeComboBox)
+                        if len(all_combos) >= 2:
+                            axial_selector = all_combos[0]  # First combo for axial
+                            longitudinal_selector = all_combos[1]  # Second combo for longitudinal
+                    
+                    # Set axial to Red
+                    if axial_selector:
+                        for i in range(axial_selector.count()):
+                            item_text = axial_selector.itemText(i)
+                            if "Red" in item_text:
+                                axial_selector.setCurrentIndex(i)
+                                print(f"✅ Set Axial selector to: {item_text}")
+                                break
+                    
+                    # Set longitudinal to Green
+                    if longitudinal_selector:
+                        for i in range(longitudinal_selector.count()):
+                            item_text = longitudinal_selector.itemText(i)
+                            if "Green" in item_text:
+                                longitudinal_selector.setCurrentIndex(i)
+                                print(f"✅ Set Longitudinal selector to: {item_text}")
+                                break
+                    
+                    selectors_configured = True
+                    
+                except Exception as e:
+                    print(f"  Could not configure selectors: {e}")
+            
+            # Set point index to 230 on any available slider
+            if not point_set:
+                # Try CTK sliders first (more likely to work in Slicer)
+                try:
+                    import ctk
+                    ctk_sliders = widget.findChildren(ctk.ctkSliderWidget)
+                    for slider in ctk_sliders:
+                        try:
+                            if hasattr(slider, 'setValue') and hasattr(slider, 'maximum'):
+                                max_val = slider.maximum
+                                if max_val > 230:
+                                    slider.setValue(230)
+                                    print(f"✅ Set point index to 230 (max: {max_val})")
+                                    point_set = True
+                                    break
+                        except Exception as e:
+                            continue
+                except:
+                    pass
+                
+                # Try Qt sliders as fallback
+                if not point_set:
+                    qt_sliders = widget.findChildren(qt.QSlider)
+                    for slider in qt_sliders:
+                        try:
+                            if hasattr(slider, 'setValue'):
+                                try:
+                                    max_val = slider.maximum()
+                                except:
+                                    max_val = slider.maximum
+                                
+                                if max_val > 230:
+                                    slider.setValue(230)
+                                    print(f"✅ Set point index to 230 (max: {max_val})")
+                                    point_set = True
+                                    break
+                        except Exception as e:
+                            continue
+            
+            if point_set and selectors_configured:
+                break
+        
+        if point_set or selectors_configured:
+            print("✅ Cross-Section Analysis configuration completed")
+            if point_set:
+                print("  - Point index set to 230")
+            if selectors_configured:
+                print("  - Slice selectors configured (Axial: Red, Longitudinal: Green)")
+            return True
+        else:
+            print("❌ Could not configure any settings")
+            return False
+        
+    except Exception as e:
+        print(f"❌ Error in configure_browse_cross_sections_with_retry: {e}")
+        return False
+
+def apply_transform_to_specific_centerline_nodes(centerline_model=None, centerline_curve=None):
+    """
+    Apply CPR transform to specific centerline nodes (used when specific nodes are known)
+    
+    Args:
+        centerline_model: Specific centerline model node to transform
+        centerline_curve: Specific centerline curve node to transform
+    """
+    try:
+        # Find the straightening transform
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        straightening_transform = None
+        
+        for transform_node in transform_nodes:
+            transform_name = transform_node.GetName().lower()
+            if ('straighten' in transform_name or 
+                'cpr' in transform_name or 
+                'curved' in transform_name):
+                straightening_transform = transform_node
+                break
+        
+        if not straightening_transform and transform_nodes:
+            straightening_transform = transform_nodes[-1]  # Get the most recent
+        
+        if not straightening_transform:
+            pass
+            return False
+        
+        # Apply transform to specific nodes
+        transformed_count = 0
+        
+        if centerline_model:
+            centerline_model.SetAndObserveTransformNodeID(straightening_transform.GetID())
+            transformed_count += 1
+            pass
+        
+        if centerline_curve:
+            centerline_curve.SetAndObserveTransformNodeID(straightening_transform.GetID())
+            transformed_count += 1
+            pass
+        
+        if transformed_count > 0:
+            pass
+            slicer.app.processEvents()
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        pass
+        return False
+
+def apply_cpr_transforms_manually():
+    """
+    Console helper function to manually apply CPR transforms to centerline nodes.
+    Can be called from the Python console if automatic application fails.
+    """
+    try:
+        success = apply_cpr_transform_to_centerlines()
+        if success:
+            print("✓ Successfully applied CPR transforms to centerline nodes")
+            return True
+        else:
+            print("✗ Failed to apply CPR transforms - check if CPR has been applied and centerlines exist")
+            return False
+    except Exception as e:
+        print(f"✗ Error applying CPR transforms: {e}")
+        return False
+
+def list_available_transforms():
+    """
+    Console helper to list all available transform nodes in the scene
+    """
+    try:
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        print("Available transform nodes:")
+        for i, transform in enumerate(transform_nodes):
+            print(f"  {i+1}. {transform.GetName()} (ID: {transform.GetID()})")
+        return transform_nodes
+    except Exception as e:
+        print(f"Error listing transforms: {e}")
+        return []
+
+def list_centerline_nodes():
+    """
+    Console helper to list all potential centerline nodes in the scene
+    """
+    try:
+        print("Potential centerline nodes:")
+        
+        # Check stored workflow references
+        if hasattr(slicer.modules, 'WorkflowCenterlineModel'):
+            model = slicer.modules.WorkflowCenterlineModel
+            if model:
+                print(f"  Stored Model: {model.GetName()} (ID: {model.GetID()})")
+        
+        if hasattr(slicer.modules, 'WorkflowCenterlineCurve'):
+            curve = slicer.modules.WorkflowCenterlineCurve
+            if curve:
+                print(f"  Stored Curve: {curve.GetName()} (ID: {curve.GetID()})")
+        
+        # List all curve nodes
+        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+        print("Curve nodes:")
+        for curve in curve_nodes:
+            print(f"  - {curve.GetName()} (ID: {curve.GetID()})")
+        
+        # List all model nodes that might be centerlines
+        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        print("Model nodes:")
+        for model in model_nodes:
+            name = model.GetName().lower()
+            if ('centerline' in name or 'vmtk' in name or 'model' in name):
+                print(f"  - {model.GetName()} (ID: {model.GetID()})")
+        
+        return True
+    except Exception as e:
+        print(f"Error listing centerline nodes: {e}")
+        return False
 
 def style_crop_apply_button():
     """
@@ -2317,13 +3468,7 @@ def check_crop_completion(original_volume_node):
     Check if a new cropped volume exists, then delete the original, ROI, and continue.
     """
     slicer.modules.CropCheckCount += 1
-    if slicer.modules.CropCheckCount > 60:
-        slicer.modules.CropMonitorTimer.stop()
-        slicer.modules.CropMonitorTimer.timeout.disconnect()
-        del slicer.modules.CropMonitorTimer
-        del slicer.modules.CropCheckCount
-        slicer.util.errorDisplay("Cropping timed out. Please try again.")
-        return
+    # Timeout removed - will monitor indefinitely until crop completion
     volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
     for node in volume_nodes:
         if node is not original_volume_node and 'crop' in node.GetName().lower():
@@ -2763,6 +3908,14 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     Switch to Curved Planar Reformat module and configure it with the centerline
     """
     try:
+        # Store references to centerline nodes for later transform application
+        if centerline_model:
+            slicer.modules.WorkflowCenterlineModel = centerline_model
+            pass
+        if centerline_curve:
+            slicer.modules.WorkflowCenterlineCurve = centerline_curve
+            pass
+        
         slicer.util.selectModule("CurvedPlanarReformat")
         pass
         slicer.app.processEvents()
@@ -7230,4 +8383,91 @@ def fix_extract_centerline_setup_issues():
         
     except Exception as e:
         pass
+
+# =============================================================================
+# CONSOLE IMPORT CODE
+# =============================================================================
+
+"""
+COPY AND PASTE THIS INTO SLICER PYTHON CONSOLE:
+
+exec('''
+# Quick CPR transform functions - copy/paste into Slicer console
+def apply_cpr_transforms_manually():
+    try:
+        transforms = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        cpr_transform = None
+        for t in transforms:
+            name = t.GetName().lower()
+            if any(word in name for word in ['straighten', 'cpr', 'curved', 'planar']):
+                cpr_transform = t
+                break
+        if not cpr_transform and transforms:
+            cpr_transform = transforms[-1]
+        
+        if not cpr_transform:
+            print("✗ No transform found")
+            return False
+            
+        nodes_to_transform = []
+        
+        # Check stored workflow references
+        if hasattr(slicer.modules, 'WorkflowCenterlineModel'):
+            model = slicer.modules.WorkflowCenterlineModel
+            if model: nodes_to_transform.append(model)
+        if hasattr(slicer.modules, 'WorkflowCenterlineCurve'):
+            curve = slicer.modules.WorkflowCenterlineCurve
+            if curve: nodes_to_transform.append(curve)
+        
+        # Find centerline curves and models
+        for curve in slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode'):
+            if any(word in curve.GetName().lower() for word in ['centerline', 'curve']):
+                if curve not in nodes_to_transform: nodes_to_transform.append(curve)
+        
+        for model in slicer.util.getNodesByClass('vtkMRMLModelNode'):
+            if any(word in model.GetName().lower() for word in ['centerline', 'vmtk']):
+                if model not in nodes_to_transform: nodes_to_transform.append(model)
+        
+        transformed = 0
+        for node in nodes_to_transform:
+            current_transform = node.GetParentTransformNode()
+            if not current_transform or current_transform.GetID() != cpr_transform.GetID():
+                node.SetAndObserveTransformNodeID(cpr_transform.GetID())
+                transformed += 1
+                print(f"✓ Applied transform to: {node.GetName()}")
+        
+        if transformed > 0:
+            slicer.app.processEvents()
+            print(f"✓ Applied CPR transform to {transformed} centerline nodes")
+            return True
+        else:
+            print("✗ No centerline nodes found to transform")
+            return False
+            
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return False
+
+def list_transforms():
+    transforms = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+    print("Available transforms:")
+    for i, t in enumerate(transforms):
+        print(f"  {i+1}. {t.GetName()}")
+    return transforms
+
+def list_centerlines():
+    print("Centerline nodes:")
+    for curve in slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode'):
+        print(f"  Curve: {curve.GetName()}")
+    for model in slicer.util.getNodesByClass('vtkMRMLModelNode'):
+        if any(word in model.GetName().lower() for word in ['centerline', 'vmtk']):
+            print(f"  Model: {model.GetName()}")
+
+print("✓ CPR functions loaded. Available commands:")
+print("  apply_cpr_transforms_manually() - Apply CPR transform to centerlines")
+print("  list_transforms() - List all transforms")
+print("  list_centerlines() - List centerline nodes")
+''')
+
+"""
 
