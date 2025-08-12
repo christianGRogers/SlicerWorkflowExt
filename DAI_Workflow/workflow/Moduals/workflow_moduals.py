@@ -2321,6 +2321,10 @@ def configure_cross_section_module():
                     
                     # Wait for processing to complete
                     qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
+                    
+                    # Collapse the Parameters tab after Apply has been clicked
+                    qt.QTimer.singleShot(1000, lambda: collapse_parameters_tab())
+                    
                     return True
 
 
@@ -2328,6 +2332,68 @@ def configure_cross_section_module():
         except Exception as e:
             return False
             
+    except Exception as e:
+        return False
+
+def collapse_parameters_tab():
+    """
+    Collapse the Parameters tab in the Cross-Section Analysis module after Apply has been clicked
+    """
+    try:
+        # Find the Cross-Section Analysis module widget
+        module_manager = slicer.app.moduleManager()
+        module = module_manager.module('CrossSectionAnalysis')
+        if not module:
+            return False
+            
+        module_widget = module.widgetRepresentation()
+        if not module_widget:
+            return False
+        
+        # Look for collapsible buttons or group boxes that might contain "Parameters"
+        try:
+            import ctk
+            collapsible_buttons = module_widget.findChildren(ctk.ctkCollapsibleButton)
+            for cb in collapsible_buttons:
+                button_text = cb.text if hasattr(cb, 'text') else ""
+                if "parameter" in button_text.lower():
+                    if cb.collapsed == False:  # If it's currently expanded
+                        cb.collapsed = True    # Collapse it
+                        return True
+                    else:
+                        return True
+        except Exception as ctk_error:
+            pass
+        
+        # Also try QGroupBox as fallback
+        group_boxes = module_widget.findChildren(qt.QGroupBox)
+        for gb in group_boxes:
+            box_title = gb.title if hasattr(gb, 'title') else ""
+            if "parameter" in box_title.lower():
+                # For QGroupBox, try to hide or minimize
+                if hasattr(gb, 'setVisible'):
+                    gb.setVisible(False)
+                    return True
+        
+        # Try finding any widget with "parameter" in the name or text
+        all_widgets = module_widget.findChildren(qt.QWidget)
+        for widget in all_widgets:
+            # Check object name
+            if hasattr(widget, 'objectName') and widget.objectName():
+                if "parameter" in widget.objectName().lower():
+                    if hasattr(widget, 'setVisible'):
+                        widget.setVisible(False)
+                        return True
+            
+            # Check if it's a collapsible widget with parameter text
+            if hasattr(widget, 'text') and widget.text:
+                if "parameter" in widget.text().lower():
+                    if hasattr(widget, 'collapsed'):
+                        widget.collapsed = True
+                        return True
+        
+        return False
+        
     except Exception as e:
         return False
 
