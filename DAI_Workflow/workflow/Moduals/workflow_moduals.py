@@ -3428,6 +3428,48 @@ def stop_centerline_monitoring():
     except Exception as e:
         pass
 
+def hide_threshold_segmentation_mask():
+    """
+    Hide threshold segmentation masks of the form ThresholdSegmentation_XXX.X_XXXX.X
+    after the CPR module is opened
+    """
+    try:
+        # Find all segmentation nodes
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        
+        for seg_node in segmentation_nodes:
+            node_name = seg_node.GetName()
+            
+            # Check if node name matches the pattern ThresholdSegmentation_XXX.X_XXXX.X
+            if node_name.startswith("ThresholdSegmentation_") and "_" in node_name:
+                print(f"Hiding threshold segmentation: {node_name}")
+                
+                # Hide the segmentation node
+                display_node = seg_node.GetDisplayNode()
+                if display_node:
+                    # Hide in 2D views
+                    display_node.SetVisibility2D(False)
+                    # Hide in 3D views
+                    display_node.SetVisibility3D(False)
+                    # Hide overall visibility
+                    display_node.SetVisibility(False)
+                    
+                    # Also hide individual segments
+                    segmentation = seg_node.GetSegmentation()
+                    if segmentation:
+                        for i in range(segmentation.GetNumberOfSegments()):
+                            segment_id = segmentation.GetNthSegmentID(i)
+                            display_node.SetSegmentVisibility2D(segment_id, False)
+                            display_node.SetSegmentVisibility3D(segment_id, False)
+                            display_node.SetSegmentVisibility(segment_id, False)
+            
+        
+        # Force refresh of slice views
+        slicer.app.processEvents()
+        
+    except Exception as e:
+        print(f"Error hiding threshold segmentation mask: {e}")
+
 def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     """
     Switch to Curved Planar Reformat module and configure it with the centerline
@@ -3444,6 +3486,10 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         slicer.util.selectModule("CurvedPlanarReformat")
         pass
         slicer.app.processEvents()
+        
+        # Hide threshold segmentation mask after opening CPR module
+        hide_threshold_segmentation_mask()
+        
         setup_cpr_module()
         create_point_list_and_prompt()
         
