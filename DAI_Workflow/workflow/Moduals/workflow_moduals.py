@@ -1175,34 +1175,25 @@ def setup_centerline_module():
                             pass
                             segmentation_set = True
                             break
-                    
-                    if not segmentation_set:
-                        pass
+
                     slicer.app.processEvents()
                     workflow_segment_id = workflow_segmentation.GetAttribute("WorkflowCreatedSegmentID")
                     if workflow_segment_id:
                         segmentation = workflow_segmentation.GetSegmentation()
                         segment = segmentation.GetSegment(workflow_segment_id)
                         if segment:
-                            pass
                             segment.SetTag("Segmentation.Status", "completed")
                             segment_set = False
                             for selector_name in ['inputSegmentSelector', 'segmentSelector', 'inputSurfaceSegmentSelector']:
                                 if hasattr(centerline_module.ui, selector_name):
                                     try:
                                         getattr(centerline_module.ui, selector_name).setCurrentSegmentID(workflow_segment_id)
-                                        pass
                                         segment_set = True
                                         break
                                     except Exception as e:
                                         pass
-                            
-                            if not segment_set:
-                                pass
-                        else:
-                            pass
+
                     else:
-                        pass
                         segmentation = workflow_segmentation.GetSegmentation()
                         segment_ids = vtk.vtkStringArray()
                         segmentation.GetSegmentIDs(segment_ids)
@@ -1210,7 +1201,6 @@ def setup_centerline_module():
                             first_segment_id = segment_ids.GetValue(0)
                             first_segment = segmentation.GetSegment(first_segment_id)
                             if first_segment:
-                                pass
                                 first_segment.SetTag("Segmentation.Status", "completed")
                     
                     try:
@@ -1225,10 +1215,7 @@ def setup_centerline_module():
                             endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
                             if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
                                 endpoints_selector.setCurrentNode(endpoint_point_list)
-                                pass
                                 endpoint_set = True
-                            else:
-                                pass
                         
                         # Fallback to old method if XML-based approach failed
                         if not endpoints_selector:
@@ -1236,25 +1223,19 @@ def setup_centerline_module():
                             for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
                                 if hasattr(centerline_module.ui, endpoint_selector_attr):
                                     getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
-                                    pass
                                     endpoint_set = True
                                     break
-                            
-                            if not endpoint_set:
-                                pass
                         
                         # Set this as the active node for point placement
                         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
                         if selectionNode:
                             selectionNode.SetActivePlaceNodeID(endpoint_point_list.GetID())
-                            pass
                         
                         # Enable point placement mode with multiple points
                         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
                         if interactionNode:
                             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
                             interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
-                            pass
                         
                         # Try to configure the place widget
                         if extract_centerline_widget:
@@ -1262,15 +1243,12 @@ def setup_centerline_module():
                             if place_widget:
                                 if hasattr(place_widget, 'setCurrentNode'):
                                     place_widget.setCurrentNode(endpoint_point_list)
-                                    pass
                                 if hasattr(place_widget, 'setPlaceModeEnabled'):
                                     place_widget.setPlaceModeEnabled(True)
-                                    pass
                         
                         for create_new_attr in ['createNewEndpointsCheckBox', 'createNewPointListCheckBox']:
                             if hasattr(centerline_module.ui, create_new_attr):
                                 getattr(centerline_module.ui, create_new_attr).setChecked(True)
-                                pass
                                 
                     except Exception as e:
                         pass
@@ -1293,8 +1271,6 @@ def setup_centerline_module():
                         for create_new_model_attr in ['createNewModelCheckBox', 'createNewCenterlineModelCheckBox']:
                             if hasattr(centerline_module.ui, create_new_model_attr):
                                 getattr(centerline_module.ui, create_new_model_attr).setChecked(True)
-                                pass
-                                
                     except Exception as e:
                         pass
                     try:
@@ -1302,27 +1278,23 @@ def setup_centerline_module():
                             tree_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
                             tree_model.SetName("CenterlineTree")
                             centerline_module.ui.outputTreeModelSelector.setCurrentNode(tree_model)
-                            pass
 
                         if hasattr(centerline_module.ui, 'outputTreeCurveSelector'):
                             tree_curve = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
                             tree_curve.SetName("CenterlineCurve")
                             centerline_module.ui.outputTreeCurveSelector.setCurrentNode(tree_curve)
-                            pass
                         
                         for tree_model_attr in ['treeModelSelector']:
                             if hasattr(centerline_module.ui, tree_model_attr):
                                 tree_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
                                 tree_model.SetName("CenterlineTree")
                                 getattr(centerline_module.ui, tree_model_attr).setCurrentNode(tree_model)
-                                pass
                         
                         for tree_curve_attr in ['outputCenterlineCurveSelector', 'centerlineCurveSelector', 'treeCurveSelector']:
                             if hasattr(centerline_module.ui, tree_curve_attr):
                                 tree_curve = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
                                 tree_curve.SetName("CenterlineCurve")
                                 getattr(centerline_module.ui, tree_curve_attr).setCurrentNode(tree_curve)
-                                pass
                                 
                     except Exception as e:
                         pass
@@ -1331,16 +1303,11 @@ def setup_centerline_module():
                     slicer.app.processEvents()
                     time.sleep(0.2)
                     slicer.app.processEvents()
-                    
-        pass
         add_large_centerline_apply_button()
         
         # Give GUI more time to fully initialize before verification
         slicer.app.processEvents()
         time.sleep(0.3)
-        
-        # Verify the setup worked correctly
-        pass
         verification_results = verify_extract_centerline_point_list_autoselection()
         
         if not verification_results["success"]:
@@ -1350,11 +1317,6 @@ def setup_centerline_module():
             time.sleep(0.2)
             slicer.app.processEvents()
             verification_results = verify_extract_centerline_point_list_autoselection()
-            
-            if verification_results["success"]:
-                pass
-            else:
-                pass
         
         prompt_for_endpoints()
         
@@ -1377,17 +1339,11 @@ def prepare_surface_for_centerline(segmentation_node):
                 segment.SetTag("Segmentation.Status", "completed")
                 closed_surface_rep_name = slicer.vtkSegmentationConverter.GetSegmentationClosedSurfaceRepresentationName()
                 if not segment.HasRepresentation(closed_surface_rep_name):
-                    pass
                     segmentation_node.CreateClosedSurfaceRepresentation()
-                
-                pass
         segmentation_node.Modified()
-        
-        pass
         return True
         
     except Exception as e:
-        pass
         return False
 
 def remove_default_segment(segmentation_node):
@@ -1410,15 +1366,8 @@ def remove_default_segment(segmentation_node):
                     segment_id != workflow_segment_id and 
                     not segment_name.startswith("ThresholdSegment_")):
                     segments_to_remove.append(segment_id)
-                    pass
         for segment_id in segments_to_remove:
             segmentation.RemoveSegment(segment_id)
-            pass
-        
-        if segments_to_remove:
-            pass
-        else:
-            pass
             
     except Exception as e:
         pass
@@ -1441,14 +1390,8 @@ def remove_segment_from_all_segmentations(segment_name):
                 segment = segmentation.GetSegment(segment_id)
                 if segment and segment.GetName() == segment_name:
                     segmentation.RemoveSegment(segment_id)
-                    pass
                     removed_count += 1
                     break 
-        
-        if removed_count == 0:
-            pass
-        else:
-            pass
             
     except Exception as e:
         pass
@@ -1462,13 +1405,11 @@ def add_large_crop_apply_button():
     try:
         # Check if scissors workflow is active - if so, don't create the apply button
         if hasattr(slicer.modules, 'WorkflowScissorsButton') or hasattr(slicer.modules, 'WorkflowFinishButton'):
-            pass
             return True
         
         if hasattr(slicer.modules, 'CropLargeApplyButton'):
             existing_button = slicer.modules.CropLargeApplyButton
             if existing_button and existing_button.parent():
-                pass
                 return True
         
         def create_large_button():
@@ -1476,15 +1417,10 @@ def add_large_crop_apply_button():
                 if hasattr(slicer.modules, 'CropLargeApplyButton'):
                     existing_button = slicer.modules.CropLargeApplyButton
                     if existing_button and existing_button.parent():
-                        pass
                         return True
                 
-                pass
                 crop_widget = slicer.modules.cropvolume.widgetRepresentation()
-                pass
-                pass
-                pass
-                
+
                 if crop_widget:
                     crop_module = None
                     
@@ -2385,6 +2321,10 @@ def configure_cross_section_module():
                     
                     # Wait for processing to complete
                     qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
+                    
+                    # Collapse the Parameters tab after Apply has been clicked
+                    qt.QTimer.singleShot(1000, lambda: collapse_parameters_tab())
+                    
                     return True
 
 
@@ -2392,6 +2332,68 @@ def configure_cross_section_module():
         except Exception as e:
             return False
             
+    except Exception as e:
+        return False
+
+def collapse_parameters_tab():
+    """
+    Collapse the Parameters tab in the Cross-Section Analysis module after Apply has been clicked
+    """
+    try:
+        # Find the Cross-Section Analysis module widget
+        module_manager = slicer.app.moduleManager()
+        module = module_manager.module('CrossSectionAnalysis')
+        if not module:
+            return False
+            
+        module_widget = module.widgetRepresentation()
+        if not module_widget:
+            return False
+        
+        # Look for collapsible buttons or group boxes that might contain "Parameters"
+        try:
+            import ctk
+            collapsible_buttons = module_widget.findChildren(ctk.ctkCollapsibleButton)
+            for cb in collapsible_buttons:
+                button_text = cb.text if hasattr(cb, 'text') else ""
+                if "parameter" in button_text.lower():
+                    if cb.collapsed == False:  # If it's currently expanded
+                        cb.collapsed = True    # Collapse it
+                        return True
+                    else:
+                        return True
+        except Exception as ctk_error:
+            pass
+        
+        # Also try QGroupBox as fallback
+        group_boxes = module_widget.findChildren(qt.QGroupBox)
+        for gb in group_boxes:
+            box_title = gb.title if hasattr(gb, 'title') else ""
+            if "parameter" in box_title.lower():
+                # For QGroupBox, try to hide or minimize
+                if hasattr(gb, 'setVisible'):
+                    gb.setVisible(False)
+                    return True
+        
+        # Try finding any widget with "parameter" in the name or text
+        all_widgets = module_widget.findChildren(qt.QWidget)
+        for widget in all_widgets:
+            # Check object name
+            if hasattr(widget, 'objectName') and widget.objectName():
+                if "parameter" in widget.objectName().lower():
+                    if hasattr(widget, 'setVisible'):
+                        widget.setVisible(False)
+                        return True
+            
+            # Check if it's a collapsible widget with parameter text
+            if hasattr(widget, 'text') and widget.text:
+                if "parameter" in widget.text().lower():
+                    if hasattr(widget, 'collapsed'):
+                        widget.collapsed = True
+                        return True
+        
+        return False
+        
     except Exception as e:
         return False
 
@@ -3492,6 +3494,48 @@ def stop_centerline_monitoring():
     except Exception as e:
         pass
 
+def hide_threshold_segmentation_mask():
+    """
+    Hide threshold segmentation masks of the form ThresholdSegmentation_XXX.X_XXXX.X
+    after the CPR module is opened
+    """
+    try:
+        # Find all segmentation nodes
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        
+        for seg_node in segmentation_nodes:
+            node_name = seg_node.GetName()
+            
+            # Check if node name matches the pattern ThresholdSegmentation_XXX.X_XXXX.X
+            if node_name.startswith("ThresholdSegmentation_") and "_" in node_name:
+                print(f"Hiding threshold segmentation: {node_name}")
+                
+                # Hide the segmentation node
+                display_node = seg_node.GetDisplayNode()
+                if display_node:
+                    # Hide in 2D views
+                    display_node.SetVisibility2D(False)
+                    # Hide in 3D views
+                    display_node.SetVisibility3D(False)
+                    # Hide overall visibility
+                    display_node.SetVisibility(False)
+                    
+                    # Also hide individual segments
+                    segmentation = seg_node.GetSegmentation()
+                    if segmentation:
+                        for i in range(segmentation.GetNumberOfSegments()):
+                            segment_id = segmentation.GetNthSegmentID(i)
+                            display_node.SetSegmentVisibility2D(segment_id, False)
+                            display_node.SetSegmentVisibility3D(segment_id, False)
+                            display_node.SetSegmentVisibility(segment_id, False)
+            
+        
+        # Force refresh of slice views
+        slicer.app.processEvents()
+        
+    except Exception as e:
+        print(f"Error hiding threshold segmentation mask: {e}")
+
 def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     """
     Switch to Curved Planar Reformat module and configure it with the centerline
@@ -3508,6 +3552,10 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         slicer.util.selectModule("CurvedPlanarReformat")
         pass
         slicer.app.processEvents()
+        
+        # Hide threshold segmentation mask after opening CPR module
+        hide_threshold_segmentation_mask()
+        
         setup_cpr_module()
         create_point_list_and_prompt()
         
@@ -3957,6 +4005,32 @@ def create_point_placement_controls():
         export_button.connect('clicked()', lambda: export_project_and_continue())
         layout.addWidget(export_button)
         
+        # Add AnalysisMasks toggle button
+        masks_toggle_button = qt.QPushButton("Hide AnalysisMasks")
+        masks_toggle_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #17a2b8; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+            }
+            QPushButton:hover { 
+                background-color: #138496; 
+            }
+            QPushButton:pressed { 
+                background-color: #0f6674; 
+            }
+        """)
+        masks_toggle_button.connect('clicked()', lambda: toggle_analysis_masks_visibility(masks_toggle_button))
+        layout.addWidget(masks_toggle_button)
+        
+        # Store reference to the button for later access
+        slicer.modules.AnalysisMasksToggleButton = masks_toggle_button
+        
         # Add stenosis ratio button
         stenosis_button = qt.QPushButton("Add Stenosis Ratio")
         stenosis_button.setStyleSheet("""
@@ -4321,6 +4395,74 @@ def clear_all_points_from_scene(count_label):
     except Exception as e:
         pass
         slicer.util.errorDisplay(f"Could not clear points: {str(e)}")
+
+def toggle_analysis_masks_visibility(toggle_button):
+    """
+    Toggle visibility of AnalysisMasks nodes in the scene
+    """
+    try:
+        # Find all nodes that contain "AnalysisMasks" in their name
+        all_nodes = []
+        
+        # Check different types of nodes that might contain AnalysisMasks
+        node_classes = [
+            'vtkMRMLSegmentationNode',
+            'vtkMRMLModelNode', 
+            'vtkMRMLVolumeNode',
+            'vtkMRMLMarkupsNode'
+        ]
+        
+        analysis_mask_nodes = []
+        for node_class in node_classes:
+            nodes = slicer.util.getNodesByClass(node_class)
+            for node in nodes:
+                if "AnalysisMasks" in node.GetName():
+                    analysis_mask_nodes.append(node)
+        
+        if not analysis_mask_nodes:
+            print("No AnalysisMasks nodes found in the scene")
+            return
+        
+        # Determine current visibility state (check the first node)
+        first_node = analysis_mask_nodes[0]
+        current_visibility = True
+        
+        # Check visibility based on node type
+        if hasattr(first_node, 'GetDisplayNode') and first_node.GetDisplayNode():
+            display_node = first_node.GetDisplayNode()
+            if hasattr(display_node, 'GetVisibility'):
+                current_visibility = display_node.GetVisibility()
+        
+        # Toggle visibility for all AnalysisMasks nodes
+        new_visibility = not current_visibility
+        
+        for node in analysis_mask_nodes:
+            if hasattr(node, 'GetDisplayNode') and node.GetDisplayNode():
+                display_node = node.GetDisplayNode()
+                if hasattr(display_node, 'SetVisibility'):
+                    display_node.SetVisibility(new_visibility)
+            
+            # For segmentation nodes, also handle segment visibility
+            if node.IsA('vtkMRMLSegmentationNode'):
+                segmentation = node.GetSegmentation()
+                if segmentation:
+                    for i in range(segmentation.GetNumberOfSegments()):
+                        segment_id = segmentation.GetNthSegmentID(i)
+                        display_node = node.GetDisplayNode()
+                        if display_node:
+                            display_node.SetSegmentVisibility(segment_id, new_visibility)
+        
+        # Update button text
+        if new_visibility:
+            toggle_button.setText("Hide AnalysisMasks")
+            print(f"Showing {len(analysis_mask_nodes)} AnalysisMasks nodes")
+        else:
+            toggle_button.setText("Show AnalysisMasks")
+            print(f"Hiding {len(analysis_mask_nodes)} AnalysisMasks nodes")
+        
+    except Exception as e:
+        print(f"Error toggling AnalysisMasks visibility: {e}")
+        slicer.util.errorDisplay(f"Could not toggle AnalysisMasks visibility: {str(e)}")
 
 def create_stenosis_ratio_measurement():
     """
