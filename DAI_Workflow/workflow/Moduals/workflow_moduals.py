@@ -1351,11 +1351,141 @@ def setup_centerline_module():
         # Give GUI more time to fully initialize before verification
         slicer.app.processEvents()
         time.sleep(0.3)
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        
+        if not verification_results["success"]:
+            pass
+            fix_extract_centerline_setup_issues()
+            # Re-verify after fixes
+            time.sleep(0.2)
+            slicer.app.processEvents()
+            verification_results = verify_extract_centerline_point_list_autoselection()
         
         prompt_for_endpoints()
         
     except Exception as e:
         pass
+
+def verify_extract_centerline_point_list_autoselection():
+    """
+    Verify that the Extract Centerline module has "Add multiple points" (SetPlaceModePersistence) properly enabled
+    """
+    try:
+        verification_results = {
+            "success": False,
+            "interaction_mode_enabled": False,
+            "place_mode_persistence": False,
+            "active_node_set": False,
+            "details": []
+        }
+        
+        # Check interaction node settings
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            # Check if interaction mode is set to Place
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            place_mode = interactionNode.Place
+            if current_mode == place_mode:
+                verification_results["interaction_mode_enabled"] = True
+                verification_results["details"].append("✓ Interaction mode set to Place")
+            else:
+                verification_results["details"].append(f"✗ Interaction mode is {current_mode}, expected {place_mode}")
+            
+            # Check if place mode persistence is enabled (this is the "Add multiple points" setting)
+            place_persistence = interactionNode.GetPlaceModePersistence()
+            if place_persistence == 1:
+                verification_results["place_mode_persistence"] = True
+                verification_results["details"].append("✓ Place mode persistence enabled (Add multiple points)")
+            else:
+                verification_results["details"].append(f"✗ Place mode persistence is {place_persistence}, expected 1")
+        else:
+            verification_results["details"].append("✗ Could not find interaction node")
+        
+        # Check if active node is set for point placement
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            active_node_id = selectionNode.GetActivePlaceNodeID()
+            if active_node_id:
+                active_node = slicer.mrmlScene.GetNodeByID(active_node_id)
+                if active_node and "Endpoints" in active_node.GetName():
+                    verification_results["active_node_set"] = True
+                    verification_results["details"].append(f"✓ Active place node set: {active_node.GetName()}")
+                else:
+                    verification_results["details"].append(f"✗ Active place node set but not endpoints node: {active_node.GetName() if active_node else 'Unknown'}")
+            else:
+                verification_results["details"].append("✗ No active place node set")
+        else:
+            verification_results["details"].append("✗ Could not find selection node")
+        
+        # Overall success check
+        verification_results["success"] = (
+            verification_results["interaction_mode_enabled"] and 
+            verification_results["place_mode_persistence"] and 
+            verification_results["active_node_set"]
+        )
+        
+        # Report results
+        if verification_results["success"]:
+            pass  # print("✓ Extract Centerline point placement verification passed")
+        else:
+            pass  # print("✗ Extract Centerline point placement verification failed:")
+            # for detail in verification_results["details"]:
+            #     print(f"  {detail}")
+        
+        return verification_results
+        
+    except Exception as e:
+        pass
+        return {
+            "success": False,
+            "interaction_mode_enabled": False,
+            "place_mode_persistence": False,
+            "active_node_set": False,
+            "details": [f"Error during verification: {str(e)}"]
+        }
+
+def fix_extract_centerline_setup_issues():
+    """
+    Fix common issues with Extract Centerline setup to ensure "Add multiple points" is properly enabled
+    """
+    try:
+        fixes_applied = []
+        
+        # Fix interaction node settings
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            # Ensure interaction mode is set to Place
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            if current_mode != interactionNode.Place:
+                interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+                fixes_applied.append("Set interaction mode to Place")
+            
+            # Ensure place mode persistence is enabled (Add multiple points)
+            if interactionNode.GetPlaceModePersistence() != 1:
+                interactionNode.SetPlaceModePersistence(1)
+                fixes_applied.append("Enabled place mode persistence (Add multiple points)")
+        
+        # Fix active node setting
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            active_node_id = selectionNode.GetActivePlaceNodeID()
+            if not active_node_id:
+                # Try to find the endpoints node and set it as active
+                fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+                for node in fiducial_nodes:
+                    if "Endpoints" in node.GetName():
+                        selectionNode.SetActivePlaceNodeID(node.GetID())
+                        fixes_applied.append(f"Set active place node to {node.GetName()}")
+                        break
+        
+        if fixes_applied:
+            pass  # print(f"Applied fixes: {', '.join(fixes_applied)}")
+            slicer.app.processEvents()  # Allow UI to update
+        else:
+            pass  # print("No fixes needed to be applied")
+            
+    except Exception as e:
+        pass  # print(f"Error applying fixes: {str(e)}")
 
 def prepare_surface_for_centerline(segmentation_node):
     """
@@ -7834,4 +7964,123 @@ def fix_extract_centerline_setup_issues():
         slicer.app.processEvents()     
     except Exception as e:
         pass
+
+def test_extract_centerline_verification():
+    """
+    Test the Extract Centerline verification functions
+    """
+    try:
+        print("=== Testing Extract Centerline Verification ===")
+        
+        # First, open the Extract Centerline module if not already open
+        current_module = slicer.util.selectedModule()
+        if current_module != "ExtractCenterline":
+            slicer.util.selectModule("ExtractCenterline")
+            slicer.app.processEvents()
+            setup_centerline_module()
+        
+        # Run the verification
+        print("Running verification...")
+        results = verify_extract_centerline_point_list_autoselection()
+        
+        print(f"Verification Success: {results['success']}")
+        print(f"Interaction Mode Enabled: {results['interaction_mode_enabled']}")
+        print(f"Place Mode Persistence: {results['place_mode_persistence']}")
+        print(f"Active Node Set: {results['active_node_set']}")
+        
+        print("\nDetailed Results:")
+        for detail in results['details']:
+            print(f"  {detail}")
+        
+        if not results['success']:
+            print("\nApplying fixes...")
+            fix_extract_centerline_setup_issues()
+            
+            print("Re-running verification after fixes...")
+            results_after_fix = verify_extract_centerline_point_list_autoselection()
+            print(f"Verification Success After Fix: {results_after_fix['success']}")
+            
+            print("\nDetailed Results After Fix:")
+            for detail in results_after_fix['details']:
+                print(f"  {detail}")
+        
+        print("=== Extract Centerline Verification Test Complete ===")
+        return results
+        
+    except Exception as e:
+        print(f"Error during Extract Centerline verification test: {str(e)}")
+        return None
+
+def test_extract_centerline_setup_with_verification():
+    """
+    Test the complete Extract Centerline setup process with verification
+    """
+    try:
+        print("=== Testing Extract Centerline Setup with Verification ===")
+        
+        # Open Extract Centerline module
+        slicer.util.selectModule("ExtractCenterline")
+        slicer.app.processEvents()
+        
+        # Run full setup
+        print("Setting up Extract Centerline module...")
+        setup_centerline_module()
+        
+        # Verify the setup
+        print("Verifying setup...")
+        results = verify_extract_centerline_point_list_autoselection()
+        
+        print(f"Setup Verification: {'PASSED' if results['success'] else 'FAILED'}")
+        
+        if results['success']:
+            print("✓ Extract Centerline module is properly configured")
+            print("✓ 'Add multiple points' mode is auto-selected")
+            print("✓ Ready for endpoint placement")
+        else:
+            print("✗ Extract Centerline setup has issues:")
+            for detail in results['details']:
+                if "✗" in detail:
+                    print(f"  {detail}")
+        
+        print("=== Extract Centerline Setup Test Complete ===")
+        return results
+        
+    except Exception as e:
+        print(f"Error during Extract Centerline setup test: {str(e)}")
+        return None
+
+def fix_centerline_issues():
+    """
+    Comprehensive function to fix various Extract Centerline module issues
+    """
+    try:
+        print("=== Fixing Extract Centerline Issues ===")
+        
+        # Ensure we're in the right module
+        slicer.util.selectModule("ExtractCenterline")
+        slicer.app.processEvents()
+        
+        # Run the setup fixes
+        fix_extract_centerline_setup_issues()
+        
+        # Re-run setup if needed
+        setup_centerline_module()
+        
+        # Final verification
+        results = verify_extract_centerline_point_list_autoselection()
+        
+        if results['success']:
+            print("✓ All Extract Centerline issues have been resolved")
+        else:
+            print("✗ Some issues remain after attempted fixes:")
+            for detail in results['details']:
+                if "✗" in detail:
+                    print(f"  {detail}")
+        
+        print("=== Extract Centerline Fix Complete ===")
+        return results['success']
+        
+    except Exception as e:
+        print(f"Error during Extract Centerline fix: {str(e)}")
+        return False
 
