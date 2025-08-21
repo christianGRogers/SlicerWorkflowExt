@@ -4219,7 +4219,7 @@ def create_point_placement_controls():
         layout.addWidget(title_label)
 
         instruction_label = qt.QLabel(
-            "Place points: 1:pre-lesion → 2:post-lesion → 3:start-slice → 4:end-slice"
+            "Place points: 1:pre-lesion → 2:post-lesion → 3+:start-slice-1,2,3... → N+:end-slice-1,2,3..."
         )
         instruction_label.setStyleSheet("QLabel { color: #333; margin: 5px; }")
         instruction_label.setWordWrap(True)
@@ -4465,6 +4465,7 @@ def setup_point_count_observer(point_list, count_label):
 def on_point_added(point_list, count_label):
     """
     Handle point addition events - update display and ensure placement mode stays active
+    Provides feedback for the enhanced workflow with multiple start/end slices
     """
     try:
         # Update the display first
@@ -4476,22 +4477,32 @@ def on_point_added(point_list, count_label):
         # Get current point count for feedback
         point_count = point_list.GetNumberOfControlPoints()
         
-        # Provide feedback about what point was just placed
-        point_names = ["pre-lesion", "post-lesion", "start-slice", "end-slice"]
-        if point_count <= len(point_names):
-            point_name = point_names[point_count - 1]
-            pass
-            pass
-        else:
-            pass
-            pass
-            
+        # Provide feedback about what point was just placed and what's next
+        if point_count == 1:
+            pass  # Just placed pre-lesion
+        elif point_count == 2:
+            pass  # Just placed post-lesion
+        elif point_count >= 3:
+            # For points 3 and beyond, they alternate between start and end slices
+            if (point_count - 3) % 2 == 0:  # Just placed a start slice
+                start_num = ((point_count - 3) // 2) + 1
+                pass  # Just placed start-slice-{start_num}
+            else:  # Just placed an end slice
+                end_num = ((point_count - 3) // 2) + 1
+                pass  # Just placed end-slice-{end_num}
+        
         # Provide next step guidance
-        if point_count < 4:
-            next_point = point_names[point_count] if point_count < len(point_names) else f"point {point_count + 1}"
-            pass
-        elif point_count == 4:
-            pass
+        if point_count == 1:
+            pass  # Next: place post-lesion point
+        elif point_count == 2:
+            pass  # Next: place first start-slice point
+        elif point_count >= 3:
+            if (point_count - 2) % 2 == 1:  # Just placed a start slice
+                end_num = ((point_count - 3) // 2) + 1
+                pass  # Next: place corresponding end-slice-{end_num}
+            else:  # Just placed an end slice
+                start_num = ((point_count - 2) // 2) + 1
+                pass  # Next: place start-slice-{start_num} or finish
         
     except Exception as e:
         pass
@@ -4511,8 +4522,8 @@ def update_point_count_display_for_current_list(count_label):
             # Automatically re-enable point placement mode after each point is added
             ensure_point_placement_mode_active(current_point_list)
             
-            # Check if we have all 4 points (pre-lesion, post-lesion, start-slice, end-slice) to create circles
-            if current_point_list.GetNumberOfControlPoints() == 4:
+            # Check if we have minimum required points (pre-lesion, post-lesion, at least one start-slice, one end-slice)
+            if current_point_list.GetNumberOfControlPoints() >= 4:
                 pass
                 draw_circles_on_centerline()
                 
@@ -4533,25 +4544,29 @@ def update_point_count_display_for_current_list(count_label):
 def update_point_count_display(point_list, count_label):
     """
     Update the point count display label and assign specific lesion analysis labels
+    Supports multiple start and end slices with sequential numbering
     """
     try:
         point_count = point_list.GetNumberOfControlPoints()
         count_label.setText(f"Points placed: {point_count}")
         
-        point_labels = [
-            "pre-lesion",
-            "post-lesion", 
-            "start-slice",
-            "end-slice"
-        ]
-        
         for i in range(point_count):
             current_label = point_list.GetNthControlPointLabel(i)
             if not current_label or current_label.startswith("F") or current_label.startswith("P-"): 
-                if i < len(point_labels):
-                    point_list.SetNthControlPointLabel(i, point_labels[i])
+                if i == 0:
+                    point_list.SetNthControlPointLabel(i, "pre-lesion")
+                elif i == 1:
+                    point_list.SetNthControlPointLabel(i, "post-lesion")
                 else:
-                    point_list.SetNthControlPointLabel(i, f"additional-{i+1-4}")
+                    # For points 3 and beyond, alternate between start and end slices
+                    # Points 2, 4, 6, 8... are start slices (start-slice-1, start-slice-2, etc.)
+                    # Points 3, 5, 7, 9... are end slices (end-slice-1, end-slice-2, etc.)
+                    if (i - 2) % 2 == 0:  # Even offset from position 2 = start slice
+                        start_slice_number = ((i - 2) // 2) + 1
+                        point_list.SetNthControlPointLabel(i, f"start-slice-{start_slice_number}")
+                    else:  # Odd offset from position 2 = end slice
+                        end_slice_number = ((i - 2) // 2) + 1
+                        point_list.SetNthControlPointLabel(i, f"end-slice-{end_slice_number}")
         
     except Exception as e:
         pass
@@ -6687,7 +6702,8 @@ def apply_transform_to_node(node, node_description="node"):
 
 def create_centerline_and_tube_mask():
     """
-    Creates a centerline curve and tube mask from points 3-4 of the F-1 point list.
+    Creates centerline curves and tube masks for each start-slice and end-slice point pair
+    from the F-1 point list. Creates distinct tubes for each pair with different colors.
     """
     
     f1_points = slicer.util.getNode('F-1')
@@ -6701,88 +6717,173 @@ def create_centerline_and_tube_mask():
     
     pass
     
-    centerline_points = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLMarkupsFiducialNode')
-    centerline_points.SetName('CenterlinePoints')
+    # Clear any existing centerline/tube nodes
+    clear_existing_tubes_and_centerlines()
     
-    point3_pos = [0, 0, 0]
-    f1_points.GetNthControlPointPosition(2, point3_pos)
-    centerline_points.AddControlPoint(point3_pos)
+    # Calculate how many start/end pairs we have
+    total_points = f1_points.GetNumberOfControlPoints()
+    slice_points = total_points - 2  # Exclude pre-lesion and post-lesion points
+    num_pairs = slice_points // 2
     
-    point4_pos = [0, 0, 0]
-    f1_points.GetNthControlPointPosition(3, point4_pos)
-    centerline_points.AddControlPoint(point4_pos)
-    
-    pass
-    
-    centerline_curve = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLMarkupsCurveNode')
-    centerline_curve.SetName('CenterlineCurve')
-
-    centerline_curve.AddControlPoint(point3_pos)
-    centerline_curve.AddControlPoint(point4_pos)
-    
-    centerline_curve.SetCurveTypeToLinear()
-    
-    # NOTE: Transform is NOT applied to centerline curve - it should remain in original coordinate system
-    # for accurate tube mask creation and analysis
-    
-    pass
-    
-
-    curve_points = centerline_curve.GetCurvePointsWorld()
-    
-    if not curve_points or curve_points.GetNumberOfPoints() == 0:
+    if num_pairs == 0:
         pass
         return
     
-    curve_polydata = vtk.vtkPolyData()
-    curve_polydata.SetPoints(curve_points)
-    
-    lines = vtk.vtkCellArray()
-    for i in range(curve_points.GetNumberOfPoints() - 1):
-        line = vtk.vtkLine()
-        line.GetPointIds().SetId(0, i)
-        line.GetPointIds().SetId(1, i + 1)
-        lines.InsertNextCell(line)
-    
-    curve_polydata.SetLines(lines)
-    
-    tube_filter = vtk.vtkTubeFilter()
-    tube_filter.SetInputData(curve_polydata)
-    tube_filter.SetRadius(2.0)
-    tube_filter.SetNumberOfSides(12)
-    tube_filter.CappingOn()
-    tube_filter.Update()
-    
-    tube_model = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelNode')
-    tube_model.SetName('TubeMask')
-    tube_model.SetAndObservePolyData(tube_filter.GetOutput())
-    
-    # NOTE: Transform is NOT applied to tube model - it should remain in original coordinate system
-    # for accurate segmentation and density analysis
-    
-    tube_display = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelDisplayNode')
-    tube_display.SetColor(1.0, 0.0, 0.0)
-    tube_display.SetOpacity(0.5)
-    tube_model.SetAndObserveDisplayNodeID(tube_display.GetID())
-    
     pass
     
-    stenosis_segmentation = create_segmentation_from_tube(tube_model)
+    # Define colors for different tubes (RGB values)
+    tube_colors = [
+        (1.0, 0.0, 0.0),  # Red
+        (0.0, 1.0, 0.0),  # Green  
+        (0.0, 0.0, 1.0),  # Blue
+        (1.0, 1.0, 0.0),  # Yellow
+        (1.0, 0.0, 1.0),  # Magenta
+        (0.0, 1.0, 1.0),  # Cyan
+        (1.0, 0.5, 0.0),  # Orange
+        (0.5, 0.0, 1.0),  # Purple
+    ]
     
+    created_tubes = []
+    created_segmentations = []
+    
+    # Create tubes for each start/end slice pair
+    for pair_index in range(num_pairs):
+        start_point_index = 2 + (pair_index * 2)      # 2, 4, 6, 8, ...
+        end_point_index = start_point_index + 1        # 3, 5, 7, 9, ...
+        
+        # Get the point positions
+        start_pos = [0, 0, 0]
+        end_pos = [0, 0, 0]
+        f1_points.GetNthControlPointPosition(start_point_index, start_pos)
+        f1_points.GetNthControlPointPosition(end_point_index, end_pos)
+        
+        # Create centerline points for this pair
+        centerline_points = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLMarkupsFiducialNode')
+        centerline_points.SetName(f'CenterlinePoints_{pair_index + 1}')
+        centerline_points.AddControlPoint(start_pos)
+        centerline_points.AddControlPoint(end_pos)
+        
+        # Create centerline curve for this pair
+        centerline_curve = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLMarkupsCurveNode')
+        centerline_curve.SetName(f'CenterlineCurve_{pair_index + 1}')
+        centerline_curve.AddControlPoint(start_pos)
+        centerline_curve.AddControlPoint(end_pos)
+        centerline_curve.SetCurveTypeToLinear()
+        
+        # Create tube for this pair
+        tube_model = create_tube_from_curve(centerline_curve, pair_index + 1)
+        
+        if tube_model:
+            # Set color for this tube
+            color_index = pair_index % len(tube_colors)
+            tube_color = tube_colors[color_index]
+            
+            tube_display = tube_model.GetDisplayNode()
+            if tube_display:
+                tube_display.SetColor(tube_color[0], tube_color[1], tube_color[2])
+                tube_display.SetOpacity(0.5)
+            
+            created_tubes.append(tube_model)
+            
+            # Create segmentation from this tube
+            stenosis_segmentation = create_segmentation_from_tube(tube_model, pair_index + 1)
+            if stenosis_segmentation:
+                created_segmentations.append(stenosis_segmentation)
+        
+        pass
+    
+    # Add cropped volume to 3D scene
     add_cropped_volume_to_3d_scene()
     
-    if stenosis_segmentation:
-        show_segment_statistics(stenosis_segmentation)
+    # Show statistics for all segmentations
+    for segmentation in created_segmentations:
+        show_segment_statistics(segmentation)
     
     pass
 
-def create_segmentation_from_tube(tube_model):
+def clear_existing_tubes_and_centerlines():
+    """
+    Clear any existing centerline and tube nodes from previous runs
+    """
+    try:
+        # Clear centerline points
+        nodes_to_remove = []
+        for node in slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode'):
+            if node.GetName().startswith('CenterlinePoints'):
+                nodes_to_remove.append(node)
+        
+        # Clear centerline curves
+        for node in slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode'):
+            if node.GetName().startswith('CenterlineCurve'):
+                nodes_to_remove.append(node)
+        
+        # Clear tube models
+        for node in slicer.util.getNodesByClass('vtkMRMLModelNode'):
+            if node.GetName().startswith('TubeMask'):
+                nodes_to_remove.append(node)
+        
+        # Clear tube segmentations
+        for node in slicer.util.getNodesByClass('vtkMRMLSegmentationNode'):
+            if node.GetName().startswith('TubeMaskSegmentation'):
+                nodes_to_remove.append(node)
+        
+        # Remove all identified nodes
+        for node in nodes_to_remove:
+            slicer.mrmlScene.RemoveNode(node)
+            
+    except Exception as e:
+        pass
+
+def create_tube_from_curve(centerline_curve, pair_number):
+    """
+    Create a tube model from a centerline curve
+    """
+    try:
+        curve_points = centerline_curve.GetCurvePointsWorld()
+        
+        if not curve_points or curve_points.GetNumberOfPoints() == 0:
+            return None
+        
+        curve_polydata = vtk.vtkPolyData()
+        curve_polydata.SetPoints(curve_points)
+        
+        lines = vtk.vtkCellArray()
+        for i in range(curve_points.GetNumberOfPoints() - 1):
+            line = vtk.vtkLine()
+            line.GetPointIds().SetId(0, i)
+            line.GetPointIds().SetId(1, i + 1)
+            lines.InsertNextCell(line)
+        
+        curve_polydata.SetLines(lines)
+        
+        tube_filter = vtk.vtkTubeFilter()
+        tube_filter.SetInputData(curve_polydata)
+        tube_filter.SetRadius(2.0)
+        tube_filter.SetNumberOfSides(12)
+        tube_filter.CappingOn()
+        tube_filter.Update()
+        
+        tube_model = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelNode')
+        tube_model.SetName(f'TubeMask_{pair_number}')
+        tube_model.SetAndObservePolyData(tube_filter.GetOutput())
+        
+        # Create display node
+        tube_display = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLModelDisplayNode')
+        tube_model.SetAndObserveDisplayNodeID(tube_display.GetID())
+        
+        return tube_model
+        
+    except Exception as e:
+        return None
+
+def create_segmentation_from_tube(tube_model, pair_number=1):
     """
     Convert the tube model to a segmentation for use as a mask.
+    Each tube gets a unique segmentation name and color.
     """
     try:
         segmentation_node = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLSegmentationNode')
-        segmentation_node.SetName('TubeMaskSegmentation')
+        segmentation_node.SetName(f'TubeMaskSegmentation_{pair_number}')
         
         slicer.modules.segmentations.logic().ImportModelToSegmentationNode(tube_model, segmentation_node)
         
@@ -6793,8 +6894,22 @@ def create_segmentation_from_tube(tube_model):
         if segment_ids.GetNumberOfValues() > 0:
             segment_id = segment_ids.GetValue(0)
             segment = segmentation.GetSegment(segment_id)
-            segment.SetName('TubeMask')
-            segment.SetColor(1.0, 0.0, 0.0)  
+            segment.SetName(f'TubeMask_{pair_number}')
+            
+            # Set unique colors for each tube segmentation
+            colors = [
+                (1.0, 0.0, 0.0),  # Red
+                (0.0, 1.0, 0.0),  # Green  
+                (0.0, 0.0, 1.0),  # Blue
+                (1.0, 1.0, 0.0),  # Yellow
+                (1.0, 0.0, 1.0),  # Magenta
+                (0.0, 1.0, 1.0),  # Cyan
+                (1.0, 0.5, 0.0),  # Orange
+                (0.5, 0.0, 1.0),  # Purple
+            ]
+            color_index = (pair_number - 1) % len(colors)
+            color = colors[color_index]
+            segment.SetColor(color[0], color[1], color[2])
         
         pass
         return segmentation_node
