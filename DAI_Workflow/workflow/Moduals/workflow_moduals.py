@@ -123,6 +123,115 @@ def get_volume_slice_thickness(volume_node):
         # Fallback to original hardcoded value on any error
         return 0.4
 
+def ask_user_for_markup_import():
+    """
+    Ask the user if they want to import a markup file
+    Returns True if yes, False if no
+    """
+    try:
+        result = slicer.util.confirmYesNoDisplay(
+            "Would you like to import a markup file to the scene?\n\n"
+            "• YES: Import markup and proceed to segment statistics\n"
+            "• NO: Continue with normal segmentation workflow",
+            windowTitle="Import Markup"
+        )
+        return result
+    except Exception as e:
+        print(f"Error asking for markup import: {e}")
+        return False
+
+def import_markup_file():
+    """
+    Let the user select and import a markup file
+    Returns the imported markup node or None if cancelled/failed
+    """
+    try:
+        # Create file dialog for markup import
+        file_dialog = qt.QFileDialog(slicer.util.mainWindow())
+        file_dialog.setWindowTitle("Select Markup File")
+        file_dialog.setFileMode(qt.QFileDialog.ExistingFile)
+        file_dialog.setAcceptMode(qt.QFileDialog.AcceptOpen)
+        
+        # Set file filters for common markup formats
+        file_dialog.setNameFilters([
+            "All Markup Files (*.mrk.json *.fcsv *.json)",
+            "Slicer Markup JSON (*.mrk.json)",
+            "Fiducial CSV (*.fcsv)",
+            "JSON Files (*.json)",
+            "All Files (*.*)"
+        ])
+        
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                markup_file = selected_files[0]
+                
+                # Try to load the markup file
+                try:
+                    # Get existing markup nodes count to find the new one
+                    existing_markups = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
+                    
+                    # Load the markup file
+                    success = slicer.util.loadMarkups(markup_file)
+                    
+                    if success:
+                        # Find the newly loaded markup node
+                        new_markups = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
+                        new_markup_nodes = [node for node in new_markups if node not in existing_markups]
+                        
+                        if new_markup_nodes:
+                            markup_node = new_markup_nodes[0]  # Get the first new markup node
+                            slicer.util.infoDisplay(f"Successfully imported markup: {markup_node.GetName()}")
+                            return markup_node
+                        else:
+                            slicer.util.errorDisplay("Markup file loaded but no new markup node found.")
+                            return None
+                    else:
+                        slicer.util.errorDisplay("Failed to load the selected markup file.")
+                        return None
+                        
+                except Exception as e:
+                    slicer.util.errorDisplay(f"Error loading markup file: {str(e)}")
+                    return None
+            
+        return None
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error in markup file selection: {str(e)}")
+        return None
+
+def create_basic_segmentation_for_markup(volume_node):
+    """
+    Create a basic segmentation node that can be used with markup workflow for statistics
+    """
+    try:
+        # Create a new segmentation node
+        segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+        segmentation_node.SetName("Markup_Segmentation")
+        segmentation_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
+        
+        # Create a default segment (user can modify as needed)
+        segmentation = segmentation_node.GetSegmentation()
+        segment_id = segmentation.AddEmptySegment("Markup_Region")
+        
+        # Set segment color to white
+        segment = segmentation.GetSegment(segment_id)
+        if segment:
+            segment.SetColor(1.0, 1.0, 1.0)
+        
+        # Set up display
+        display_node = segmentation_node.GetDisplayNode()
+        if display_node:
+            display_node.SetAllSegmentsVisibility(True)
+            display_node.SetVisibility2DOutline(True)
+            display_node.SetVisibility2DFill(True)
+        
+        return segmentation_node
+        
+    except Exception as e:
+        print(f"Error creating basic segmentation: {e}")
+        return None
+
 def create_threshold_segment():
     """
     Main workflow function to create a threshold segment with default values
@@ -133,6 +242,26 @@ def create_threshold_segment():
         slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
         return
     
+    # Ask user if they want to import markup
+    want_markup = ask_user_for_markup_import()
+    
+    if want_markup:
+        # User wants to import markup - handle markup import but continue with normal workflow
+        markup_node = import_markup_file()
+        if markup_node:
+            # Store markup workflow flag for later use
+            slicer.modules.WorkflowUsingMarkup = True
+            slicer.modules.WorkflowMarkupNode = markup_node
+            slicer.util.infoDisplay("Markup imported. Continuing with threshold segmentation workflow.")
+        else:
+            # Markup import failed, continue with normal workflow
+            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
+            slicer.modules.WorkflowUsingMarkup = False
+    else:
+        # Normal workflow path (no markup)
+        slicer.modules.WorkflowUsingMarkup = False
+    
+    # Continue with normal threshold workflow (regardless of markup import)
     threshold_values = prompt_for_threshold_range()
     if threshold_values is None:
         return
@@ -313,6 +442,10 @@ def show_segmentation_in_3d(segmentation_node):
     if display_node:
         display_node.SetVisibility3D(True)
         display_node.SetOpacity3D(0.7)
+        # Set 2D display properties
+        display_node.SetVisibility2DFill(True)
+        display_node.SetVisibility2DOutline(True)
+        
         segmentation = segmentation_node.GetSegmentation()
         segment_ids = vtk.vtkStringArray()
         segmentation.GetSegmentIDs(segment_ids)
@@ -320,7 +453,8 @@ def show_segmentation_in_3d(segmentation_node):
         if segment_ids.GetNumberOfValues() > 0:
             segment_id = segment_ids.GetValue(0)
             segment = segmentation.GetSegment(segment_id)
-            segment.SetColor(1.0, 0.0, 0.0) 
+            # Set segment color to white (1.0, 1.0, 1.0)
+            segment.SetColor(1.0, 1.0, 1.0) 
             segment.SetTag("Segmentation.Status", "inprogress")
     segmentation_node.CreateClosedSurfaceRepresentation()
     threeDWidget = layout_manager.threeDWidget(0)
@@ -379,6 +513,16 @@ def load_into_segment_editor(segmentation_node, volume_node):
                 display_node.SetAllSegmentsVisibility(True)
                 display_node.SetVisibility2DOutline(True)
                 display_node.SetVisibility2DFill(True)
+                
+                # Ensure all segments are white
+                segmentation = segmentation_node.GetSegmentation()
+                segment_ids = vtk.vtkStringArray()
+                segmentation.GetSegmentIDs(segment_ids)
+                for i in range(segment_ids.GetNumberOfValues()):
+                    segment_id = segment_ids.GetValue(i)
+                    segment = segmentation.GetSegment(segment_id)
+                    if segment:
+                        segment.SetColor(1.0, 1.0, 1.0)  # Set to white
         
         # Force refresh slice views
         layout_manager = slicer.app.layoutManager()
@@ -638,7 +782,19 @@ def on_continue_from_scissors():
     """
     pass
     cleanup_workflow_ui()
-    open_centerline_module()
+    
+    # Check if we're in markup workflow mode
+    if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
+        # Get the current segmentation for statistics
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        if segmentation_nodes:
+            segmentation_node = segmentation_nodes[0]  # Use the first available segmentation
+            show_segment_statistics(segmentation_node)
+        else:
+            slicer.util.errorDisplay("No segmentation found for statistics analysis.")
+    else:
+        # Normal workflow - proceed to centerline extraction
+        open_centerline_module()
 
 def on_finish_cropping():
     """
@@ -655,7 +811,19 @@ def on_finish_cropping():
         
         # Continue to the next step in the workflow
         cleanup_workflow_ui()
-        open_centerline_module()
+        
+        # Check if we're in markup workflow mode
+        if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
+            # Get the current segmentation for statistics
+            segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+            if segmentation_nodes:
+                segmentation_node = segmentation_nodes[0]  # Use the first available segmentation
+                show_segment_statistics(segmentation_node)
+            else:
+                slicer.util.errorDisplay("No segmentation found for statistics analysis.")
+        else:
+            # Normal workflow - proceed to centerline extraction
+            open_centerline_module()
         
         pass
         
