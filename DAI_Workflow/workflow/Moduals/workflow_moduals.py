@@ -496,6 +496,36 @@ def open_data_module():
     except Exception as e:
         slicer.util.errorDisplay(f"Error opening Data module: {str(e)}")
 
+def set_3d_view_background_black():
+    """
+    Set the 3D view background to black using the working approach from ChangeViewColors example
+    """
+    try:
+        # Get the first 3D view node (typically "View1")
+        viewNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLViewNode")
+        if not viewNode:
+            # If no view node exists, try to get by name
+            viewNode = slicer.util.getNode("View1")
+        
+        if viewNode:
+            # Create black color (same as your working example)
+            black_color = qt.QColor(0, 0, 0)  # RGB values 0,0,0 for black
+            
+            # Convert to normalized values (0-1 range) as in your working example
+            r = black_color.red() / 255.0    # 0.0
+            g = black_color.green() / 255.0  # 0.0  
+            b = black_color.blue() / 255.0   # 0.0
+            
+            # Set background colors using the working method
+            viewNode.SetBackgroundColor(r, g, b)
+            viewNode.SetBackgroundColor2(r, g, b)  # Also set gradient background
+            
+            print("Set 3D view background to black using working method")
+        else:
+            print("Warning: Could not find 3D view node to set background color")
+    except Exception as e:
+        print(f"Error setting 3D view background to black: {str(e)}")
+
 def create_basic_segmentation_for_markup(volume_node):
     """
     Create a basic segmentation node that can be used with markup workflow for statistics
@@ -726,6 +756,9 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
     #     except Exception as e2:
     #         print(f"Fallback method also failed: {e2}")
     #         print("Segment_1 is ready - please apply threshold manually in Segment Editor")
+    
+    # Set 3D view background to black as soon as threshold mask is created
+    set_3d_view_background_black()
     
     return segmentation_node
 
@@ -1079,6 +1112,9 @@ def on_continue_from_scissors():
     pass
     cleanup_workflow_ui()
     
+    # Set 3D view background to black
+    set_3d_view_background_black()
+    
     # Check if we're in markup workflow mode
     if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
         # Open the Data module to show imported markup and created curve models
@@ -1102,6 +1138,9 @@ def on_finish_cropping():
         
         # Continue to the next step in the workflow
         cleanup_workflow_ui()
+        
+        # Set 3D view background to black
+        set_3d_view_background_black()
         
         # Check if we're in markup workflow mode
         if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
