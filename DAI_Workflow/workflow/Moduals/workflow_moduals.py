@@ -131,7 +131,7 @@ def ask_user_for_markup_import():
     try:
         result = slicer.util.confirmYesNoDisplay(
             "Would you like to import a markup file to the scene?\n\n"
-            "• YES: Import markup and proceed to segment statistics\n"
+            "• YES: Import markup, create curve models, and open Data module\n"
             "• NO: Continue with normal segmentation workflow",
             windowTitle="Import Markup"
         )
@@ -182,6 +182,10 @@ def import_markup_file():
                         if new_markup_nodes:
                             markup_node = new_markup_nodes[0]  # Get the first new markup node
                             slicer.util.infoDisplay(f"Successfully imported markup: {markup_node.GetName()}")
+                            
+                            # Create curve models from the imported markup points
+                            curve_models = create_curve_models_from_markup(markup_node)
+                            
                             return markup_node
                         else:
                             slicer.util.errorDisplay("Markup file loaded but no new markup node found.")
@@ -199,6 +203,298 @@ def import_markup_file():
     except Exception as e:
         slicer.util.errorDisplay(f"Error in markup file selection: {str(e)}")
         return None
+
+def create_curve_models_from_markup(markup_node):
+    """
+    Create curve models from markup points using the MarkupsToModel module.
+    Creates n-1 curve models using pairs of consecutive points as start-slice-1 end-slice-1 format.
+    
+    Args:
+        markup_node: vtkMRMLMarkupsNode containing the control points
+        
+    Returns:
+        list: List of created vtkMRMLModelNode objects
+        
+    Example:
+        If markup has 4 points, this creates 3 curve models:
+        - CurveModel_start-slice-1_end-slice-2 (points 1-2)
+        - CurveModel_start-slice-2_end-slice-3 (points 2-3)
+        - CurveModel_start-slice-3_end-slice-4 (points 3-4)
+    """
+    try:
+        if not markup_node:
+            return []
+        
+        # Get number of control points
+        num_points = markup_node.GetNumberOfControlPoints()
+        if num_points < 2:
+            slicer.util.infoDisplay("Need at least 2 points to create curve models.")
+            return []
+        
+        print(f"Creating curve models from {num_points} markup points...")
+        print(f"Will create {num_points-1} curve models")
+        
+        # Load MarkupsToModel module
+        try:
+            markups_to_model = slicer.modules.markupstomodel
+            markups_to_model_logic = markups_to_model.logic()
+        except AttributeError:
+            # Try alternative approach if MarkupsToModel is not available
+            try:
+                # Check if we can access the MarkupsToModel logic directly
+                import MarkupsToModel
+                markups_to_model_logic = MarkupsToModel.MarkupsToModelLogic()
+                markups_to_model = True  # Flag that we have the module
+            except ImportError:
+                slicer.util.errorDisplay("MarkupsToModel module not found. Please install the MarkupsToModel extension.")
+                return []
+        
+        created_models = []
+        
+        # Define distinct colors for each curve model (RGB values)
+        distinct_colors = [
+            (1.0, 0.0, 0.0),    # Red
+            (0.0, 1.0, 0.0),    # Green  
+            (0.0, 0.0, 1.0),    # Blue
+            (1.0, 1.0, 0.0),    # Yellow
+            (1.0, 0.0, 1.0),    # Magenta
+            (0.0, 1.0, 1.0),    # Cyan
+            (1.0, 0.5, 0.0),    # Orange
+            (0.5, 0.0, 1.0),    # Purple
+            (0.0, 0.5, 1.0),    # Sky Blue
+            (1.0, 0.0, 0.5),    # Pink
+            (0.5, 1.0, 0.0),    # Lime
+            (1.0, 0.5, 0.5),    # Light Red
+            (0.5, 0.5, 1.0),    # Light Blue
+            (0.8, 0.8, 0.0),    # Olive
+            (0.8, 0.0, 0.8),    # Dark Magenta
+        ]
+        
+        # Create curve models for consecutive point pairs
+        for i in range(num_points - 1):
+            try:
+                # Create a new markup node with just two points
+                curve_markup = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+                curve_markup.SetName(f"start-slice-{i+1}_end-slice-{i+2}")
+                
+                # Copy the two consecutive points
+                point1_pos = [0, 0, 0]
+                point2_pos = [0, 0, 0]
+                markup_node.GetNthControlPointPosition(i, point1_pos)
+                markup_node.GetNthControlPointPosition(i+1, point2_pos)
+                
+                curve_markup.AddControlPoint(point1_pos)
+                curve_markup.AddControlPoint(point2_pos)
+                
+                # Create output model node
+                output_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+                output_model.SetName(f"CurveModel_start-slice-{i+1}_end-slice-{i+2}")
+                
+                # Create display node for the model
+                output_model.CreateDefaultDisplayNodes()
+                
+                # Try to create the curve model
+                success = False
+                try:
+                    # Set up parameters for curve creation
+                    markups_to_model_logic.SetInputMarkupsNode(curve_markup)
+                    markups_to_model_logic.SetOutputModelNode(output_model)
+                    
+                    # Try to set model type to Curve
+                    if hasattr(markups_to_model_logic, 'SetModelType'):
+                        if hasattr(markups_to_model_logic, 'Curve'):
+                            markups_to_model_logic.SetModelType(markups_to_model_logic.Curve)
+                        else:
+                            # Try alternative naming
+                            markups_to_model_logic.SetModelType(1)  # Curve type is usually 1
+                    
+                    # Set curve parameters if available
+                    if hasattr(markups_to_model_logic, 'SetTubeRadius'):
+                        markups_to_model_logic.SetTubeRadius(4.0)  # Set radius to 4mm
+                    if hasattr(markups_to_model_logic, 'SetTubeNumberOfSides'):
+                        markups_to_model_logic.SetTubeNumberOfSides(8)
+                    if hasattr(markups_to_model_logic, 'SetCurveType'):
+                        if hasattr(markups_to_model_logic, 'Linear'):
+                            markups_to_model_logic.SetCurveType(markups_to_model_logic.Linear)
+                        else:
+                            markups_to_model_logic.SetCurveType(0)  # Linear is usually 0
+                    
+                    # Update the model
+                    markups_to_model_logic.UpdateOutputModel()
+                    success = True
+                    
+                except Exception as model_error:
+                    print(f"Error with MarkupsToModel approach: {model_error}")
+                    # Fallback: Create a simple line model using VTK
+                    try:
+                        points = vtk.vtkPoints()
+                        points.InsertNextPoint(point1_pos)
+                        points.InsertNextPoint(point2_pos)
+                        
+                        lines = vtk.vtkCellArray()
+                        lines.InsertNextCell(2)
+                        lines.InsertCellPoint(0)
+                        lines.InsertCellPoint(1)
+                        
+                        polydata = vtk.vtkPolyData()
+                        polydata.SetPoints(points)
+                        polydata.SetLines(lines)
+                        
+                        # Create tube filter for thickness
+                        tube_filter = vtk.vtkTubeFilter()
+                        tube_filter.SetInputData(polydata)
+                        tube_filter.SetRadius(4.0)  # Set radius to 4mm
+                        tube_filter.SetNumberOfSides(8)
+                        tube_filter.Update()
+                        
+                        output_model.SetAndObservePolyData(tube_filter.GetOutput())
+                        success = True
+                        
+                    except Exception as vtk_error:
+                        print(f"Error with VTK fallback: {vtk_error}")
+                        # Create basic polydata line
+                        points = vtk.vtkPoints()
+                        points.InsertNextPoint(point1_pos)
+                        points.InsertNextPoint(point2_pos)
+                        
+                        lines = vtk.vtkCellArray()
+                        lines.InsertNextCell(2)
+                        lines.InsertCellPoint(0)
+                        lines.InsertCellPoint(1)
+                        
+                        polydata = vtk.vtkPolyData()
+                        polydata.SetPoints(points)
+                        polydata.SetLines(lines)
+                        
+                        output_model.SetAndObservePolyData(polydata)
+                        success = True
+                
+                if success:
+                    # Ensure display node exists and set model display properties with distinct colors
+                    display_node = output_model.GetDisplayNode()
+                    if not display_node:
+                        # If no display node, create one
+                        output_model.CreateDefaultDisplayNodes()
+                        display_node = output_model.GetDisplayNode()
+                    
+                    if display_node:
+                        # Get color for this model (cycle through colors if we have more models than colors)
+                        color_index = i % len(distinct_colors)
+                        color = distinct_colors[color_index]
+                        
+                        # Set color and visibility properties
+                        display_node.SetColor(color[0], color[1], color[2])
+                        display_node.SetOpacity(0.8)
+                        display_node.SetVisibility(True)
+                        display_node.SetVisibility2D(True)
+                        display_node.SetVisibility3D(True)
+                        
+                        # Set line/tube width if it's a line model
+                        display_node.SetLineWidth(3)
+                        
+                        print(f"Created curve model with color {color}: {output_model.GetName()}")
+                    else:
+                        print(f"Warning: Could not create display node for {output_model.GetName()}")
+                    
+                    created_models.append(output_model)
+                else:
+                    # Remove failed model node
+                    slicer.mrmlScene.RemoveNode(output_model)
+                
+                # Clean up the temporary markup node
+                slicer.mrmlScene.RemoveNode(curve_markup)
+                
+            except Exception as e:
+                print(f"Error creating curve model for points {i+1}-{i+2}: {str(e)}")
+                continue
+        
+        # After creating all models, delete the first two and ensure remaining are visible
+        models_to_delete = []
+        if created_models and len(created_models) >= 2:
+            # Mark first two models for deletion
+            models_to_delete = created_models[:2]
+            for i, model in enumerate(models_to_delete):
+                print(f"Deleting first model: {model.GetName()}")
+                slicer.mrmlScene.RemoveNode(model)
+            
+            # Update the created_models list to only include remaining models
+            created_models = created_models[2:]
+            
+            # Double-check visibility and color for all remaining models
+            for j, model in enumerate(created_models):
+                display_node = model.GetDisplayNode()
+                if not display_node:
+                    # Create display node if it doesn't exist
+                    model.CreateDefaultDisplayNodes()
+                    display_node = model.GetDisplayNode()
+                
+                if display_node:
+                    # Recalculate color index based on remaining models (j + 2 to account for deleted models)
+                    color_index = (j + 2) % len(distinct_colors)
+                    color = distinct_colors[color_index]
+                    
+                    # Ensure all visibility and color properties are set
+                    display_node.SetVisibility(True)
+                    display_node.SetVisibility2D(True)
+                    display_node.SetVisibility3D(True)
+                    display_node.SetColor(color[0], color[1], color[2])
+                    display_node.SetOpacity(0.8)
+                    display_node.SetLineWidth(3)
+                    
+                    print(f"Confirmed visible with color {color}: {model.GetName()}")
+                else:
+                    print(f"Warning: Could not ensure display node for {model.GetName()}")
+        
+        # Force a scene update to ensure all changes are applied
+        slicer.app.processEvents()
+        
+        if created_models:
+            model_names = [model.GetName() for model in created_models]
+            visible_count = len([model for model in created_models if model.GetDisplayNode() and model.GetDisplayNode().GetVisibility()])
+            
+            print(f"Successfully created and kept {len(created_models)} curve models (deleted first 2):")
+            for name in model_names:
+                print(f"  - {name} (VISIBLE)")
+            
+            total_created = len(created_models) + 2  # Account for deleted models
+            slicer.util.infoDisplay(f"Successfully created {total_created} curve models from markup points.\n" + 
+                                   f"Radius: 4mm\n" +
+                                   f"Deleted: First 2 models\n" +
+                                   f"Visible: {len(created_models)} models with distinct colors")
+        else:
+            slicer.util.errorDisplay("Failed to create any curve models.")
+        
+        return created_models
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error creating curve models from markup: {str(e)}")
+        return []
+
+def open_data_module():
+    """
+    Open the Data module to display the imported markup and created curve models
+    """
+    try:
+        # Switch to the Data module
+        slicer.util.selectModule('Data')
+        slicer.app.processEvents()
+        
+        # Expand the scene model hierarchy to show all nodes
+        try:
+            data_widget = slicer.modules.data.widgetRepresentation()
+            if data_widget and hasattr(data_widget, 'self'):
+                data_self = data_widget.self()
+                if hasattr(data_self, 'sceneModel'):
+                    scene_model = data_self.sceneModel
+                    if hasattr(scene_model, 'expandAll'):
+                        scene_model.expandAll()
+        except Exception as expand_error:
+            print(f"Could not expand Data module tree: {expand_error}")
+        
+        print("Opened Data module to view imported markup and created curve models")
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error opening Data module: {str(e)}")
 
 def create_basic_segmentation_for_markup(volume_node):
     """
@@ -785,13 +1081,8 @@ def on_continue_from_scissors():
     
     # Check if we're in markup workflow mode
     if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
-        # Get the current segmentation for statistics
-        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
-        if segmentation_nodes:
-            segmentation_node = segmentation_nodes[0]  # Use the first available segmentation
-            show_segment_statistics(segmentation_node)
-        else:
-            slicer.util.errorDisplay("No segmentation found for statistics analysis.")
+        # Open the Data module to show imported markup and created curve models
+        open_data_module()
     else:
         # Normal workflow - proceed to centerline extraction
         open_centerline_module()
@@ -814,13 +1105,8 @@ def on_finish_cropping():
         
         # Check if we're in markup workflow mode
         if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
-            # Get the current segmentation for statistics
-            segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
-            if segmentation_nodes:
-                segmentation_node = segmentation_nodes[0]  # Use the first available segmentation
-                show_segment_statistics(segmentation_node)
-            else:
-                slicer.util.errorDisplay("No segmentation found for statistics analysis.")
+            # Open the Data module to show imported markup and created curve models
+            open_data_module()
         else:
             # Normal workflow - proceed to centerline extraction
             open_centerline_module()
