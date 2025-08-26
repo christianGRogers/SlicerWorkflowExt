@@ -123,6 +123,75 @@ def get_volume_slice_thickness(volume_node):
         # Fallback to original hardcoded value on any error
         return 0.4
 
+def hide_centerlines_from_views():
+    """
+    Hide all centerline-related nodes from views by setting visibility to False.
+    Keeps nodes in scene but makes them invisible.
+    """
+    try:
+        print("Hiding centerlines from views...")
+        hidden_count = 0
+        
+        # Hide all markup fiducial nodes (centerline points)
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for fiducial_node in fiducial_nodes:
+            display_node = fiducial_node.GetDisplayNode()
+            if display_node:
+                display_node.SetVisibility(False)
+                print(f"Hidden fiducial node: {fiducial_node.GetName()}")
+                hidden_count += 1
+        
+        # Hide all markup curve nodes (centerline curves)
+        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+        for curve_node in curve_nodes:
+            display_node = curve_node.GetDisplayNode()
+            if display_node:
+                display_node.SetVisibility(False)
+                print(f"Hidden curve node: {curve_node.GetName()}")
+                hidden_count += 1
+        
+        # Hide all general markup nodes (catch-all for any other markup types)
+        markup_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
+        for markup_node in markup_nodes:
+            # Skip if already processed as fiducial or curve node
+            if markup_node in fiducial_nodes or markup_node in curve_nodes:
+                continue
+                
+            display_node = markup_node.GetDisplayNode()
+            if display_node:
+                display_node.SetVisibility(False)
+                print(f"Hidden markup node: {markup_node.GetName()}")
+                hidden_count += 1
+        
+        # Hide all curve model nodes (centerline curves converted to models)
+        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        for model_node in model_nodes:
+            # Check if this looks like a centerline curve model
+            node_name = model_node.GetName().lower()
+            if ('curve' in node_name and 'model' in node_name) or 'centerline' in node_name or 'start-slice' in node_name:
+                display_node = model_node.GetDisplayNode()
+                if display_node:
+                    display_node.SetVisibility(False)
+                    print(f"Hidden curve model: {model_node.GetName()}")
+                    hidden_count += 1
+        
+        # Also check for stored workflow markup node
+        if hasattr(slicer.modules, 'WorkflowMarkupNode'):
+            workflow_markup = slicer.modules.WorkflowMarkupNode
+            if workflow_markup:
+                display_node = workflow_markup.GetDisplayNode()
+                if display_node:
+                    display_node.SetVisibility(False)
+                    print(f"Hidden workflow markup node: {workflow_markup.GetName()}")
+                    hidden_count += 1
+        
+        print(f"Centerlines hidden from views. Total hidden: {hidden_count} nodes.")
+        
+    except Exception as e:
+        print(f"Error hiding centerlines: {str(e)}")
+
+
+
 def ask_user_for_markup_import():
     """
     Ask the user if they want to import markup workflow files
@@ -2464,6 +2533,8 @@ def add_large_cpr_apply_button():
     """
     Add a large green Apply button directly to the Curved Planar Reformat module GUI
     """
+    hide_centerlines_from_views()
+
     try:
         if hasattr(slicer.modules, 'CPRLargeApplyButton'):
             existing_button = slicer.modules.CPRLargeApplyButton
@@ -2567,6 +2638,8 @@ def add_large_cpr_apply_button():
                                 Apply CPR only - transform application moved to Cross-Section Analysis button
                                 """
                                 try:
+                                    print("Starting CPR application...")
+                                    
                                     # Apply the original CPR
                                     original_apply_button.click()
                                     
@@ -2574,10 +2647,14 @@ def add_large_cpr_apply_button():
                                     slicer.app.processEvents()
                                     import time
                                     time.sleep(1.0)
+
+                                    slicer.app.processEvents()
+
                                     
-                                    pass
+                                    print("CPR application and centerline hiding completed.")
                                     
                                 except Exception as e:
+                                    print(f"Error in apply_cpr_and_transform: {str(e)}")
                                     pass
                             
                             large_apply_button.connect('clicked()', apply_cpr_and_transform)
