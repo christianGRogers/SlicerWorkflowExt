@@ -190,7 +190,102 @@ def hide_centerlines_from_views():
     except Exception as e:
         print(f"Error hiding centerlines: {str(e)}")
 
-
+def hide_cpr_slice_size_controls():
+    """
+    Hide the slice size controls (label and coordinates widget) from the CPR module UI.
+    This removes the slice size text boxes when CPR is opened.
+    """
+    try:
+        print("Hiding CPR slice size controls...")
+        
+        # Get the CPR module widget
+        cpr_widget = slicer.modules.curvedplanarreformat.widgetRepresentation()
+        if not cpr_widget:
+            print("CPR module widget not found")
+            return False
+        
+        # Try to get the CPR module instance
+        cpr_module = None
+        if hasattr(cpr_widget, 'self'):
+            try:
+                cpr_module = cpr_widget.self()
+            except Exception as e:
+                print(f"Could not get CPR module via self(): {e}")
+        
+        if not cpr_module:
+            cpr_module = cpr_widget
+        
+        # Look for the slice size controls in the UI
+        controls_hidden = False
+        
+        # Method 1: Try to access via ui attribute (most common pattern)
+        if hasattr(cpr_module, 'ui'):
+            ui = cpr_module.ui
+            
+            # Hide the slice size label (label_3 based on the XML)
+            if hasattr(ui, 'label_3'):
+                ui.label_3.setVisible(False)
+                print("Hidden slice size label via ui.label_3")
+                controls_hidden = True
+            
+            # Hide the slice size coordinates widget
+            if hasattr(ui, 'sliceSizeCoordinatesWidget'):
+                ui.sliceSizeCoordinatesWidget.setVisible(False)
+                print("Hidden slice size coordinates widget via ui.sliceSizeCoordinatesWidget")
+                controls_hidden = True
+        
+        # Method 2: Search for controls by object name if direct access didn't work
+        if not controls_hidden:
+            # Find all QLabel widgets and look for the one with "Slice size:" text
+            labels = cpr_widget.findChildren(qt.QLabel)
+            for label in labels:
+                if hasattr(label, 'text') and label.text() == "Slice size:":
+                    label.setVisible(False)
+                    print("Hidden slice size label via findChildren")
+                    controls_hidden = True
+                    break
+            
+            # Find the coordinates widget by class name
+            coord_widgets = cpr_widget.findChildren("qMRMLCoordinatesWidget")
+            for widget in coord_widgets:
+                # Check if this is likely the slice size widget by checking nearby labels
+                parent = widget.parent()
+                if parent:
+                    # Look for siblings that might be the slice size label
+                    siblings = parent.findChildren(qt.QLabel)
+                    for sibling in siblings:
+                        if hasattr(sibling, 'text') and sibling.text() == "Slice size:":
+                            widget.setVisible(False)
+                            print("Hidden slice size coordinates widget via findChildren")
+                            controls_hidden = True
+                            break
+                    if controls_hidden:
+                        break
+        
+        # Method 3: Alternative approach - hide by object name
+        if not controls_hidden:
+            slice_label = cpr_widget.findChild(qt.QLabel, "label_3")
+            if slice_label:
+                slice_label.setVisible(False)
+                print("Hidden slice size label via findChild by name")
+                controls_hidden = True
+            
+            coord_widget = cpr_widget.findChild("qMRMLCoordinatesWidget", "sliceSizeCoordinatesWidget")
+            if coord_widget:
+                coord_widget.setVisible(False)
+                print("Hidden slice size coordinates widget via findChild by name")
+                controls_hidden = True
+        
+        if controls_hidden:
+            print("Successfully hidden CPR slice size controls")
+            return True
+        else:
+            print("Could not find CPR slice size controls to hide")
+            return False
+            
+    except Exception as e:
+        print(f"Error hiding CPR slice size controls: {str(e)}")
+        return False
 
 def ask_user_for_markup_import():
     """
@@ -2534,6 +2629,7 @@ def add_large_cpr_apply_button():
     Add a large green Apply button directly to the Curved Planar Reformat module GUI
     """
     hide_centerlines_from_views()
+    hide_cpr_slice_size_controls()
 
     try:
         if hasattr(slicer.modules, 'CPRLargeApplyButton'):
@@ -2901,27 +2997,7 @@ def open_cross_section_analysis_module():
 
                 return False
 
-def test_cpr_buttons():
-    """
-    Console helper function to test the CPR module buttons
-    """
-    try:
-        # First switch to CPR module
-        slicer.util.selectModule("CurvedPlanarReformat")
-        slicer.app.processEvents()
-        
-        # Add the large buttons
-        success = add_large_cpr_apply_button()
-        
-        if success:
-            return True
-        else:
-            print("✗ Failed to add CPR buttons")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Error testing CPR buttons: {e}")
-        return False
+
 
 def apply_cpr_transform_to_centerlines():
     """
@@ -4450,6 +4526,9 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         slicer.util.selectModule("CurvedPlanarReformat")
         pass
         slicer.app.processEvents()
+        
+        # Hide slice size controls from CPR module UI
+        hide_cpr_slice_size_controls()
         
         # Hide threshold segmentation mask after opening CPR module
         hide_threshold_segmentation_mask()
