@@ -125,15 +125,19 @@ def get_volume_slice_thickness(volume_node):
 
 def ask_user_for_markup_import():
     """
-    Ask the user if they want to import a markup file
+    Ask the user if they want to import markup workflow files
     Returns True if yes, False if no
     """
     try:
         result = slicer.util.confirmYesNoDisplay(
-            "Would you like to import a markup file to the scene?\n\n"
-            "• YES: Import markup, create curve models, and open Data module\n"
+            "Would you like to import markup workflow files?\n\n"
+            "This will prompt you to import:\n"
+            "• Markup/point list file (.mrk.json, .fcsv, etc.)\n"
+            "• Straightened volume file (.nrrd, .nii, etc.)\n"
+            "• Transform file (.tfm, .h5, etc.)\n\n"
+            "• YES: Import all files, create curve models, and open Data module\n"
             "• NO: Continue with normal segmentation workflow",
-            windowTitle="Import Markup"
+            windowTitle="Import Markup Workflow Files"
         )
         return result
     except Exception as e:
@@ -203,6 +207,173 @@ def import_markup_file():
     except Exception as e:
         slicer.util.errorDisplay(f"Error in markup file selection: {str(e)}")
         return None
+
+def import_straightened_volume():
+    """
+    Let the user select and import a straightened volume file
+    Returns the imported volume node or None if cancelled/failed
+    """
+    try:
+        # Create file dialog for volume import
+        file_dialog = qt.QFileDialog(slicer.util.mainWindow())
+        file_dialog.setWindowTitle("Select Straightened Volume File")
+        file_dialog.setFileMode(qt.QFileDialog.ExistingFile)
+        file_dialog.setAcceptMode(qt.QFileDialog.AcceptOpen)
+        
+        # Set file filters for common volume formats
+        file_dialog.setNameFilters([
+            "All Volume Files (*.nrrd *.nii *.nii.gz *.mhd *.vtk)",
+            "NRRD Files (*.nrrd)",
+            "NIfTI Files (*.nii *.nii.gz)",
+            "MetaImage Files (*.mhd)",
+            "VTK Files (*.vtk)",
+            "All Files (*.*)"
+        ])
+        
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                volume_file = selected_files[0]
+                
+                try:
+                    # Get existing volume nodes count to find the new one
+                    existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+                    
+                    # Load the volume file
+                    volume_node = slicer.util.loadVolume(volume_file)
+                    
+                    if volume_node:
+                        # Set a recognizable name
+                        volume_node.SetName("StraightenedVolume")
+                        
+                        # Make the volume visible in all slice views
+                        set_volume_visible_in_slice_views(volume_node)
+                        
+                        slicer.util.infoDisplay(f"Successfully imported straightened volume: {volume_node.GetName()}")
+                        return volume_node
+                    else:
+                        slicer.util.errorDisplay("Failed to load the selected volume file.")
+                        return None
+                        
+                except Exception as e:
+                    slicer.util.errorDisplay(f"Error loading volume file: {str(e)}")
+                    return None
+            
+        return None
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error in volume file selection: {str(e)}")
+        return None
+
+def import_transform_file():
+    """
+    Let the user select and import a transform file
+    Returns the imported transform node or None if cancelled/failed
+    """
+    try:
+        # Create file dialog for transform import
+        file_dialog = qt.QFileDialog(slicer.util.mainWindow())
+        file_dialog.setWindowTitle("Select Transform File")
+        file_dialog.setFileMode(qt.QFileDialog.ExistingFile)
+        file_dialog.setAcceptMode(qt.QFileDialog.AcceptOpen)
+        
+        # Set file filters for common transform formats
+        file_dialog.setNameFilters([
+            "All Transform Files (*.tfm *.h5 *.txt *.mat)",
+            "ITK Transform Files (*.tfm)",
+            "HDF5 Transform Files (*.h5)",
+            "Text Transform Files (*.txt)",
+            "MATLAB Transform Files (*.mat)",
+            "All Files (*.*)"
+        ])
+        
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                transform_file = selected_files[0]
+                
+                try:
+                    # Get existing transform nodes count to find the new one
+                    existing_transforms = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+                    
+                    # Load the transform file
+                    success = slicer.util.loadTransform(transform_file)
+                    
+                    if success:
+                        # Find the newly loaded transform node
+                        new_transforms = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+                        new_transform_nodes = [node for node in new_transforms if node not in existing_transforms]
+                        
+                        if new_transform_nodes:
+                            transform_node = new_transform_nodes[0]  # Get the first new transform node
+                            
+                            # Set a recognizable name if it doesn't have one
+                            if "Transform" not in transform_node.GetName():
+                                transform_node.SetName("StraighteningTransform")
+                            
+                            # Make the transform visible
+                            display_node = transform_node.GetDisplayNode()
+                            if not display_node:
+                                transform_node.CreateDefaultDisplayNodes()
+                                display_node = transform_node.GetDisplayNode()
+                            
+                            if display_node:
+                                display_node.SetVisibility(True)
+                                display_node.SetVisibility3D(True)
+                            
+                            slicer.util.infoDisplay(f"Successfully imported transform: {transform_node.GetName()}")
+                            return transform_node
+                        else:
+                            slicer.util.errorDisplay("Transform file loaded but no new transform node found.")
+                            return None
+                    else:
+                        slicer.util.errorDisplay("Failed to load the selected transform file.")
+                        return None
+                        
+                except Exception as e:
+                    slicer.util.errorDisplay(f"Error loading transform file: {str(e)}")
+                    return None
+            
+        return None
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error in transform file selection: {str(e)}")
+        return None
+
+def set_volume_visible_in_slice_views(volume_node):
+    """
+    Set the volume as visible and active in all slice views
+    """
+    try:
+        # Get the application logic
+        app_logic = slicer.app.applicationLogic()
+        if app_logic:
+            selection_node = app_logic.GetSelectionNode()
+            if selection_node:
+                # Set as active volume
+                selection_node.SetActiveVolumeID(volume_node.GetID())
+                selection_node.SetSecondaryVolumeID(volume_node.GetID())
+                
+                # Propagate the selection
+                app_logic.PropagateVolumeSelection()
+        
+        # Also set in slice composite nodes directly
+        layout_manager = slicer.app.layoutManager()
+        if layout_manager:
+            for slice_view_name in ['Red', 'Yellow', 'Green']:
+                slice_logic = layout_manager.sliceWidget(slice_view_name).sliceLogic()
+                if slice_logic:
+                    composite_node = slice_logic.GetSliceCompositeNode()
+                    if composite_node:
+                        composite_node.SetBackgroundVolumeID(volume_node.GetID())
+        
+        # Reset field of view to show the volume properly
+        slicer.util.resetSliceViews()
+        
+        print(f"Set {volume_node.GetName()} as visible in all slice views")
+        
+    except Exception as e:
+        print(f"Error setting volume visible: {str(e)}")
 
 def create_curve_models_from_markup(markup_node):
     """
@@ -496,6 +667,36 @@ def open_data_module():
     except Exception as e:
         slicer.util.errorDisplay(f"Error opening Data module: {str(e)}")
 
+def set_3d_view_background_black():
+    """
+    Set the 3D view background to black using the working approach from ChangeViewColors example
+    """
+    try:
+        # Get the first 3D view node (typically "View1")
+        viewNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLViewNode")
+        if not viewNode:
+            # If no view node exists, try to get by name
+            viewNode = slicer.util.getNode("View1")
+        
+        if viewNode:
+            # Create black color (same as your working example)
+            black_color = qt.QColor(0, 0, 0)  # RGB values 0,0,0 for black
+            
+            # Convert to normalized values (0-1 range) as in your working example
+            r = black_color.red() / 255.0    # 0.0
+            g = black_color.green() / 255.0  # 0.0  
+            b = black_color.blue() / 255.0   # 0.0
+            
+            # Set background colors using the working method
+            viewNode.SetBackgroundColor(r, g, b)
+            viewNode.SetBackgroundColor2(r, g, b)  # Also set gradient background
+            
+            print("Set 3D view background to black using working method")
+        else:
+            print("Warning: Could not find 3D view node to set background color")
+    except Exception as e:
+        print(f"Error setting 3D view background to black: {str(e)}")
+
 def create_basic_segmentation_for_markup(volume_node):
     """
     Create a basic segmentation node that can be used with markup workflow for statistics
@@ -542,13 +743,30 @@ def create_threshold_segment():
     want_markup = ask_user_for_markup_import()
     
     if want_markup:
-        # User wants to import markup - handle markup import but continue with normal workflow
+        # User wants to import markup - handle all imports (markup, volume, transform)
         markup_node = import_markup_file()
         if markup_node:
             # Store markup workflow flag for later use
             slicer.modules.WorkflowUsingMarkup = True
             slicer.modules.WorkflowMarkupNode = markup_node
-            slicer.util.infoDisplay("Markup imported. Continuing with threshold segmentation workflow.")
+            
+            # Also import straightened volume
+            straightened_volume = import_straightened_volume()
+            if straightened_volume:
+                slicer.modules.WorkflowStraightenedVolume = straightened_volume
+                slicer.util.infoDisplay("Straightened volume imported successfully.")
+            else:
+                slicer.util.infoDisplay("Straightened volume import cancelled or failed.")
+            
+            # Also import transform
+            transform_node = import_transform_file()
+            if transform_node:
+                slicer.modules.WorkflowTransform = transform_node
+                slicer.util.infoDisplay("Transform imported successfully.")
+            else:
+                slicer.util.infoDisplay("Transform import cancelled or failed.")
+            
+            slicer.util.infoDisplay("Markup workflow imports completed. Continuing with threshold segmentation workflow.")
         else:
             # Markup import failed, continue with normal workflow
             slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
@@ -726,6 +944,9 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
     #     except Exception as e2:
     #         print(f"Fallback method also failed: {e2}")
     #         print("Segment_1 is ready - please apply threshold manually in Segment Editor")
+    
+    # Set 3D view background to black as soon as threshold mask is created
+    set_3d_view_background_black()
     
     return segmentation_node
 
@@ -1079,6 +1300,9 @@ def on_continue_from_scissors():
     pass
     cleanup_workflow_ui()
     
+    # Set 3D view background to black
+    set_3d_view_background_black()
+    
     # Check if we're in markup workflow mode
     if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
         # Open the Data module to show imported markup and created curve models
@@ -1102,6 +1326,9 @@ def on_finish_cropping():
         
         # Continue to the next step in the workflow
         cleanup_workflow_ui()
+        
+        # Set 3D view background to black
+        set_3d_view_background_black()
         
         # Check if we're in markup workflow mode
         if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
