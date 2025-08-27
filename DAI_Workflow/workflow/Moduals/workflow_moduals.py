@@ -3011,7 +3011,7 @@ def apply_cpr_transform_to_centerlines():
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
         straightening_transform = None
         
-        print(f"🔍 Found {len(transform_nodes)} transform nodes in scene")
+        
         
         # Look specifically for "Straightening transform"
         for transform_node in transform_nodes:
@@ -3022,13 +3022,9 @@ def apply_cpr_transform_to_centerlines():
         
         if not straightening_transform:
             return False
-        
-        print("🔍 Searching for centerline nodes...")
-        
-        # Find the specific centerline nodes to transform
+
         nodes_to_transform = []
-        
-        # Look for "CenterlineCurve" (and variations with numbers like "CenterlineCurve (0)")
+
         try:
             centerline_curve = slicer.util.getNode("CenterlineCurve (0)")
             if centerline_curve:
@@ -3079,7 +3075,6 @@ def apply_cpr_transform_to_centerlines():
         transformed_count = 0
         for node in nodes_to_transform:
             try:
-                print(f"  Applying transform to: {node.GetName()}")
                 # Check if node already has this transform applied
                 current_transform = node.GetParentTransformNode()
                 if current_transform and current_transform.GetID() == straightening_transform.GetID():
