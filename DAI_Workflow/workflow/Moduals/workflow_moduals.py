@@ -123,6 +123,170 @@ def get_volume_slice_thickness(volume_node):
         # Fallback to original hardcoded value on any error
         return 0.4
 
+def hide_centerlines_from_views():
+    """
+    Hide all centerline-related nodes from views by setting visibility to False.
+    Keeps nodes in scene but makes them invisible.
+    """
+    try:
+        print("Hiding centerlines from views...")
+        hidden_count = 0
+        
+        # Hide all markup fiducial nodes (centerline points)
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for fiducial_node in fiducial_nodes:
+            display_node = fiducial_node.GetDisplayNode()
+            if display_node:
+                display_node.SetVisibility(False)
+                print(f"Hidden fiducial node: {fiducial_node.GetName()}")
+                hidden_count += 1
+        
+        # Hide all markup curve nodes (centerline curves)
+        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
+        for curve_node in curve_nodes:
+            display_node = curve_node.GetDisplayNode()
+            if display_node:
+                display_node.SetVisibility(False)
+                print(f"Hidden curve node: {curve_node.GetName()}")
+                hidden_count += 1
+        
+        # Hide all general markup nodes (catch-all for any other markup types)
+        markup_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
+        for markup_node in markup_nodes:
+            # Skip if already processed as fiducial or curve node
+            if markup_node in fiducial_nodes or markup_node in curve_nodes:
+                continue
+                
+            display_node = markup_node.GetDisplayNode()
+            if display_node:
+                display_node.SetVisibility(False)
+                print(f"Hidden markup node: {markup_node.GetName()}")
+                hidden_count += 1
+        
+        # Hide all curve model nodes (centerline curves converted to models)
+        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        for model_node in model_nodes:
+            # Check if this looks like a centerline curve model
+            node_name = model_node.GetName().lower()
+            if ('curve' in node_name and 'model' in node_name) or 'centerline' in node_name or 'start-slice' in node_name:
+                display_node = model_node.GetDisplayNode()
+                if display_node:
+                    display_node.SetVisibility(False)
+                    print(f"Hidden curve model: {model_node.GetName()}")
+                    hidden_count += 1
+        
+        # Also check for stored workflow markup node
+        if hasattr(slicer.modules, 'WorkflowMarkupNode'):
+            workflow_markup = slicer.modules.WorkflowMarkupNode
+            if workflow_markup:
+                display_node = workflow_markup.GetDisplayNode()
+                if display_node:
+                    display_node.SetVisibility(False)
+                    print(f"Hidden workflow markup node: {workflow_markup.GetName()}")
+                    hidden_count += 1
+        
+        print(f"Centerlines hidden from views. Total hidden: {hidden_count} nodes.")
+        
+    except Exception as e:
+        print(f"Error hiding centerlines: {str(e)}")
+
+def hide_cpr_slice_size_controls():
+    """
+    Hide the slice size controls (label and coordinates widget) from the CPR module UI.
+    This removes the slice size text boxes when CPR is opened.
+    """
+    try:
+        print("Hiding CPR slice size controls...")
+        
+        # Get the CPR module widget
+        cpr_widget = slicer.modules.curvedplanarreformat.widgetRepresentation()
+        if not cpr_widget:
+            print("CPR module widget not found")
+            return False
+        
+        # Try to get the CPR module instance
+        cpr_module = None
+        if hasattr(cpr_widget, 'self'):
+            try:
+                cpr_module = cpr_widget.self()
+            except Exception as e:
+                print(f"Could not get CPR module via self(): {e}")
+        
+        if not cpr_module:
+            cpr_module = cpr_widget
+        
+        # Look for the slice size controls in the UI
+        controls_hidden = False
+        
+        # Method 1: Try to access via ui attribute (most common pattern)
+        if hasattr(cpr_module, 'ui'):
+            ui = cpr_module.ui
+            
+            # Hide the slice size label (label_3 based on the XML)
+            if hasattr(ui, 'label_3'):
+                ui.label_3.setVisible(False)
+                print("Hidden slice size label via ui.label_3")
+                controls_hidden = True
+            
+            # Hide the slice size coordinates widget
+            if hasattr(ui, 'sliceSizeCoordinatesWidget'):
+                ui.sliceSizeCoordinatesWidget.setVisible(False)
+                print("Hidden slice size coordinates widget via ui.sliceSizeCoordinatesWidget")
+                controls_hidden = True
+        
+        # Method 2: Search for controls by object name if direct access didn't work
+        if not controls_hidden:
+            # Find all QLabel widgets and look for the one with "Slice size:" text
+            labels = cpr_widget.findChildren(qt.QLabel)
+            for label in labels:
+                if hasattr(label, 'text') and label.text() == "Slice size:":
+                    label.setVisible(False)
+                    print("Hidden slice size label via findChildren")
+                    controls_hidden = True
+                    break
+            
+            # Find the coordinates widget by class name
+            coord_widgets = cpr_widget.findChildren("qMRMLCoordinatesWidget")
+            for widget in coord_widgets:
+                # Check if this is likely the slice size widget by checking nearby labels
+                parent = widget.parent()
+                if parent:
+                    # Look for siblings that might be the slice size label
+                    siblings = parent.findChildren(qt.QLabel)
+                    for sibling in siblings:
+                        if hasattr(sibling, 'text') and sibling.text() == "Slice size:":
+                            widget.setVisible(False)
+                            print("Hidden slice size coordinates widget via findChildren")
+                            controls_hidden = True
+                            break
+                    if controls_hidden:
+                        break
+        
+        # Method 3: Alternative approach - hide by object name
+        if not controls_hidden:
+            slice_label = cpr_widget.findChild(qt.QLabel, "label_3")
+            if slice_label:
+                slice_label.setVisible(False)
+                print("Hidden slice size label via findChild by name")
+                controls_hidden = True
+            
+            coord_widget = cpr_widget.findChild("qMRMLCoordinatesWidget", "sliceSizeCoordinatesWidget")
+            if coord_widget:
+                coord_widget.setVisible(False)
+                print("Hidden slice size coordinates widget via findChild by name")
+                controls_hidden = True
+        
+        if controls_hidden:
+            print("Successfully hidden CPR slice size controls")
+            return True
+        else:
+            print("Could not find CPR slice size controls to hide")
+            return False
+            
+    except Exception as e:
+        print(f"Error hiding CPR slice size controls: {str(e)}")
+        return False
+
 def ask_user_for_markup_import():
     """
     Ask the user if they want to import markup workflow files
@@ -2464,6 +2628,9 @@ def add_large_cpr_apply_button():
     """
     Add a large green Apply button directly to the Curved Planar Reformat module GUI
     """
+    hide_centerlines_from_views()
+    hide_cpr_slice_size_controls()
+
     try:
         if hasattr(slicer.modules, 'CPRLargeApplyButton'):
             existing_button = slicer.modules.CPRLargeApplyButton
@@ -2567,6 +2734,8 @@ def add_large_cpr_apply_button():
                                 Apply CPR only - transform application moved to Cross-Section Analysis button
                                 """
                                 try:
+                                    print("Starting CPR application...")
+                                    
                                     # Apply the original CPR
                                     original_apply_button.click()
                                     
@@ -2574,10 +2743,14 @@ def add_large_cpr_apply_button():
                                     slicer.app.processEvents()
                                     import time
                                     time.sleep(1.0)
+
+                                    slicer.app.processEvents()
+
                                     
-                                    pass
+                                    print("CPR application and centerline hiding completed.")
                                     
                                 except Exception as e:
+                                    print(f"Error in apply_cpr_and_transform: {str(e)}")
                                     pass
                             
                             large_apply_button.connect('clicked()', apply_cpr_and_transform)
@@ -2824,27 +2997,7 @@ def open_cross_section_analysis_module():
 
                 return False
 
-def test_cpr_buttons():
-    """
-    Console helper function to test the CPR module buttons
-    """
-    try:
-        # First switch to CPR module
-        slicer.util.selectModule("CurvedPlanarReformat")
-        slicer.app.processEvents()
-        
-        # Add the large buttons
-        success = add_large_cpr_apply_button()
-        
-        if success:
-            return True
-        else:
-            print("✗ Failed to add CPR buttons")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Error testing CPR buttons: {e}")
-        return False
+
 
 def apply_cpr_transform_to_centerlines():
     """
@@ -2858,7 +3011,7 @@ def apply_cpr_transform_to_centerlines():
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
         straightening_transform = None
         
-        print(f"🔍 Found {len(transform_nodes)} transform nodes in scene")
+        
         
         # Look specifically for "Straightening transform"
         for transform_node in transform_nodes:
@@ -2869,13 +3022,9 @@ def apply_cpr_transform_to_centerlines():
         
         if not straightening_transform:
             return False
-        
-        print("🔍 Searching for centerline nodes...")
-        
-        # Find the specific centerline nodes to transform
+
         nodes_to_transform = []
-        
-        # Look for "CenterlineCurve" (and variations with numbers like "CenterlineCurve (0)")
+
         try:
             centerline_curve = slicer.util.getNode("CenterlineCurve (0)")
             if centerline_curve:
@@ -2926,7 +3075,6 @@ def apply_cpr_transform_to_centerlines():
         transformed_count = 0
         for node in nodes_to_transform:
             try:
-                print(f"  Applying transform to: {node.GetName()}")
                 # Check if node already has this transform applied
                 current_transform = node.GetParentTransformNode()
                 if current_transform and current_transform.GetID() == straightening_transform.GetID():
@@ -4373,6 +4521,9 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         slicer.util.selectModule("CurvedPlanarReformat")
         pass
         slicer.app.processEvents()
+        
+        # Hide slice size controls from CPR module UI
+        hide_cpr_slice_size_controls()
         
         # Hide threshold segmentation mask after opening CPR module
         hide_threshold_segmentation_mask()
