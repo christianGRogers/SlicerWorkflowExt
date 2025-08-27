@@ -157,12 +157,7 @@ class workflowLogic(ScriptedLoadableModuleLogic):
             workflow_mod.start_with_dicom_data()
         except Exception as e:
             slicer.util.errorDisplay(f"Error in workflow: {str(e)}")
-            print(f"Error: {e}")
-
-
-#
-# workflowTest
-#
+            
 
 
 class workflowTest(ScriptedLoadableModuleTest):
