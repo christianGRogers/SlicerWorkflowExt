@@ -129,7 +129,7 @@ def hide_centerlines_from_views():
     Keeps nodes in scene but makes them invisible.
     """
     try:
-        print("Hiding centerlines from views...")
+
         hidden_count = 0
         
         # Hide all markup fiducial nodes (centerline points)
@@ -138,7 +138,6 @@ def hide_centerlines_from_views():
             display_node = fiducial_node.GetDisplayNode()
             if display_node:
                 display_node.SetVisibility(False)
-                print(f"Hidden fiducial node: {fiducial_node.GetName()}")
                 hidden_count += 1
         
         # Hide all markup curve nodes (centerline curves)
@@ -147,7 +146,7 @@ def hide_centerlines_from_views():
             display_node = curve_node.GetDisplayNode()
             if display_node:
                 display_node.SetVisibility(False)
-                print(f"Hidden curve node: {curve_node.GetName()}")
+
                 hidden_count += 1
         
         # Hide all general markup nodes (catch-all for any other markup types)
@@ -160,7 +159,6 @@ def hide_centerlines_from_views():
             display_node = markup_node.GetDisplayNode()
             if display_node:
                 display_node.SetVisibility(False)
-                print(f"Hidden markup node: {markup_node.GetName()}")
                 hidden_count += 1
         
         # Hide all curve model nodes (centerline curves converted to models)
@@ -172,7 +170,6 @@ def hide_centerlines_from_views():
                 display_node = model_node.GetDisplayNode()
                 if display_node:
                     display_node.SetVisibility(False)
-                    print(f"Hidden curve model: {model_node.GetName()}")
                     hidden_count += 1
         
         # Also check for stored workflow markup node
@@ -182,13 +179,11 @@ def hide_centerlines_from_views():
                 display_node = workflow_markup.GetDisplayNode()
                 if display_node:
                     display_node.SetVisibility(False)
-                    print(f"Hidden workflow markup node: {workflow_markup.GetName()}")
                     hidden_count += 1
         
-        print(f"Centerlines hidden from views. Total hidden: {hidden_count} nodes.")
         
     except Exception as e:
-        print(f"Error hiding centerlines: {str(e)}")
+        pass
 
 def hide_cpr_slice_size_controls():
     """
@@ -196,12 +191,10 @@ def hide_cpr_slice_size_controls():
     This removes the slice size text boxes when CPR is opened.
     """
     try:
-        print("Hiding CPR slice size controls...")
         
         # Get the CPR module widget
         cpr_widget = slicer.modules.curvedplanarreformat.widgetRepresentation()
         if not cpr_widget:
-            print("CPR module widget not found")
             return False
         
         # Try to get the CPR module instance
@@ -210,7 +203,7 @@ def hide_cpr_slice_size_controls():
             try:
                 cpr_module = cpr_widget.self()
             except Exception as e:
-                print(f"Could not get CPR module via self(): {e}")
+                pass
         
         if not cpr_module:
             cpr_module = cpr_widget
@@ -222,16 +215,14 @@ def hide_cpr_slice_size_controls():
         if hasattr(cpr_module, 'ui'):
             ui = cpr_module.ui
             
-            # Hide the slice size label (label_3 based on the XML)
+            
             if hasattr(ui, 'label_3'):
                 ui.label_3.setVisible(False)
-                print("Hidden slice size label via ui.label_3")
                 controls_hidden = True
             
-            # Hide the slice size coordinates widget
+            
             if hasattr(ui, 'sliceSizeCoordinatesWidget'):
                 ui.sliceSizeCoordinatesWidget.setVisible(False)
-                print("Hidden slice size coordinates widget via ui.sliceSizeCoordinatesWidget")
                 controls_hidden = True
         
         # Method 2: Search for controls by object name if direct access didn't work
@@ -241,7 +232,6 @@ def hide_cpr_slice_size_controls():
             for label in labels:
                 if hasattr(label, 'text') and label.text() == "Slice size:":
                     label.setVisible(False)
-                    print("Hidden slice size label via findChildren")
                     controls_hidden = True
                     break
             
@@ -256,7 +246,6 @@ def hide_cpr_slice_size_controls():
                     for sibling in siblings:
                         if hasattr(sibling, 'text') and sibling.text() == "Slice size:":
                             widget.setVisible(False)
-                            print("Hidden slice size coordinates widget via findChildren")
                             controls_hidden = True
                             break
                     if controls_hidden:
@@ -267,24 +256,19 @@ def hide_cpr_slice_size_controls():
             slice_label = cpr_widget.findChild(qt.QLabel, "label_3")
             if slice_label:
                 slice_label.setVisible(False)
-                print("Hidden slice size label via findChild by name")
                 controls_hidden = True
             
             coord_widget = cpr_widget.findChild("qMRMLCoordinatesWidget", "sliceSizeCoordinatesWidget")
             if coord_widget:
                 coord_widget.setVisible(False)
-                print("Hidden slice size coordinates widget via findChild by name")
                 controls_hidden = True
         
         if controls_hidden:
-            print("Successfully hidden CPR slice size controls")
             return True
         else:
-            print("Could not find CPR slice size controls to hide")
             return False
             
     except Exception as e:
-        print(f"Error hiding CPR slice size controls: {str(e)}")
         return False
 
 def ask_user_for_markup_import():
@@ -305,7 +289,6 @@ def ask_user_for_markup_import():
         )
         return result
     except Exception as e:
-        print(f"Error asking for markup import: {e}")
         return False
 
 def import_markup_file():
@@ -533,11 +516,10 @@ def set_volume_visible_in_slice_views(volume_node):
         
         # Reset field of view to show the volume properly
         slicer.util.resetSliceViews()
-        
-        print(f"Set {volume_node.GetName()} as visible in all slice views")
+    
         
     except Exception as e:
-        print(f"Error setting volume visible: {str(e)}")
+        pass
 
 def create_curve_models_from_markup(markup_node):
     """
@@ -566,8 +548,6 @@ def create_curve_models_from_markup(markup_node):
             slicer.util.infoDisplay("Need at least 2 points to create curve models.")
             return []
         
-        print(f"Creating curve models from {num_points} markup points...")
-        print(f"Will create {num_points-1} curve models")
         
         # Load MarkupsToModel module
         try:
@@ -659,7 +639,6 @@ def create_curve_models_from_markup(markup_node):
                     success = True
                     
                 except Exception as model_error:
-                    print(f"Error with MarkupsToModel approach: {model_error}")
                     # Fallback: Create a simple line model using VTK
                     try:
                         points = vtk.vtkPoints()
@@ -686,7 +665,6 @@ def create_curve_models_from_markup(markup_node):
                         success = True
                         
                     except Exception as vtk_error:
-                        print(f"Error with VTK fallback: {vtk_error}")
                         # Create basic polydata line
                         points = vtk.vtkPoints()
                         points.InsertNextPoint(point1_pos)
@@ -726,10 +704,6 @@ def create_curve_models_from_markup(markup_node):
                         
                         # Set line/tube width if it's a line model
                         display_node.SetLineWidth(3)
-                        
-                        print(f"Created curve model with color {color}: {output_model.GetName()}")
-                    else:
-                        print(f"Warning: Could not create display node for {output_model.GetName()}")
                     
                     created_models.append(output_model)
                 else:
@@ -740,7 +714,6 @@ def create_curve_models_from_markup(markup_node):
                 slicer.mrmlScene.RemoveNode(curve_markup)
                 
             except Exception as e:
-                print(f"Error creating curve model for points {i+1}-{i+2}: {str(e)}")
                 continue
         
         # After creating all models, delete the first two and ensure remaining are visible
@@ -749,7 +722,6 @@ def create_curve_models_from_markup(markup_node):
             # Mark first two models for deletion
             models_to_delete = created_models[:2]
             for i, model in enumerate(models_to_delete):
-                print(f"Deleting first model: {model.GetName()}")
                 slicer.mrmlScene.RemoveNode(model)
             
             # Update the created_models list to only include remaining models
@@ -776,20 +748,12 @@ def create_curve_models_from_markup(markup_node):
                     display_node.SetOpacity(0.8)
                     display_node.SetLineWidth(3)
                     
-                    print(f"Confirmed visible with color {color}: {model.GetName()}")
-                else:
-                    print(f"Warning: Could not ensure display node for {model.GetName()}")
         
         # Force a scene update to ensure all changes are applied
         slicer.app.processEvents()
         
         if created_models:
-            model_names = [model.GetName() for model in created_models]
-            visible_count = len([model for model in created_models if model.GetDisplayNode() and model.GetDisplayNode().GetVisibility()])
             
-            print(f"Successfully created and kept {len(created_models)} curve models (deleted first 2):")
-            for name in model_names:
-                print(f"  - {name} (VISIBLE)")
             
             total_created = len(created_models) + 2  # Account for deleted models
             slicer.util.infoDisplay(f"Successfully created {total_created} curve models from markup points.\n" + 
@@ -824,9 +788,8 @@ def open_data_module():
                     if hasattr(scene_model, 'expandAll'):
                         scene_model.expandAll()
         except Exception as expand_error:
-            print(f"Could not expand Data module tree: {expand_error}")
+            pass
         
-        print("Opened Data module to view imported markup and created curve models")
         
     except Exception as e:
         slicer.util.errorDisplay(f"Error opening Data module: {str(e)}")
@@ -854,12 +817,8 @@ def set_3d_view_background_black():
             # Set background colors using the working method
             viewNode.SetBackgroundColor(r, g, b)
             viewNode.SetBackgroundColor2(r, g, b)  # Also set gradient background
-            
-            print("Set 3D view background to black using working method")
-        else:
-            print("Warning: Could not find 3D view node to set background color")
     except Exception as e:
-        print(f"Error setting 3D view background to black: {str(e)}")
+        pass
 
 def create_basic_segmentation_for_markup(volume_node):
     """
@@ -890,7 +849,6 @@ def create_basic_segmentation_for_markup(volume_node):
         return segmentation_node
         
     except Exception as e:
-        print(f"Error creating basic segmentation: {e}")
         return None
 
 def create_threshold_segment():
@@ -1079,37 +1037,6 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
         slicer.mrmlScene.RemoveNode(temp_labelmap)
     except Exception as e:
         pass
-    #TODO remove exesive error handeling 
-    # except Exception as e:
-    #     print(f"Error applying threshold: {e}")
-
-    #     try:
-    #         print("Trying fallback method with Segment Editor...")
-
-    #         segmentEditorNode = slicer.vtkMRMLSegmentEditorNode()
-    #         slicer.mrmlScene.AddNode(segmentEditorNode)
-    #         segmentEditorNode.SetAndObserveSegmentationNode(segmentation_node)
-    #         segmentEditorNode.SetAndObserveSourceVolumeNode(volume_node)
-    #         segmentEditorNode.SetSelectedSegmentID(segment_id)
-
-    #         segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
-    #         segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
-    #         segmentEditorWidget.setMRMLSegmentEditorNode(segmentEditorNode)
-    #         segmentEditorWidget.setActiveEffectByName("Threshold")
-    #         effect = segmentEditorWidget.activeEffect()
-            
-    #         if effect:
-    #             effect.setParameter("MinimumThreshold", str(threshold_value_low))
-    #             effect.setParameter("MaximumThreshold", str(threshold_value_high))
-    #             effect.self().onApply()
-    #             print("Applied threshold using Segment Editor fallback method")
-    #         slicer.mrmlScene.RemoveNode(segmentEditorNode)
-            
-    #     except Exception as e2:
-    #         print(f"Fallback method also failed: {e2}")
-    #         print("Segment_1 is ready - please apply threshold manually in Segment Editor")
-    
-    # Set 3D view background to black as soon as threshold mask is created
     set_3d_view_background_black()
     
     return segmentation_node
@@ -2268,15 +2195,7 @@ def verify_extract_centerline_point_list_autoselection():
             verification_results["place_mode_persistence"] and 
             verification_results["active_node_set"]
         )
-        
-        # Report results
-        if verification_results["success"]:
-            pass  # print("✓ Extract Centerline point placement verification passed")
-        else:
-            pass  # print("✗ Extract Centerline point placement verification failed:")
-            # for detail in verification_results["details"]:
-            #     print(f"  {detail}")
-        
+
         return verification_results
         
     except Exception as e:
@@ -2321,16 +2240,9 @@ def fix_extract_centerline_setup_issues():
                     if "Endpoints" in node.GetName():
                         selectionNode.SetActivePlaceNodeID(node.GetID())
                         fixes_applied.append(f"Set active place node to {node.GetName()}")
-                        break
-        
-        if fixes_applied:
-            pass  # print(f"Applied fixes: {', '.join(fixes_applied)}")
-            slicer.app.processEvents()  # Allow UI to update
-        else:
-            pass  # print("No fixes needed to be applied")
-            
+                        break      
     except Exception as e:
-        pass  # print(f"Error applying fixes: {str(e)}")
+        pass
 
 def prepare_surface_for_centerline(segmentation_node):
     """
@@ -2734,7 +2646,6 @@ def add_large_cpr_apply_button():
                                 Apply CPR only - transform application moved to Cross-Section Analysis button
                                 """
                                 try:
-                                    print("Starting CPR application...")
                                     
                                     # Apply the original CPR
                                     original_apply_button.click()
@@ -2745,12 +2656,8 @@ def add_large_cpr_apply_button():
                                     time.sleep(1.0)
 
                                     slicer.app.processEvents()
-
-                                    
-                                    print("CPR application and centerline hiding completed.")
                                     
                                 except Exception as e:
-                                    print(f"Error in apply_cpr_and_transform: {str(e)}")
                                     pass
                             
                             large_apply_button.connect('clicked()', apply_cpr_and_transform)
@@ -2805,8 +2712,8 @@ def add_large_cpr_apply_button():
                                             setup_cross_section_analysis_module()
                                             pass
                                         except Exception as e3:
-                                            print("Cross-Section Analysis module not found. Please ensure the extension is installed.")
-                            
+                                            pass
+
                             cross_section_button.connect('clicked()', open_cross_section_analysis)
                             
                         else:
@@ -2909,8 +2816,8 @@ def add_large_cpr_apply_button():
                                             setup_cross_section_analysis_module()
                                             pass
                                         except Exception as e3:
-                                            print("Cross-Section Analysis module not found. Please ensure the extension is installed.")
-                            
+                                            pass
+
                             cross_section_button.connect('clicked()', open_cross_section_analysis)
                         
                         main_ui_widget = None
@@ -3015,7 +2922,6 @@ def apply_cpr_transform_to_centerlines():
         
         # Look specifically for "Straightening transform"
         for transform_node in transform_nodes:
-            print(f"  - Transform: {transform_node.GetName()}")
             if transform_node.GetName() == "Straightening transform":
                 straightening_transform = transform_node
                 break
@@ -3155,7 +3061,6 @@ def configure_cross_section_module():
                     item_text = combo.itemText(j)
                     if item_text and ('parameter' in item_text.lower() or 'default' in item_text.lower() or 'standard' in item_text.lower()):
                         parameter_set_selector = combo
-                        print(f"  Found potential parameter set selector: combo box {i}")
                         break
                 if parameter_set_selector:
                     break
@@ -3172,18 +3077,14 @@ def configure_cross_section_module():
                 # Give UI time to update after parameter set selection
                 slicer.app.processEvents()
                 time.sleep(0.2)
-            else:
-                print("  No parameter set selector found (this might be normal)")
                 
         except Exception as e:
-            print(f"  Error handling parameter set: {e}")
-    
+            pass
 
         try:
             # Look for the input curve selector (first qMRMLNodeComboBox)
             curve_selectors = module_widget.findChildren(slicer.qMRMLNodeComboBox)
             if curve_selectors:
-                print(f"  Found {len(curve_selectors)} node selectors")
                 
                 # Find centerline curve node first
                 centerline_curve = None
@@ -3207,24 +3108,19 @@ def configure_cross_section_module():
                         # Check if this selector accepts the type of node we have
                         if hasattr(selector, 'nodeTypes'):
                             node_types = selector.nodeTypes  # Fixed: removed () - it's a property not method
-                            print(f"    Selector {i} accepts: {node_types}")
                             if node_types and any('Curve' in node_type or 'Markup' in node_type for node_type in node_types):
                                 input_curve_selector = selector
-                                print(f"    Selector {i} looks like it accepts curves")
                                 break
                         else:
                             # If we can't check types, try the first one
                             if i == 0:
                                 input_curve_selector = selector
-                                print(f"    Using selector {i} as fallback (first selector)")
                     except Exception as e:
-                        print(f"    Error checking selector {i}: {e}")
                         continue
                 
                 if not input_curve_selector:
                     # Fallback to first selector
                     input_curve_selector = curve_selectors[0]
-                    print("    Using first selector as last resort")
                 
                 # Set the centerline curve
                 try:
@@ -3369,18 +3265,13 @@ def collapse_parameters_tab():
 def configure_browse_cross_sections():
     """Configure the browse cross sections settings"""
     try:
-        print("🎯 Step 3: Configuring browse cross sections...")
-        
-        # Find the Cross-Section Analysis module widget again
         module_manager = slicer.app.moduleManager()
         module = module_manager.module('CrossSectionAnalysis')
         if not module:
-            print("❌ Could not find Cross-Section Analysis module")
             return False
             
         module_widget = module.widgetRepresentation()
         if not module_widget:
-            print("❌ Module widget is None")
             return False
         
         # Look for the browse cross sections area (likely a collapsible button or group box)
@@ -3394,23 +3285,17 @@ def configure_browse_cross_sections():
             for cb in collapsible_buttons:
                 if "browse" in cb.text.lower() or "cross" in cb.text.lower():
                     browse_widgets.append(cb)
-                    print(f"  Found collapsible button: {cb.text}")
         except Exception as e:
-            print(f"  Could not access ctkCollapsibleButton: {e}")
-        
+            pass
+
         group_boxes = module_widget.findChildren(qt.QGroupBox)
         for gb in group_boxes:
             if "browse" in gb.title.lower() or "cross" in gb.title.lower():
                 browse_widgets.append(gb)
-                print(f"  Found group box: {gb.title}")
-        
-        print(f"  Found {len(browse_widgets)} potential browse widgets")
-        
+
         # Configure the settings
         for widget in browse_widgets:
             try:
-                print(f"  Configuring widget: {widget.__class__.__name__}")
-                
                 # Look for the axial and longitudinal slice view selectors
                 # Based on XML: axialSliceViewSelector and longitudinalSliceViewSelector
                 axial_selector = widget.findChild(slicer.qMRMLNodeComboBox, "axialSliceViewSelector")
@@ -3418,54 +3303,37 @@ def configure_browse_cross_sections():
                 
                 try:
                     if axial_selector:
-                        print(f"    Found axial selector: {axial_selector.__class__.__name__}")
                         # Set Axial to Red using direct node selection (similar to provided script)
                         red_slice_node = slicer.mrmlScene.GetNodeByID('vtkMRMLSliceNodeRed')
                         if red_slice_node:
                             axial_selector.setCurrentNode(red_slice_node)
                 except Exception as axial_error:
-                    print(f"  Error configuring axial selector: {axial_error}")
+                    pass
                 try:
                     if longitudinal_selector:
-                        print(f"    Found longitudinal selector: {longitudinal_selector.__class__.__name__}")
                         # Set Longitudinal to Green using direct node selection (similar to provided script)
                         green_slice_node = slicer.mrmlScene.GetNodeByID('vtkMRMLSliceNodeGreen')
                         if green_slice_node:
                             longitudinal_selector.setCurrentNode(green_slice_node)
                 except Exception as longitudinal_error:
-                    print(f"  Error configuring longitudinal selector: {longitudinal_error}")
+                    pass
                 
                 # Find slider for Point Index (moveToPointSliderWidget in XML)
                 try:
-                    print("  Looking for point slider...")
                     # Import ctk module first
                     import ctk
                     point_slider = widget.findChild(ctk.ctkSliderWidget, "moveToPointSliderWidget")
                     if point_slider:
-                        print(f"    Found point slider: {point_slider.__class__.__name__}")
                         if hasattr(point_slider, 'maximum') and point_slider.maximum > 0:
                             # Set point index to 230, but ensure it's within the slider's range
                             target_value = min(230, point_slider.maximum)
                             point_slider.setValue(target_value)
-                            print(f"✅ Set Point Index to {target_value} (target: 230, max: {point_slider.maximum})")
-                        else:
-                            print("  Point slider found but maximum is 0 or unavailable")
-                    else:
-                        print("  Point slider not found by name")
                 except Exception as slider_error:
-                    print(f"  Error configuring point slider: {slider_error}")
-                        
+                    pass
             except Exception as e:
-                print(f"❌ Error configuring browse widget: {e}")
-                import traceback
-                print(f"  Traceback: {traceback.format_exc()}")
                 continue
-        
-        print("✅ Cross-Section Analysis module configuration completed")
         return True
-        
     except Exception as e:
-        print(f"❌ Error in configure_browse_cross_sections: {e}")
         return False
 
 def apply_transform_to_specific_centerline_nodes(centerline_model=None, centerline_curve=None):
@@ -3526,15 +3394,8 @@ def apply_cpr_transforms_manually():
     Can be called from the Python console if automatic application fails.
     """
     try:
-        success = apply_cpr_transform_to_centerlines()
-        if success:
-            print("✓ Successfully applied CPR transforms to centerline nodes")
-            return True
-        else:
-            print("✗ Failed to apply CPR transforms - check if CPR has been applied and centerlines exist")
-            return False
+        return apply_cpr_transform_to_centerlines()
     except Exception as e:
-        print(f"✗ Error applying CPR transforms: {e}")
         return False
 
 def list_available_transforms():
@@ -3543,50 +3404,9 @@ def list_available_transforms():
     """
     try:
         transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
-        print("Available transform nodes:")
-        for i, transform in enumerate(transform_nodes):
-            print(f"  {i+1}. {transform.GetName()} (ID: {transform.GetID()})")
         return transform_nodes
     except Exception as e:
-        print(f"Error listing transforms: {e}")
         return []
-
-def list_centerline_nodes():
-    """
-    Console helper to list all potential centerline nodes in the scene
-    """
-    try:
-        print("Potential centerline nodes:")
-        
-        # Check stored workflow references
-        if hasattr(slicer.modules, 'WorkflowCenterlineModel'):
-            model = slicer.modules.WorkflowCenterlineModel
-            if model:
-                print(f"  Stored Model: {model.GetName()} (ID: {model.GetID()})")
-        
-        if hasattr(slicer.modules, 'WorkflowCenterlineCurve'):
-            curve = slicer.modules.WorkflowCenterlineCurve
-            if curve:
-                print(f"  Stored Curve: {curve.GetName()} (ID: {curve.GetID()})")
-        
-        # List all curve nodes
-        curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsCurveNode')
-        print("Curve nodes:")
-        for curve in curve_nodes:
-            print(f"  - {curve.GetName()} (ID: {curve.GetID()})")
-        
-        # List all model nodes that might be centerlines
-        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
-        print("Model nodes:")
-        for model in model_nodes:
-            name = model.GetName().lower()
-            if ('centerline' in name or 'vmtk' in name or 'model' in name):
-                print(f"  - {model.GetName()} (ID: {model.GetID()})")
-        
-        return True
-    except Exception as e:
-        print(f"Error listing centerline nodes: {e}")
-        return False
 
 def style_crop_apply_button():
     """
@@ -3886,23 +3706,11 @@ def check_for_volume_addition():
         
         # Update status widget every 5 checks (5 seconds)
         if slicer.modules.VolumeMonitorCheckCount % 5 == 0:
-            update_volume_waiting_status(f"🔄 Waiting for volume... ({slicer.modules.VolumeMonitorCheckCount}s)")
-        
-        # Print status every 10 checks (10 seconds)
-        if slicer.modules.VolumeMonitorCheckCount % 10 == 0:
-            pass
-        
-        # Check if a new volume has been added
+            update_volume_waiting_status(f"Waiting for volume... ({slicer.modules.VolumeMonitorCheckCount}s)")
         if current_count > slicer.modules.BaselineVolumeCount:
-            pass
-            
-            # Update status widget
-            update_volume_waiting_status("✅ Volume detected! Continuing workflow...")
-            
-            # Stop monitoring
+            update_volume_waiting_status("Volume detected! Continuing workflow...")
+
             stop_volume_addition_monitoring()
-            
-            # Get the newly added volume
             if volume_nodes:
                 latest_volume = volume_nodes[-1]  # Get the most recently added volume
                 pass
@@ -4248,22 +4056,10 @@ def check_centerline_completion():
     try:
         if hasattr(slicer.modules, 'CenterlineCheckCount'):
             slicer.modules.CenterlineCheckCount += 1
-            # if slicer.modules.CenterlineCheckCount > 60:
-            #     stop_centerline_monitoring()
-            #     print("Centerline monitoring timed out")
-            #     return
-            #depricate timeout
-        
-        # Get baseline counts
         baseline_model_count = getattr(slicer.modules, 'BaselineCenterlineModelCount', 0)
         baseline_curve_count = getattr(slicer.modules, 'BaselineCenterlineCurveCount', 0)
-        
-        # Check current counts
         current_models = find_all_centerline_models()
         current_curves = find_all_centerline_curves()
-        
-        # Debug information
-        pass
         
         # Look for new centerlines with substantial data
         new_centerline_model = None
@@ -4477,7 +4273,6 @@ def hide_threshold_segmentation_mask():
             
             # Check if node name matches the pattern ThresholdSegmentation_XXX.X_XXXX.X
             if node_name.startswith("ThresholdSegmentation_") and "_" in node_name:
-                print(f"Hiding threshold segmentation: {node_name}")
                 
                 # Hide the segmentation node
                 display_node = seg_node.GetDisplayNode()
@@ -4503,7 +4298,7 @@ def hide_threshold_segmentation_mask():
         slicer.app.processEvents()
         
     except Exception as e:
-        print(f"Error hiding threshold segmentation mask: {e}")
+        pass
 
 def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     """
@@ -4619,15 +4414,8 @@ def check_cpr_completion():
     try:
         if hasattr(slicer.modules, 'CPRCheckCount'):
             slicer.modules.CPRCheckCount += 1
-            # if slicer.modules.CPRCheckCount > 30:  # Stop after 60 seconds
-            #     stop_cpr_monitoring()
-            #     print("CPR monitoring timed out")
-            #     return
-        
-
         straightened_volumes = []
         projected_volumes = []
-        
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         for volume in volume_nodes:
             volume_name = volume.GetName().lower()
@@ -5418,9 +5206,7 @@ def toggle_analysis_masks_visibility(toggle_button):
             for node in nodes:
                 if "AnalysisMasks" in node.GetName():
                     analysis_mask_nodes.append(node)
-        
         if not analysis_mask_nodes:
-            print("No AnalysisMasks nodes found in the scene")
             return
         
         # Determine current visibility state (check the first node)
@@ -5455,13 +5241,11 @@ def toggle_analysis_masks_visibility(toggle_button):
         # Update button text
         if new_visibility:
             toggle_button.setText("Hide AnalysisMasks")
-            print(f"Showing {len(analysis_mask_nodes)} AnalysisMasks nodes")
         else:
             toggle_button.setText("Show AnalysisMasks")
-            print(f"Hiding {len(analysis_mask_nodes)} AnalysisMasks nodes")
         
     except Exception as e:
-        print(f"Error toggling AnalysisMasks visibility: {e}")
+        pass
         slicer.util.errorDisplay(f"Could not toggle AnalysisMasks visibility: {str(e)}")
 
 def toggle_window_level_tool(activated, toggle_button):
@@ -5476,7 +5260,6 @@ def toggle_window_level_tool(activated, toggle_button):
         # Get the interaction node
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if not interactionNode:
-            print("Could not find interaction node")
             return
         
         if activated:
@@ -5484,19 +5267,16 @@ def toggle_window_level_tool(activated, toggle_button):
             interactionNode.SetCurrentInteractionMode(interactionNode.AdjustWindowLevel)
             toggle_button.setText("Window Level (ON)")
             toggle_button.setChecked(True)
-            print("Window level tool activated - drag in slice views to adjust window/level")
         else:
             # Deactivate window level tool (return to view transform)
             interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
             toggle_button.setText("Window Level")
             toggle_button.setChecked(False)
-            print("Window level tool deactivated")
         
         # Force update of slice views
         slicer.app.processEvents()
         
     except Exception as e:
-        print(f"Error toggling window level tool: {e}")
         slicer.util.errorDisplay(f"Could not toggle window level tool: {str(e)}")
         # Reset button state on error
         toggle_button.setText("Window Level")
@@ -6440,11 +6220,6 @@ def check_for_apply_button_click():
         if hasattr(slicer.modules, 'ApplyMonitorCheckCount'):
             slicer.modules.ApplyMonitorCheckCount += 1
             
-            # if slicer.modules.ApplyMonitorCheckCount > 300:  # 10 minutes (300 * 2 seconds)
-            #     print("Apply button monitoring timed out after 10 minutes")
-            #     stop_apply_button_monitoring()
-            #     return
-        
         # Get current centerlines
         current_models = find_all_centerline_models()
         current_curves = find_all_centerline_curves()
@@ -8912,96 +8687,13 @@ def fix_extract_centerline_setup_issues():
     except Exception as e:
         pass
 
-def test_extract_centerline_verification():
-    """
-    Test the Extract Centerline verification functions
-    """
-    try:
-        print("=== Testing Extract Centerline Verification ===")
-        
-        # First, open the Extract Centerline module if not already open
-        current_module = slicer.util.selectedModule()
-        if current_module != "ExtractCenterline":
-            slicer.util.selectModule("ExtractCenterline")
-            slicer.app.processEvents()
-            setup_centerline_module()
-        
-        # Run the verification
-        print("Running verification...")
-        results = verify_extract_centerline_point_list_autoselection()
-        
-        print(f"Verification Success: {results['success']}")
-        print(f"Interaction Mode Enabled: {results['interaction_mode_enabled']}")
-        print(f"Place Mode Persistence: {results['place_mode_persistence']}")
-        print(f"Active Node Set: {results['active_node_set']}")
-        
-        print("\nDetailed Results:")
-        for detail in results['details']:
-            print(f"  {detail}")
-        
-        if not results['success']:
-            print("\nApplying fixes...")
-            fix_extract_centerline_setup_issues()
-            
-            print("Re-running verification after fixes...")
-            results_after_fix = verify_extract_centerline_point_list_autoselection()
-            print(f"Verification Success After Fix: {results_after_fix['success']}")
-            
-            print("\nDetailed Results After Fix:")
-            for detail in results_after_fix['details']:
-                print(f"  {detail}")
-        
-        print("=== Extract Centerline Verification Test Complete ===")
-        return results
-        
-    except Exception as e:
-        print(f"Error during Extract Centerline verification test: {str(e)}")
-        return None
 
-def test_extract_centerline_setup_with_verification():
-    """
-    Test the complete Extract Centerline setup process with verification
-    """
-    try:
-        print("=== Testing Extract Centerline Setup with Verification ===")
-        
-        # Open Extract Centerline module
-        slicer.util.selectModule("ExtractCenterline")
-        slicer.app.processEvents()
-        
-        # Run full setup
-        print("Setting up Extract Centerline module...")
-        setup_centerline_module()
-        
-        # Verify the setup
-        print("Verifying setup...")
-        results = verify_extract_centerline_point_list_autoselection()
-        
-        print(f"Setup Verification: {'PASSED' if results['success'] else 'FAILED'}")
-        
-        if results['success']:
-            print("✓ Extract Centerline module is properly configured")
-            print("✓ 'Add multiple points' mode is auto-selected")
-            print("✓ Ready for endpoint placement")
-        else:
-            print("✗ Extract Centerline setup has issues:")
-            for detail in results['details']:
-                if "✗" in detail:
-                    print(f"  {detail}")
-        
-        print("=== Extract Centerline Setup Test Complete ===")
-        return results
-        
-    except Exception as e:
-        print(f"Error during Extract Centerline setup test: {str(e)}")
-        return None
 
 def fix_centerline_issues():
     """
     Comprehensive function to fix various Extract Centerline module issues
     """
     try:
-        print("=== Fixing Extract Centerline Issues ===")
         
         # Ensure we're in the right module
         slicer.util.selectModule("ExtractCenterline")
@@ -9010,24 +8702,13 @@ def fix_centerline_issues():
         # Run the setup fixes
         fix_extract_centerline_setup_issues()
         
-        # Re-run setup if needed
+
         setup_centerline_module()
-        
-        # Final verification
+
         results = verify_extract_centerline_point_list_autoselection()
         
-        if results['success']:
-            print("✓ All Extract Centerline issues have been resolved")
-        else:
-            print("✗ Some issues remain after attempted fixes:")
-            for detail in results['details']:
-                if "✗" in detail:
-                    print(f"  {detail}")
-        
-        print("=== Extract Centerline Fix Complete ===")
         return results['success']
         
     except Exception as e:
-        print(f"Error during Extract Centerline fix: {str(e)}")
         return False
 
