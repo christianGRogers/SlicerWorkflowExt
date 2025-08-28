@@ -4931,7 +4931,9 @@ def on_point_added(point_list, count_label):
         
         # Draw circle for the newly added point (point_count - 1 because it's 0-indexed)
         if point_count > 0:
-            draw_circle_for_single_point(point_count - 1)
+            success = draw_circle_for_single_point(point_count - 1)
+            # Note: draw_circle_for_single_point will hide the fiducial points after creating circles
+            # This keeps the workflow logic intact while simplifying the visual display
         
         # Provide feedback about what point was just placed and what's next
         if point_count == 1:
@@ -7216,6 +7218,20 @@ def draw_circle_for_single_point(point_index):
         
         if success:
             slicer.modules.WorkflowCenterlineCircleNodes.append(circle_node)
+            
+            # Hide the original fiducial point to simplify visualization
+            # The circle now represents the point location visually
+            try:
+                # Hide the specific control point
+                f1_points.SetNthControlPointVisibility(point_index, False)
+                # Also hide the point in 3D view
+                display_node = f1_points.GetDisplayNode()
+                if display_node:
+                    display_node.SetPointLabelsVisibility(False)
+                    display_node.SetVisibility(False)  # Hide the entire fiducial list
+                pass  # Successfully hid fiducial point after circle creation
+            except Exception as hide_error:
+                pass  # Failed to hide fiducial point, but circle was created successfully
         
         return success
         
