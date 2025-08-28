@@ -4929,6 +4929,10 @@ def on_point_added(point_list, count_label):
         # Get current point count for feedback
         point_count = point_list.GetNumberOfControlPoints()
         
+        # Draw circle for the newly added point (point_count - 1 because it's 0-indexed)
+        if point_count > 0:
+            draw_circle_for_single_point(point_count - 1)
+        
         # Provide feedback about what point was just placed and what's next
         if point_count == 1:
             pass  # Just placed pre-lesion
@@ -4974,10 +4978,8 @@ def update_point_count_display_for_current_list(count_label):
             # Automatically re-enable point placement mode after each point is added
             ensure_point_placement_mode_active(current_point_list)
             
-            # Check if we have minimum required points (pre-lesion, post-lesion, at least one start-slice, one end-slice)
-            if current_point_list.GetNumberOfControlPoints() >= 4:
-                pass
-                draw_circles_on_centerline()
+            # Note: Individual circles are now drawn immediately when each point is added
+            # No need to wait for minimum points or redraw all circles here
                 
         else:
             fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
@@ -6764,7 +6766,7 @@ def set_straightened_volume_visible():
 
 def draw_circles_on_centerline():
     """
-    Draw circles only at pre-lesion and post-lesion points (F-1 points 1 and 2)
+    Draw circles at all fiducial points: pre-lesion, post-lesion, and all start/end slice markers
     """
     try:
         f1_points = None
@@ -6823,20 +6825,21 @@ def draw_circles_on_centerline():
         circles_created = 0
         circle_nodes = []
         
-        lesion_points = []
-        for i in range(min(2, f1_points.GetNumberOfControlPoints())):
+        # Get all fiducial points, not just the first 2
+        all_points = []
+        for i in range(f1_points.GetNumberOfControlPoints()):
             point = [0.0, 0.0, 0.0]
             f1_points.GetNthControlPointPosition(i, point)
-            lesion_points.append(point)
+            all_points.append(point)
         
-        for i, lesion_point in enumerate(lesion_points):
+        for i, fiducial_point in enumerate(all_points):
             min_distance = float('inf')
             closest_centerline_idx = 0
             
             for j, centerline_point in enumerate(points):
-                distance = ((lesion_point[0] - centerline_point[0])**2 + 
-                           (lesion_point[1] - centerline_point[1])**2 + 
-                           (lesion_point[2] - centerline_point[2])**2)**0.5
+                distance = ((fiducial_point[0] - centerline_point[0])**2 + 
+                           (fiducial_point[1] - centerline_point[1])**2 + 
+                           (fiducial_point[2] - centerline_point[2])**2)**0.5
                 
                 if distance < min_distance:
                     min_distance = distance
@@ -6846,18 +6849,31 @@ def draw_circles_on_centerline():
             radius = radii[closest_centerline_idx] if closest_centerline_idx < len(radii) else 1.0;
             
             circle_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsClosedCurveNode")
-            point_name = "pre-lesion" if i == 0 else "post-lesion"
-            circle_node.SetName(f"Circle_{point_name}")
             
+            # Determine point name and color based on position
+            if i == 0:
+                point_name = "pre-lesion"
+                color = (0.0, 1.0, 0.0)  # Green
+            elif i == 1:
+                point_name = "post-lesion"
+                color = (1.0, 0.0, 0.0)  # Red
+            else:
+                # For points 2 and beyond, alternate between start and end slices
+                if (i - 2) % 2 == 0:  # Even offset from position 2 = start slice
+                    start_slice_number = ((i - 2) // 2) + 1
+                    point_name = f"start-slice-{start_slice_number}"
+                    color = (0.0, 0.0, 1.0)  # Blue for start slices
+                else:  # Odd offset from position 2 = end slice
+                    end_slice_number = ((i - 2) // 2) + 1
+                    point_name = f"end-slice-{end_slice_number}"
+                    color = (1.0, 1.0, 0.0)  # Yellow for end slices
+            
+            circle_node.SetName(f"Circle_{point_name}")
 
             display_node = circle_node.GetDisplayNode()
             if display_node:
-                if i == 0:
-                    display_node.SetColor(0.0, 1.0, 0.0)
-                    display_node.SetSelectedColor(0.0, 1.0, 0.0)  # Bright green
-                else:
-                    display_node.SetColor(1.0, 0.0, 0.0)
-                    display_node.SetSelectedColor(1.0, 0.0, 0.0)  # Bright red
+                display_node.SetColor(color[0], color[1], color[2])
+                display_node.SetSelectedColor(color[0], color[1], color[2])
                 
                 display_node.SetLineWidth(4.0) 
                 display_node.SetVisibility(True)
@@ -7074,6 +7090,136 @@ def clear_centerline_circles():
         
     except Exception as e:
         pass
+        return False
+
+def draw_circle_for_single_point(point_index):
+    """
+    Draw a circle for a single fiducial point immediately after it's placed
+    """
+    try:
+        f1_points = None
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                f1_points = node
+                break
+        
+        if not f1_points or point_index >= f1_points.GetNumberOfControlPoints():
+            return False
+        
+        centerline_model = None
+        try:
+            centerline_model = slicer.util.getNode('Centerline model')
+        except:
+            pass
+        
+        if not centerline_model:
+            all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
+            for model in all_models:
+                if 'centerline' in model.GetName().lower():
+                    centerline_model = model
+                    break
+        
+        if not centerline_model:
+            for model in all_models:
+                if 'tree' in model.GetName().lower():
+                    centerline_model = model
+                    break
+        
+        if not centerline_model:
+            return False
+        
+        points = slicer.util.arrayFromModelPoints(centerline_model)
+        radii = slicer.util.arrayFromModelPointData(centerline_model, 'Radius')
+        
+        if points is None or len(points) == 0:
+            return False
+            
+        if radii is None or len(radii) == 0:
+            return False
+        
+        # Get the fiducial point
+        fiducial_point = [0.0, 0.0, 0.0]
+        f1_points.GetNthControlPointPosition(point_index, fiducial_point)
+        
+        # Find closest centerline point
+        min_distance = float('inf')
+        closest_centerline_idx = 0
+        
+        for j, centerline_point in enumerate(points):
+            distance = ((fiducial_point[0] - centerline_point[0])**2 + 
+                       (fiducial_point[1] - centerline_point[1])**2 + 
+                       (fiducial_point[2] - centerline_point[2])**2)**0.5
+            
+            if distance < min_distance:
+                min_distance = distance
+                closest_centerline_idx = j
+        
+        center_point = points[closest_centerline_idx]
+        radius = radii[closest_centerline_idx] if closest_centerline_idx < len(radii) else 1.0
+        
+        # Determine point name and color based on position
+        if point_index == 0:
+            point_name = "pre-lesion"
+            color = (0.0, 1.0, 0.0)  # Green
+        elif point_index == 1:
+            point_name = "post-lesion"
+            color = (1.0, 0.0, 0.0)  # Red
+        else:
+            # For points 2 and beyond, alternate between start and end slices
+            if (point_index - 2) % 2 == 0:  # Even offset from position 2 = start slice
+                start_slice_number = ((point_index - 2) // 2) + 1
+                point_name = f"start-slice-{start_slice_number}"
+                color = (0.0, 0.0, 1.0)  # Blue for start slices
+            else:  # Odd offset from position 2 = end slice
+                end_slice_number = ((point_index - 2) // 2) + 1
+                point_name = f"end-slice-{end_slice_number}"
+                color = (1.0, 1.0, 0.0)  # Yellow for end slices
+        
+        # Check if circle already exists for this point
+        circle_name = f"Circle_{point_name}"
+        existing_circle = None
+        try:
+            existing_circle = slicer.util.getNode(circle_name)
+        except:
+            pass
+        
+        # Remove existing circle if it exists
+        if existing_circle:
+            slicer.mrmlScene.RemoveNode(existing_circle)
+        
+        # Create new circle
+        circle_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsClosedCurveNode")
+        circle_node.SetName(circle_name)
+
+        display_node = circle_node.GetDisplayNode()
+        if display_node:
+            display_node.SetColor(color[0], color[1], color[2])
+            display_node.SetSelectedColor(color[0], color[1], color[2])
+            
+            display_node.SetLineWidth(4.0) 
+            display_node.SetVisibility(True)
+            display_node.SetPointLabelsVisibility(False)
+            display_node.SetFillVisibility(False)
+            display_node.SetOutlineVisibility(True)
+        
+        apply_transform_to_circle(circle_node)
+        
+        # Calculate centerline direction for perpendicular circles
+        centerline_direction = calculate_centerline_direction(points, closest_centerline_idx)
+        
+        success = create_perpendicular_circle(circle_node, center_point, radius, centerline_direction)
+        
+        # Update the stored circle nodes list
+        if not hasattr(slicer.modules, 'WorkflowCenterlineCircleNodes'):
+            slicer.modules.WorkflowCenterlineCircleNodes = []
+        
+        if success:
+            slicer.modules.WorkflowCenterlineCircleNodes.append(circle_node)
+        
+        return success
+        
+    except Exception as e:
         return False
 
 def apply_transform_to_circle(circle_node):
