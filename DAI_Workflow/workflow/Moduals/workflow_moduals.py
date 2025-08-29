@@ -4700,7 +4700,12 @@ def create_point_placement_controls():
                 background-color: #1e7e34; 
             }
         """)
-        start_button.connect('clicked()', lambda: start_new_point_list_placement(count_label))
+        
+        # Store references for toggle functionality
+        slicer.modules.WorkflowStartButton = start_button
+        slicer.modules.WorkflowCountLabel = count_label
+        
+        start_button.connect('clicked()', lambda: toggle_point_placement_mode())
         layout.addWidget(start_button)
         
         clear_button = qt.QPushButton("Clear Points")
@@ -4868,6 +4873,100 @@ def start_point_placement(point_list, start_button, stop_button, count_label):
     except Exception as e:
         pass
         slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
+
+def toggle_point_placement_mode():
+    """
+    Toggle between starting and stopping point placement within the same button
+    """
+    try:
+        # Check if placement is currently active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        is_placing = False
+        
+        if interactionNode:
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            is_placing = (current_mode == interactionNode.Place)
+        
+        start_button = getattr(slicer.modules, 'WorkflowStartButton', None)
+        count_label = getattr(slicer.modules, 'WorkflowCountLabel', None)
+        
+        if not start_button or not count_label:
+            pass  # Button references not found
+            return
+        
+        if not is_placing:
+            # Start placement
+            start_new_point_list_placement(count_label)
+            
+            # Update button to "stop" state
+            start_button.setText("Stop Placing Points")
+            start_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #dc3545; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    margin: 5px;
+                    font-size: 13px;
+                }
+                QPushButton:hover { 
+                    background-color: #c82333; 
+                }
+                QPushButton:pressed { 
+                    background-color: #bd2130; 
+                }
+            """)
+        else:
+            # Stop placement
+            stop_point_placement_mode()
+            
+            # Update button to "start" state
+            start_button.setText("Start Placing Points")
+            start_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #28a745; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    margin: 5px;
+                    font-size: 13px;
+                }
+                QPushButton:hover { 
+                    background-color: #218838; 
+                }
+                QPushButton:pressed { 
+                    background-color: #1e7e34; 
+                }
+            """)
+            
+    except Exception as e:
+        pass
+        slicer.util.errorDisplay(f"Could not toggle point placement: {str(e)}")
+
+def stop_point_placement_mode():
+    """
+    Stop the point placement mode and return to normal interaction
+    """
+    try:
+        # Disable placement mode
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            interactionNode.SetPlaceModePersistence(0)
+        
+        # Clear selection
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetActivePlaceNodeID("")
+        
+        pass
+        
+    except Exception as e:
+        pass
 
 
 def clear_all_points(point_list, count_label):
