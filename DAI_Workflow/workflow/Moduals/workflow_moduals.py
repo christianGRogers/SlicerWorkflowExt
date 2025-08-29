@@ -4952,6 +4952,9 @@ def stop_point_placement_mode():
     Stop the point placement mode and return to normal interaction
     """
     try:
+        # Clean up any orphaned start markers before stopping
+        cleanup_orphaned_start_markers()
+        
         # Disable placement mode
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
@@ -4963,10 +4966,61 @@ def stop_point_placement_mode():
         if selectionNode:
             selectionNode.SetActivePlaceNodeID("")
         
+        # Update point count display if available
+        count_label = getattr(slicer.modules, 'WorkflowCountLabel', None)
+        if count_label:
+            f1_points = None
+            try:
+                f1_points = slicer.util.getNode('F-1')
+                if f1_points:
+                    point_count = f1_points.GetNumberOfControlPoints()
+                    count_label.setText(f"Points placed: {point_count}")
+            except:
+                pass
+        
         pass
         
     except Exception as e:
         pass
+
+def cleanup_orphaned_start_markers():
+    """
+    Remove any start-slice markers that don't have corresponding end-slice markers
+    """
+    try:
+        f1_points = None
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                f1_points = node
+                break
+        
+        if not f1_points:
+            return False
+        
+        total_points = f1_points.GetNumberOfControlPoints()
+        if total_points <= 3:  # Need at least test-point, pre-lesion, post-lesion, and one slice point
+            return False
+        
+        # Count slice points (everything after the first 3 points)
+        slice_points = total_points - 3
+        
+        # If odd number of slice points, we have an orphaned start marker
+        if slice_points % 2 == 1:
+            # Remove the last point (orphaned start marker)
+            last_point_index = total_points - 1
+            
+            # Get the label to confirm it's a start marker
+            last_label = f1_points.GetNthControlPointLabel(last_point_index)
+            if last_label and "start-slice" in last_label:
+                f1_points.RemoveNthControlPoint(last_point_index)
+                pass  # Removed orphaned start marker
+                return True
+        
+        return False
+        
+    except Exception as e:
+        return False
 
 
 def clear_all_points(point_list, count_label):
@@ -5860,6 +5914,9 @@ def export_project_and_continue():
     Save the Slicer project using normal save functionality and continue to workflow2.py
     """
     try:
+        # Clean up any orphaned start markers before export
+        cleanup_orphaned_start_markers()
+        
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         lesion_analysis_nodes = []
         
@@ -6928,6 +6985,9 @@ def draw_circles_on_centerline():
         if f1_points.GetNumberOfControlPoints() < 2:
             pass
             return False
+        
+        # Clean up orphaned start markers before drawing circles
+        cleanup_orphaned_start_markers()
         
         centerline_model = None
         try:
