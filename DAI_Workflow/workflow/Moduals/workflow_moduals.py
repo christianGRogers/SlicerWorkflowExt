@@ -4671,7 +4671,7 @@ def create_point_placement_controls():
         layout.addWidget(title_label)
 
         instruction_label = qt.QLabel(
-            "Place points: 1:pre-lesion → 2:post-lesion → 3+:start-slice-1,2,3... → N+:end-slice-1,2,3..."
+            "Place points: 1:test-point → 2:pre-lesion → 3:post-lesion → 4+:start-slice-1,2,3... → N+:end-slice-1,2,3..."
         )
         instruction_label.setStyleSheet("QLabel { color: #333; margin: 5px; }")
         instruction_label.setWordWrap(True)
@@ -4700,7 +4700,12 @@ def create_point_placement_controls():
                 background-color: #1e7e34; 
             }
         """)
-        start_button.connect('clicked()', lambda: start_new_point_list_placement(count_label))
+        
+        # Store references for toggle functionality
+        slicer.modules.WorkflowStartButton = start_button
+        slicer.modules.WorkflowCountLabel = count_label
+        
+        start_button.connect('clicked()', lambda: toggle_point_placement_mode())
         layout.addWidget(start_button)
         
         clear_button = qt.QPushButton("Clear Points")
@@ -4869,6 +4874,154 @@ def start_point_placement(point_list, start_button, stop_button, count_label):
         pass
         slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
 
+def toggle_point_placement_mode():
+    """
+    Toggle between starting and stopping point placement within the same button
+    """
+    try:
+        # Check if placement is currently active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        is_placing = False
+        
+        if interactionNode:
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            is_placing = (current_mode == interactionNode.Place)
+        
+        start_button = getattr(slicer.modules, 'WorkflowStartButton', None)
+        count_label = getattr(slicer.modules, 'WorkflowCountLabel', None)
+        
+        if not start_button or not count_label:
+            pass  # Button references not found
+            return
+        
+        if not is_placing:
+            # Start placement
+            start_new_point_list_placement(count_label)
+            
+            # Update button to "stop" state
+            start_button.setText("Stop Placing Points")
+            start_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #dc3545; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    margin: 5px;
+                    font-size: 13px;
+                }
+                QPushButton:hover { 
+                    background-color: #c82333; 
+                }
+                QPushButton:pressed { 
+                    background-color: #bd2130; 
+                }
+            """)
+        else:
+            # Stop placement
+            stop_point_placement_mode()
+            
+            # Update button to "start" state
+            start_button.setText("Start Placing Points")
+            start_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #28a745; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    margin: 5px;
+                    font-size: 13px;
+                }
+                QPushButton:hover { 
+                    background-color: #218838; 
+                }
+                QPushButton:pressed { 
+                    background-color: #1e7e34; 
+                }
+            """)
+            
+    except Exception as e:
+        pass
+        slicer.util.errorDisplay(f"Could not toggle point placement: {str(e)}")
+
+def stop_point_placement_mode():
+    """
+    Stop the point placement mode and return to normal interaction
+    """
+    try:
+        # Clean up any orphaned start markers before stopping
+        cleanup_orphaned_start_markers()
+        
+        # Disable placement mode
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            interactionNode.SetPlaceModePersistence(0)
+        
+        # Clear selection
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetActivePlaceNodeID("")
+        
+        # Update point count display if available
+        count_label = getattr(slicer.modules, 'WorkflowCountLabel', None)
+        if count_label:
+            f1_points = None
+            try:
+                f1_points = slicer.util.getNode('F-1')
+                if f1_points:
+                    point_count = f1_points.GetNumberOfControlPoints()
+                    count_label.setText(f"Points placed: {point_count}")
+            except:
+                pass
+        
+        pass
+        
+    except Exception as e:
+        pass
+
+def cleanup_orphaned_start_markers():
+    """
+    Remove any start-slice markers that don't have corresponding end-slice markers
+    """
+    try:
+        f1_points = None
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                f1_points = node
+                break
+        
+        if not f1_points:
+            return False
+        
+        total_points = f1_points.GetNumberOfControlPoints()
+        if total_points <= 3:  # Need at least test-point, pre-lesion, post-lesion, and one slice point
+            return False
+        
+        # Count slice points (everything after the first 3 points)
+        slice_points = total_points - 3
+        
+        # If odd number of slice points, we have an orphaned start marker
+        if slice_points % 2 == 1:
+            # Remove the last point (orphaned start marker)
+            last_point_index = total_points - 1
+            
+            # Get the label to confirm it's a start marker
+            last_label = f1_points.GetNthControlPointLabel(last_point_index)
+            if last_label and "start-slice" in last_label:
+                f1_points.RemoveNthControlPoint(last_point_index)
+                pass  # Removed orphaned start marker
+                return True
+        
+        return False
+        
+    except Exception as e:
+        return False
+
 
 def clear_all_points(point_list, count_label):
     """
@@ -4929,37 +5082,65 @@ def on_point_added(point_list, count_label):
         # Get current point count for feedback
         point_count = point_list.GetNumberOfControlPoints()
         
-        # Draw circle for the newly added point (point_count - 1 because it's 0-indexed)
-        if point_count > 0:
-            success = draw_circle_for_single_point(point_count - 1)
-            # Note: draw_circle_for_single_point will hide the fiducial points after creating circles
-            # This keeps the workflow logic intact while simplifying the visual display
+        # Only draw circle if centerline model exists (after centerline extraction)
+        centerline_exists = False
+        try:
+            centerline_model = slicer.util.getNode('Centerline model')
+            if centerline_model:
+                centerline_exists = True
+                pass  # Found centerline model by exact name
+        except:
+            # Try to find any centerline model
+            all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
+            for model in all_models:
+                if 'centerline' in model.GetName().lower() or 'tree' in model.GetName().lower():
+                    centerline_exists = True
+                    pass  # Found centerline model by pattern matching
+                    break
+        
+        # Draw circle for the newly added point only if centerline exists
+        # AND only if this is not the very first point being placed
+        if point_count > 0 and centerline_exists:
+            # Additional check: Don't create circle for the first point unless we're sure the user placed it
+            # This prevents automatic circle creation when the workflow is just starting
+            if point_count == 1:
+                # For the first point, only create circle if we're in a resumed workflow state
+                # (i.e., not during initial tool activation)
+                pass  # Skip circle creation for first point during initial setup
+            else:
+                success = draw_circle_for_single_point(point_count - 1)
+                # Note: draw_circle_for_single_point will hide the fiducial points after creating circles
+                # This keeps the workflow logic intact while simplifying the visual display
         
         # Provide feedback about what point was just placed and what's next
         if point_count == 1:
-            pass  # Just placed pre-lesion
+            pass  # Just placed test-point
         elif point_count == 2:
+            pass  # Just placed pre-lesion
+        elif point_count == 3:
             pass  # Just placed post-lesion
-        elif point_count >= 3:
-            # For points 3 and beyond, they alternate between start and end slices
-            if (point_count - 3) % 2 == 0:  # Just placed a start slice
-                start_num = ((point_count - 3) // 2) + 1
+        elif point_count >= 4:
+            # For points 4 and beyond, they alternate between start and end slices
+            if (point_count - 4) % 2 == 0:  # Just placed a start slice
+                start_num = ((point_count - 4) // 2) + 1
                 pass  # Just placed start-slice-{start_num}
             else:  # Just placed an end slice
-                end_num = ((point_count - 3) // 2) + 1
+                end_num = ((point_count - 4) // 2) + 1
                 pass  # Just placed end-slice-{end_num}
         
         # Provide next step guidance
         if point_count == 1:
-            pass  # Next: place post-lesion point
+            pass  # Next: place pre-lesion point
         elif point_count == 2:
+            pass  # Next: place post-lesion point
+        elif point_count == 3:
             pass  # Next: place first start-slice point
-        elif point_count >= 3:
-            if (point_count - 2) % 2 == 1:  # Just placed a start slice
-                end_num = ((point_count - 3) // 2) + 1
+        elif point_count >= 4:
+            if (point_count - 3) % 2 == 1:  # Just placed a start slice
+                end_num = ((point_count - 4) // 2) + 1
                 pass  # Next: place corresponding end-slice-{end_num}
             else:  # Just placed an end slice
-                start_num = ((point_count - 2) // 2) + 1
+                start_num = ((point_count - 3) // 2) + 1
                 pass  # Next: place start-slice-{start_num} or finish
         
     except Exception as e:
@@ -5010,18 +5191,20 @@ def update_point_count_display(point_list, count_label):
             current_label = point_list.GetNthControlPointLabel(i)
             if not current_label or current_label.startswith("F") or current_label.startswith("P-"): 
                 if i == 0:
-                    point_list.SetNthControlPointLabel(i, "pre-lesion")
+                    point_list.SetNthControlPointLabel(i, "test-point")
                 elif i == 1:
+                    point_list.SetNthControlPointLabel(i, "pre-lesion")
+                elif i == 2:
                     point_list.SetNthControlPointLabel(i, "post-lesion")
                 else:
-                    # For points 3 and beyond, alternate between start and end slices
-                    # Points 2, 4, 6, 8... are start slices (start-slice-1, start-slice-2, etc.)
-                    # Points 3, 5, 7, 9... are end slices (end-slice-1, end-slice-2, etc.)
-                    if (i - 2) % 2 == 0:  # Even offset from position 2 = start slice
-                        start_slice_number = ((i - 2) // 2) + 1
+                    # For points 4 and beyond, alternate between start and end slices
+                    # Points 3, 5, 7, 9... are start slices (start-slice-1, start-slice-2, etc.)
+                    # Points 4, 6, 8, 10... are end slices (end-slice-1, end-slice-2, etc.)
+                    if (i - 3) % 2 == 0:  # Even offset from position 3 = start slice
+                        start_slice_number = ((i - 3) // 2) + 1
                         point_list.SetNthControlPointLabel(i, f"start-slice-{start_slice_number}")
-                    else:  # Odd offset from position 2 = end slice
-                        end_slice_number = ((i - 2) // 2) + 1
+                    else:  # Odd offset from position 3 = end slice
+                        end_slice_number = ((i - 3) // 2) + 1
                         point_list.SetNthControlPointLabel(i, f"end-slice-{end_slice_number}")
         
     except Exception as e:
@@ -5109,6 +5292,16 @@ def start_new_point_list_placement(count_label):
     Create a new point list and start placement mode with continuous placement enabled
     """
     try:
+        # First, remove any existing F-1 nodes to start fresh
+        existing_f1_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in existing_f1_nodes:
+            if node.GetName() == "F-1":
+                slicer.mrmlScene.RemoveNode(node)
+                pass  # Removed existing F-1 node
+        
+        # Also clear any existing circles from previous runs
+        clear_centerline_circles()
+        
         point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
         
         point_list.SetName("F-1")
@@ -5121,6 +5314,10 @@ def start_new_point_list_placement(count_label):
             display_node.SetTextScale(2.0)  # Larger text labels
             display_node.SetVisibility(True)
             display_node.SetPointLabelsVisibility(True)
+        
+        # Clear any automatically added points that may have been created
+        while point_list.GetNumberOfControlPoints() > 0:
+            point_list.RemoveNthControlPoint(0)
         
         # Automatically apply the only transform to the point list if available
         apply_only_transform_to_point_list(point_list)
@@ -5717,6 +5914,9 @@ def export_project_and_continue():
     Save the Slicer project using normal save functionality and continue to workflow2.py
     """
     try:
+        # Clean up any orphaned start markers before export
+        cleanup_orphaned_start_markers()
+        
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         lesion_analysis_nodes = []
         
@@ -6786,6 +6986,9 @@ def draw_circles_on_centerline():
             pass
             return False
         
+        # Clean up orphaned start markers before drawing circles
+        cleanup_orphaned_start_markers()
+        
         centerline_model = None
         try:
             centerline_model = slicer.util.getNode('Centerline model')
@@ -7162,19 +7365,22 @@ def draw_circle_for_single_point(point_index):
         
         # Determine point name and color based on position
         if point_index == 0:
+            point_name = "test-point"
+            color = (0.5, 0.5, 0.5)  # Gray for test point
+        elif point_index == 1:
             point_name = "pre-lesion"
             color = (0.0, 1.0, 0.0)  # Green
-        elif point_index == 1:
+        elif point_index == 2:
             point_name = "post-lesion"
             color = (1.0, 0.0, 0.0)  # Red
         else:
-            # For points 2 and beyond, alternate between start and end slices
-            if (point_index - 2) % 2 == 0:  # Even offset from position 2 = start slice
-                start_slice_number = ((point_index - 2) // 2) + 1
+            # For points 3 and beyond, alternate between start and end slices
+            if (point_index - 3) % 2 == 0:  # Even offset from position 3 = start slice
+                start_slice_number = ((point_index - 3) // 2) + 1
                 point_name = f"start-slice-{start_slice_number}"
                 color = (0.0, 0.0, 1.0)  # Blue for start slices
-            else:  # Odd offset from position 2 = end slice
-                end_slice_number = ((point_index - 2) // 2) + 1
+            else:  # Odd offset from position 3 = end slice
+                end_slice_number = ((point_index - 3) // 2) + 1
                 point_name = f"end-slice-{end_slice_number}"
                 color = (1.0, 1.0, 0.0)  # Yellow for end slices
         
@@ -7219,8 +7425,6 @@ def draw_circle_for_single_point(point_index):
         if success:
             slicer.modules.WorkflowCenterlineCircleNodes.append(circle_node)
             
-            # Hide the original fiducial point to simplify visualization
-            # The circle now represents the point location visually
             try:
                 # Hide the specific control point
                 f1_points.SetNthControlPointVisibility(point_index, False)
