@@ -3697,14 +3697,11 @@ def check_for_volume_addition():
     Check if a new volume has been added to the scene.
     """
     try:
-        # Get current volume count
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         current_count = len(volume_nodes)
         
-        # Increment check counter for status updates
         slicer.modules.VolumeMonitorCheckCount += 1
         
-        # Update status widget every 5 checks (5 seconds)
         if slicer.modules.VolumeMonitorCheckCount % 5 == 0:
             update_volume_waiting_status(f"Waiting for volume... ({slicer.modules.VolumeMonitorCheckCount}s)")
         if current_count > slicer.modules.BaselineVolumeCount:
@@ -3712,15 +3709,11 @@ def check_for_volume_addition():
 
             stop_volume_addition_monitoring()
             if volume_nodes:
-                latest_volume = volume_nodes[-1]  # Get the most recently added volume
-                pass
+                latest_volume = volume_nodes[-1]
             
-            # Clean up status widget
-            qt.QTimer.singleShot(2000, cleanup_volume_waiting_status_widget)  # Keep success message for 2 seconds
-            
-            # Continue with the original workflow
+            qt.QTimer.singleShot(2000, cleanup_volume_waiting_status_widget)
             pass
-            qt.QTimer.singleShot(500, start_with_volume_crop)  # Small delay to ensure volume is fully loaded
+            qt.QTimer.singleShot(500, start_with_volume_crop)
             
     except Exception as e:
         pass
@@ -3735,15 +3728,12 @@ def stop_volume_addition_monitoring():
             timer.stop()
             timer.timeout.disconnect()
             del slicer.modules.VolumeAdditionMonitorTimer
-            pass
-        
-        # Clean up monitoring variables
+
         if hasattr(slicer.modules, 'BaselineVolumeCount'):
             del slicer.modules.BaselineVolumeCount
         if hasattr(slicer.modules, 'VolumeMonitorCheckCount'):
             del slicer.modules.VolumeMonitorCheckCount
         
-        # Clean up status widget
         cleanup_volume_waiting_status_widget()
             
     except Exception as e:
@@ -3759,11 +3749,7 @@ def start_with_volume_crop():
         return
     slicer.util.selectModule("CropVolume")
     slicer.app.processEvents()
-    
-    # Hide all UI elements except the green Apply button
     hide_crop_volume_ui_elements()
-    
-    # Schedule additional UI hiding attempts in case the first one doesn't catch everything
     qt.QTimer.singleShot(1000, hide_crop_volume_ui_elements)
     qt.QTimer.singleShot(3000, hide_crop_volume_ui_elements)
     
@@ -3836,7 +3822,6 @@ def check_crop_completion(original_volume_node):
     Check if a new cropped volume exists, then delete the original, ROI, and continue.
     """
     slicer.modules.CropCheckCount += 1
-    # Timeout removed - will monitor indefinitely until crop completion
     volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
     for node in volume_nodes:
         if node is not original_volume_node and 'crop' in node.GetName().lower():
@@ -3844,11 +3829,9 @@ def check_crop_completion(original_volume_node):
             slicer.modules.CropMonitorTimer.timeout.disconnect()
             del slicer.modules.CropMonitorTimer
             del slicer.modules.CropCheckCount
-            
-            # HIDE the original volume
             original_volume_node.SetDisplayVisibility(False)
             
-            # Also hide it from slice views
+
             layout_manager = slicer.app.layoutManager()
             slice_view_names = ['Red', 'Yellow', 'Green']
             
@@ -3860,9 +3843,6 @@ def check_crop_completion(original_volume_node):
                         composite_node = slice_logic.GetSliceCompositeNode()
                         if composite_node and composite_node.GetBackgroundVolumeID() == original_volume_node.GetID():
                             composite_node.SetBackgroundVolumeID(None)
-            
-            pass
-            
             slicer.modules.WorkflowOriginalVolume = original_volume_node
             slicer.modules.WorkflowCroppedVolume = node
             
@@ -7432,10 +7412,10 @@ def draw_circle_for_single_point(point_index):
                 display_node = f1_points.GetDisplayNode()
                 if display_node:
                     display_node.SetPointLabelsVisibility(False)
-                    display_node.SetVisibility(False)  # Hide the entire fiducial list
-                pass  # Successfully hid fiducial point after circle creation
+                    display_node.SetVisibility(False)  
+
             except Exception as hide_error:
-                pass  # Failed to hide fiducial point, but circle was created successfully
+                pass
         
         return success
         
