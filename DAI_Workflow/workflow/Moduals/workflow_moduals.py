@@ -521,6 +521,60 @@ def set_volume_visible_in_slice_views(volume_node):
     except Exception as e:
         pass
 
+def show_red_green_views_only():
+    """
+    Switch Slicer layout to show only Red and Green slice views side-by-side.
+    Also set the current working volume in both views and fit to slice.
+    """
+    try:
+        lm = slicer.app.layoutManager()
+        if not lm:
+            return False
+
+        # Define a custom two-slice layout (Red | Green)
+        layout_xml = (
+            '<layout type="horizontal">'
+            '  <item>'
+            '    <view class="vtkMRMLSliceNode" singletontag="Red">'
+            '      <property name="orientation" action="default">Axial</property>'
+            '      <property name="viewlabel" action="default">R</property>'
+            '      <property name="layoutlabel" action="default">Red</property>'
+            '    </view>'
+            '  </item>'
+            '  <item>'
+            '    <view class="vtkMRMLSliceNode" singletontag="Green">'
+            '      <property name="orientation" action="default">Sagittal</property>'
+            '      <property name="viewlabel" action="default">G</property>'
+            '      <property name="layoutlabel" action="default">Green</property>'
+            '    </view>'
+            '  </item>'
+            '</layout>'
+        )
+
+        layout_node = lm.layoutLogic().GetLayoutNode()
+        custom_layout_id = 55901  # Arbitrary, low collision risk
+        # Register or replace the custom layout
+        layout_node.AddLayoutDescription(custom_layout_id, layout_xml)
+        layout_node.SetViewArrangement(custom_layout_id)
+
+        # Assign background volume and fit to slice for both Red and Green
+        vol = find_working_volume()
+        for name in ("Red", "Green"):
+            w = lm.sliceWidget(name)
+            if not w:
+                continue
+            comp = w.mrmlSliceCompositeNode()
+            if vol and comp:
+                comp.SetBackgroundVolumeID(vol.GetID())
+            logic = w.sliceLogic()
+            if logic:
+                logic.FitSliceToAll()
+
+        slicer.app.processEvents()
+        return True
+    except Exception:
+        return False
+
 def create_curve_models_from_markup(markup_node):
     """
     Create curve models from markup points using the MarkupsToModel module.
@@ -2542,6 +2596,7 @@ def add_large_cpr_apply_button():
     """
     hide_centerlines_from_views()
     hide_cpr_slice_size_controls()
+    show_red_green_views_only()
 
     try:
         if hasattr(slicer.modules, 'CPRLargeApplyButton'):
@@ -4277,6 +4332,9 @@ def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
         
         # Hide slice size controls from CPR module UI
         hide_cpr_slice_size_controls()
+
+    # Switch to Red|Green slice-only layout
+        show_red_green_views_only()
         
         # Hide threshold segmentation mask after opening CPR module
         hide_threshold_segmentation_mask()
