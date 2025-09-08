@@ -4724,27 +4724,7 @@ def create_point_placement_controls():
         start_button.connect('clicked()', lambda: toggle_point_placement_mode())
         layout.addWidget(start_button)
         
-        clear_button = qt.QPushButton("Clear Points")
-        clear_button.setStyleSheet("""
-            QPushButton { 
-                background-color: #ffc107; 
-                color: #212529; 
-                border: none; 
-                padding: 12px; 
-                font-weight: bold;
-                border-radius: 6px;
-                margin: 5px;
-                font-size: 13px;
-            }
-            QPushButton:hover { 
-                background-color: #e0a800; 
-            }
-            QPushButton:pressed { 
-                background-color: #d39e00; 
-            }
-        """)
-        clear_button.connect('clicked()', lambda: clear_all_points_from_scene(count_label))
-        layout.addWidget(clear_button)
+        
         
         export_button = qt.QPushButton("Export & Continue")
         export_button.setStyleSheet("""
