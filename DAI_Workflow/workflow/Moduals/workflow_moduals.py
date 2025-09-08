@@ -4724,11 +4724,12 @@ def create_point_placement_controls():
         start_button.connect('clicked()', lambda: toggle_point_placement_mode())
         layout.addWidget(start_button)
         
-        clear_button = qt.QPushButton("Clear Points")
-        clear_button.setStyleSheet("""
+        # Add Mark Branch button (toggles branch point placement for 2 points)
+        branch_button = qt.QPushButton("Mark Branch")
+        branch_button.setStyleSheet("""
             QPushButton { 
-                background-color: #ffc107; 
-                color: #212529; 
+                background-color: #0078d4; 
+                color: white; 
                 border: none; 
                 padding: 12px; 
                 font-weight: bold;
@@ -4737,14 +4738,17 @@ def create_point_placement_controls():
                 font-size: 13px;
             }
             QPushButton:hover { 
-                background-color: #e0a800; 
+                background-color: #006cbe; 
             }
             QPushButton:pressed { 
-                background-color: #d39e00; 
+                background-color: #005a9e; 
             }
         """)
-        clear_button.connect('clicked()', lambda: clear_all_points_from_scene(count_label))
-        layout.addWidget(clear_button)
+        slicer.modules.WorkflowBranchButton = branch_button
+        branch_button.connect('clicked()', lambda: toggle_branch_point_placement_mode())
+        layout.addWidget(branch_button)
+
+        
         
         export_button = qt.QPushButton("Export & Continue")
         export_button.setStyleSheet("""
@@ -4962,6 +4966,132 @@ def toggle_point_placement_mode():
     except Exception as e:
         pass
         slicer.util.errorDisplay(f"Could not toggle point placement: {str(e)}")
+
+def toggle_branch_point_placement_mode():
+    """
+    Toggle branch point placement (2-point sequence: Branch, post Branch) within the same button
+    """
+    try:
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        is_placing = False
+        if interactionNode:
+            is_placing = (interactionNode.GetCurrentInteractionMode() == interactionNode.Place)
+
+        branch_button = getattr(slicer.modules, 'WorkflowBranchButton', None)
+        count_label = getattr(slicer.modules, 'WorkflowCountLabel', None)
+        if not branch_button or not count_label:
+            return
+
+        if not is_placing or not getattr(slicer.modules, 'CurrentBranchPointList', None):
+            start_branch_point_placement(count_label)
+            branch_button.setText("Stop Mark Branch")
+            branch_button.setStyleSheet(branch_button.styleSheet().replace('#0078d4', '#dc3545'))
+        else:
+            stop_branch_point_placement()
+            branch_button.setText("Mark Branch")
+            # reset to original color
+            branch_button.setStyleSheet(branch_button.styleSheet().replace('#dc3545', '#0078d4'))
+    except Exception as e:
+        pass
+
+def start_branch_point_placement(count_label):
+    """
+    Start a temporary branch markups node and enable placement for exactly two points.
+    First point labeled 'Branch', second 'post Branch'. Stops automatically after 2.
+    Reuses selection/interaction helpers.
+    """
+    try:
+        # Create or reset the branch point list
+        existing = getattr(slicer.modules, 'CurrentBranchPointList', None)
+        if existing and existing.GetScene() is slicer.mrmlScene:
+            slicer.mrmlScene.RemoveNode(existing)
+
+        branch_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+        branch_list.SetName("BranchPoints")
+
+        display_node = branch_list.GetDisplayNode()
+        if display_node:
+            display_node.SetGlyphScale(3.0)
+            display_node.SetSelectedColor(1.0, 1.0, 0.0)
+            display_node.SetColor(0.0, 0.4, 1.0)
+            display_node.SetTextScale(2.0)
+            display_node.SetVisibility(True)
+            display_node.SetPointLabelsVisibility(True)
+
+        # Attach to same transform as main list if available
+        try:
+            main_list = getattr(slicer.modules, 'CurrentLesionAnalysisPointList', None)
+            if main_list and main_list.GetTransformNodeID():
+                branch_list.SetAndObserveTransformNodeID(main_list.GetTransformNodeID())
+        except:
+            pass
+
+        slicer.modules.CurrentBranchPointList = branch_list
+
+        # Selection + interaction reuse
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+            selectionNode.SetActivePlaceNodeID(branch_list.GetID())
+
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)
+
+        # Observers: reuse the same patterns but with a custom on-add hook
+        if hasattr(branch_list, 'PointCountObserver'):
+            branch_list.RemoveObserver(branch_list.PointCountObserver)
+        if hasattr(branch_list, 'PointAddObserver'):
+            branch_list.RemoveObserver(branch_list.PointAddObserver)
+        if hasattr(branch_list, 'PointRemoveObserver'):
+            branch_list.RemoveObserver(branch_list.PointRemoveObserver)
+
+        def branch_added(caller, event):
+            try:
+                n = caller.GetNumberOfControlPoints()
+                if n >= 1:
+                    if not caller.GetNthControlPointLabel(0):
+                        caller.SetNthControlPointLabel(0, 'Branch')
+                if n >= 2:
+                    if not caller.GetNthControlPointLabel(1):
+                        caller.SetNthControlPointLabel(1, 'post Branch')
+                    # Stop automatically after two points
+                    stop_branch_point_placement()
+            except:
+                pass
+
+        observer_id2 = branch_list.AddObserver(branch_list.PointAddedEvent, branch_added)
+        branch_list.PointAddObserver = observer_id2
+        # Optional: keep count label reflecting total
+        def branch_count_update(caller, event):
+            update_point_count_display_for_current_list(count_label)
+        observer_id = branch_list.AddObserver(branch_list.PointModifiedEvent, branch_count_update)
+        branch_list.PointCountObserver = observer_id
+
+    except Exception as e:
+        pass
+
+def stop_branch_point_placement():
+    """
+    Stop branch placement and return to normal interaction; keep the points.
+    """
+    try:
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            interactionNode.SetPlaceModePersistence(0)
+
+        # Reset button text if present
+        branch_button = getattr(slicer.modules, 'WorkflowBranchButton', None)
+        if branch_button:
+            branch_button.setText("Mark Branch")
+            # restore base color if it was changed
+            ss = branch_button.styleSheet()
+            ss = ss.replace('#dc3545', '#0078d4')
+            branch_button.setStyleSheet(ss)
+    except Exception as e:
+        pass
 
 def stop_point_placement_mode():
     """
