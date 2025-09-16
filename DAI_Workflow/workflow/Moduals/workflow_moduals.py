@@ -8157,15 +8157,18 @@ def draw_circle_for_branch_point(branch_node, point_index):
         center_point = points[closest_idx]
         radius = radii[closest_idx] if closest_idx < len(radii) else 1.0
 
-        # Determine name and color based on label
-        label = branch_node.GetNthControlPointLabel(point_index) or ''
-        circle_name = f"Circle_{label}"
-        color = (0.8, 0.8, 0.8)  # Default gray
-        
-        if label.startswith('post-branch-'):
-            color = (0.0, 0.7, 1.0)  # Cyan-ish for post-branch
-        elif label.startswith('branch-'):
+        # Determine name and color based on point index (since label might not be set yet)
+        # Branch points alternate: post-branch-1, branch-1, post-branch-2, branch-2, etc.
+        if point_index % 2 == 0:  # Even indices (0, 2, 4...) are post-branch
+            branch_number = (point_index // 2) + 1
+            expected_label = f"post-branch-{branch_number}"
+            color = (0.0, 0.7, 1.0)  # Cyan for post-branch
+        else:  # Odd indices (1, 3, 5...) are branch
+            branch_number = ((point_index - 1) // 2) + 1
+            expected_label = f"branch-{branch_number}"
             color = (1.0, 0.4, 0.0)  # Orange for branch
+        
+        circle_name = f"Circle_{expected_label}"
 
         # Replace existing circle with same name if any
         existing_circle = None
@@ -8213,63 +8216,11 @@ def draw_circle_for_branch_point(branch_node, point_index):
             except Exception:
                 pass
             
-            pass  # Created circle for {label}
+            pass  # Created circle for {expected_label}
 
         return success
     except Exception as e:
         pass  # Error creating branch circle: {str(e)}
-        return False
-        label = branch_node.GetNthControlPointLabel(point_index) or ''
-        circle_name = f"Circle_{label}"
-        color = (0.8, 0.8, 0.8)
-        if label.startswith('post-branch-'):
-            color = (0.0, 0.7, 1.0)  # cyan-ish for post-branch
-        elif label.startswith('branch-'):
-            color = (1.0, 0.4, 0.0)  # orange for branch
-
-        # Replace existing circle with same name if any
-        existing_circle = None
-        try:
-            existing_circle = slicer.util.getNode(circle_name)
-        except:
-            pass
-        if existing_circle:
-            slicer.mrmlScene.RemoveNode(existing_circle)
-
-        circle_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsClosedCurveNode")
-        circle_node.SetName(circle_name)
-
-        display_node = circle_node.GetDisplayNode()
-        if display_node:
-            display_node.SetColor(*color)
-            display_node.SetSelectedColor(*color)
-            display_node.SetLineWidth(4.0)
-            display_node.SetVisibility(True)
-            display_node.SetPointLabelsVisibility(False)
-            display_node.SetFillVisibility(False)
-            display_node.SetOutlineVisibility(True)
-
-        apply_transform_to_circle(circle_node)
-
-        direction = calculate_centerline_direction(points, closest_idx)
-        success = create_perpendicular_circle(circle_node, center_point, radius, direction)
-
-        # Track nodes list and hide fiducial
-        if success:
-            if not hasattr(slicer.modules, 'WorkflowCenterlineCircleNodes'):
-                slicer.modules.WorkflowCenterlineCircleNodes = []
-            slicer.modules.WorkflowCenterlineCircleNodes.append(circle_node)
-
-            try:
-                branch_node.SetNthControlPointVisibility(point_index, False)
-                bdn = branch_node.GetDisplayNode()
-                if bdn:
-                    bdn.SetPointLabelsVisibility(False)
-            except Exception:
-                pass
-
-        return success
-    except Exception:
         return False
 
 def apply_transform_to_node(node, node_description="node"):
