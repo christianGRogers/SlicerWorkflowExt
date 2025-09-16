@@ -4316,6 +4316,140 @@ def find_all_centerline_curves():
         pass
         return []
 
+def find_nearest_centerline_to_point(point_position):
+    """
+    Find the centerline model closest to a given point position.
+    Returns the centerline model and the distance to its closest point.
+    """
+    try:
+        all_models = find_all_centerline_models()
+        if not all_models:
+            return None, float('inf')
+        
+        nearest_model = None
+        min_distance = float('inf')
+        
+        for model in all_models:
+            try:
+                points = slicer.util.arrayFromModelPoints(model)
+                if points is None or len(points) == 0:
+                    continue
+                
+                # Find closest point on this centerline
+                for p in points:
+                    distance = ((point_position[0] - p[0])**2 + 
+                               (point_position[1] - p[1])**2 + 
+                               (point_position[2] - p[2])**2) ** 0.5
+                    if distance < min_distance:
+                        min_distance = distance
+                        nearest_model = model
+                        
+            except Exception as e:
+                continue
+        
+        return nearest_model, min_distance
+        
+    except Exception as e:
+        return None, float('inf')
+
+def populate_centerline_dropdown():
+    """
+    Populate the centerline dropdown with available centerlines
+    """
+    try:
+        centerline_combo = getattr(slicer.modules, 'WorkflowCenterlineCombo', None)
+        if not centerline_combo:
+            return
+        
+        # Clear existing items
+        centerline_combo.clear()
+        
+        # Add a default option
+        centerline_combo.addItem("Auto-select most recent", None)
+        
+        # Get all available centerlines
+        all_models = find_all_centerline_models()
+        all_curves = find_all_centerline_curves()
+        
+        # Add centerline models
+        for model in all_models:
+            display_name = f"Model: {model.GetName()}"
+            centerline_combo.addItem(display_name, model)
+        
+        # Add centerline curves
+        for curve in all_curves:
+            display_name = f"Curve: {curve.GetName()}"
+            centerline_combo.addItem(display_name, curve)
+        
+        # If no centerlines found, add a message
+        if not all_models and not all_curves:
+            centerline_combo.addItem("No centerlines found", None)
+        
+    except Exception as e:
+        pass
+        print(f"Error populating centerline dropdown: {str(e)}")
+
+def get_selected_centerline():
+    """
+    Get the currently selected centerline from the dropdown
+    Returns tuple of (model, curve) where one might be None
+    """
+    try:
+        centerline_combo = getattr(slicer.modules, 'WorkflowCenterlineCombo', None)
+        if not centerline_combo:
+            return (None, None)
+        
+        current_index = centerline_combo.currentIndex
+        if current_index < 0:
+            return (None, None)
+        
+        # Get the data associated with the current selection
+        selected_item = centerline_combo.itemData(current_index)
+        
+        if selected_item is None:
+            # Auto-select mode or no centerlines - use the existing logic
+            current_centerline_model = find_recent_centerline_model()
+            current_centerline_curve = find_recent_centerline_curve()
+            return (current_centerline_model, current_centerline_curve)
+        
+        # Determine if selected item is a model or curve
+        if selected_item.GetClassName() == 'vtkMRMLModelNode':
+            return (selected_item, None)
+        elif selected_item.GetClassName() == 'vtkMRMLMarkupsCurveNode':
+            return (None, selected_item)
+        
+        return (None, None)
+        
+    except Exception as e:
+        pass
+        print(f"Error getting selected centerline: {str(e)}")
+        return (None, None)
+
+def refresh_centerline_dropdown():
+    """
+    Refresh the centerline dropdown by repopulating it with current centerlines
+    """
+    try:
+        centerline_combo = getattr(slicer.modules, 'WorkflowCenterlineCombo', None)
+        if not centerline_combo:
+            return
+        
+        # Store the currently selected item text to try to restore selection
+        current_text = centerline_combo.currentText if centerline_combo.currentIndex >= 0 else ""
+        
+        # Repopulate the dropdown
+        populate_centerline_dropdown()
+        
+        # Try to restore the previous selection if it still exists
+        if current_text:
+            index = centerline_combo.findText(current_text)
+            if index >= 0:
+                centerline_combo.setCurrentIndex(index)
+        
+    except Exception as e:
+        pass
+        print(f"Error refreshing centerline dropdown: {str(e)}")
+
 def stop_centerline_monitoring():
     """
     Stop the centerline completion monitoring
@@ -4854,8 +4988,32 @@ def create_point_placement_controls():
         start_button.connect('clicked()', lambda: toggle_point_placement_mode())
         layout.addWidget(start_button)
         
-        # Add Mark Branch button (toggles branch point placement for 2 points)
-        branch_button = qt.QPushButton("Mark Branch")
+        # Add Post Branch button
+        post_branch_button = qt.QPushButton("Post Branch")
+        post_branch_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        slicer.modules.WorkflowPostBranchButton = post_branch_button
+        post_branch_button.connect('clicked()', lambda: toggle_post_branch_point_placement_mode())
+        layout.addWidget(post_branch_button)
+        
+        # Add Branch button
+        branch_button = qt.QPushButton("Branch")
         branch_button.setStyleSheet("""
             QPushButton { 
                 background-color: #0078d4; 
@@ -5097,6 +5255,286 @@ def toggle_point_placement_mode():
         pass
         slicer.util.errorDisplay(f"Could not toggle point placement: {str(e)}")
 
+def toggle_post_branch_point_placement_mode():
+    """
+    Toggle between starting and stopping post branch point placement within the same button
+    """
+    try:
+        # Check if placement is currently active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        is_placing = False
+        
+        if interactionNode:
+            current_mode = interactionNode.GetCurrentInteractionMode()
+            is_placing = (current_mode == interactionNode.Place)
+        
+        post_branch_button = getattr(slicer.modules, 'WorkflowPostBranchButton', None)
+        count_label = getattr(slicer.modules, 'WorkflowCountLabel', None)
+        
+        if not post_branch_button or not count_label:
+            pass  # Button references not found
+            return
+        
+        if not is_placing:
+            # Start placement
+            start_new_post_branch_point_list_placement(count_label)
+            
+            # Update button to "stop" state
+            post_branch_button.setText("Stop Post Branch")
+            post_branch_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #dc3545; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    margin: 5px;
+                    font-size: 13px;
+                }
+                QPushButton:hover { 
+                    background-color: #c82333; 
+                }
+                QPushButton:pressed { 
+                    background-color: #bd2130; 
+                }
+            """)
+        else:
+            # Stop placement
+            stop_post_branch_point_placement_mode()
+            
+            # Update button to "start" state
+            post_branch_button.setText("Post Branch")
+            post_branch_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #28a745; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    margin: 5px;
+                    font-size: 13px;
+                }
+                QPushButton:hover { 
+                    background-color: #218838; 
+                }
+                QPushButton:pressed { 
+                    background-color: #1e7e34; 
+                }
+            """)
+            
+    except Exception as e:
+        pass
+        slicer.util.errorDisplay(f"Could not toggle post branch point placement: {str(e)}")
+
+def start_new_post_branch_point_list_placement(count_label):
+    """
+    Create a new post branch point list and start placement mode with continuous placement enabled.
+    Uses the current centerline reference (same as main placement system).
+    """
+    try:
+        # First, remove any existing PB-1 nodes to start fresh
+        existing_pb1_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in existing_pb1_nodes:
+            if node.GetName() == "PB-1":
+                slicer.mrmlScene.RemoveNode(node)
+                pass  # Removed existing PB-1 node
+        
+        # Also clear any existing circles from previous runs
+        clear_centerline_circles()
+        
+        # Get the current centerline reference (same as main placement system)
+        current_centerline_model, current_centerline_curve = get_current_centerline_for_placement()
+        
+        point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+        
+        point_list.SetName("PB-1")
+        
+        # Store reference to the centerline that should be used for this point list
+        # This ensures consistent positioning relative to the selected centerline
+        if current_centerline_model:
+            try:
+                point_list.ReferenceCenterlineModel = current_centerline_model
+            except:
+                pass
+        if current_centerline_curve:
+            try:
+                point_list.ReferenceCenterlineCurve = current_centerline_curve
+            except:
+                pass
+        
+        display_node = point_list.GetDisplayNode()
+        if display_node:
+            display_node.SetGlyphScale(3.0)  # Make points larger
+            display_node.SetSelectedColor(1.0, 1.0, 0.0)  # Yellow when selected
+            display_node.SetColor(0.0, 1.0, 0.0)  # Green when not selected (Post Branch)
+            display_node.SetTextScale(2.0)  # Larger text labels
+            display_node.SetVisibility(True)
+            display_node.SetPointLabelsVisibility(True)
+        
+        # Clear any automatically added points that may have been created
+        while point_list.GetNumberOfControlPoints() > 0:
+            point_list.RemoveNthControlPoint(0)
+        
+        # Automatically apply the only transform to the point list if available
+        apply_only_transform_to_point_list(point_list)
+        
+        slicer.modules.CurrentPostBranchAnalysisPointList = point_list
+        
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+            selectionNode.SetActivePlaceNodeID(point_list.GetID())
+        
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
+            interactionNode.SetPlaceModePersistence(1)
+        
+        setup_post_branch_point_count_observer(point_list, count_label)
+        
+        update_post_branch_point_count_display(point_list, count_label)
+        
+        pass
+        pass
+        pass
+        
+    except Exception as e:
+        pass
+        slicer.util.errorDisplay(f"Could not start post branch point placement: {str(e)}")
+
+def stop_post_branch_point_placement_mode():
+    """
+    Stop the post branch point placement mode and return to normal interaction
+    """
+    try:
+        # Disable placement mode
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+            interactionNode.SetPlaceModePersistence(0)
+        
+        # Reset selection node
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetActivePlaceNodeID("")
+        
+        pass
+        
+    except Exception as e:
+        pass
+        slicer.util.errorDisplay(f"Could not stop post branch point placement: {str(e)}")
+
+def setup_post_branch_point_count_observer(point_list, count_label):
+    """
+    Set up observers for post branch point count changes and point additions
+    """
+    try:
+        # Remove any existing observers first
+        if hasattr(point_list, 'PostBranchPointCountObserver'):
+            point_list.RemoveObserver(point_list.PostBranchPointCountObserver)
+        
+        observer_id = point_list.AddObserver(point_list.PointModifiedEvent, 
+                                           lambda caller, event: update_post_branch_point_count_display_for_current_list(count_label))
+        point_list.PostBranchPointCountObserver = observer_id
+        
+        observer_id2 = point_list.AddObserver(point_list.PointAddedEvent, 
+                                            lambda caller, event: on_post_branch_point_added(caller, count_label))
+        point_list.PostBranchPointAddObserver = observer_id2
+        
+    except Exception as e:
+        pass
+
+def update_post_branch_point_count_display(point_list, count_label):
+    """
+    Update the count display for post branch points
+    """
+    try:
+        if point_list and count_label:
+            count = point_list.GetNumberOfControlPoints()
+            count_label.setText(f"Post Branch Points: {count}")
+    except Exception as e:
+        pass
+
+def update_post_branch_point_count_display_for_current_list(count_label):
+    """
+    Update post branch point count display for the current point list
+    """
+    try:
+        current_list = getattr(slicer.modules, 'CurrentPostBranchAnalysisPointList', None)
+        if current_list:
+            update_post_branch_point_count_display(current_list, count_label)
+    except Exception as e:
+        pass
+
+def on_post_branch_point_added(point_list, count_label):
+    """
+    Handle post branch point addition events
+    """
+    try:
+        # Ensure this point list uses the current centerline reference
+        ensure_point_placement_uses_current_centerline(point_list)
+        
+        # Update the display first
+        update_post_branch_point_count_display(point_list, count_label)
+        
+        # Ensure point placement mode remains active for continued point placement
+        ensure_point_placement_mode_active(point_list)
+        
+        # Get current point count for feedback
+        point_count = point_list.GetNumberOfControlPoints()
+        
+        # Check if centerline exists using the current centerline reference
+        centerline_exists = False
+        centerline_model, centerline_curve = get_current_centerline_for_placement()
+        
+        if centerline_model or centerline_curve:
+            centerline_exists = True
+            pass  # Found current centerline reference
+        else:
+            # Fallback: Try to find any centerline model if no reference stored
+            try:
+                centerline_model = slicer.util.getNode('Centerline model')
+                if centerline_model:
+                    centerline_exists = True
+                    # Store this as current reference for consistency
+                    slicer.modules.WorkflowCenterlineModel = centerline_model
+                    pass  # Found centerline model by exact name
+            except:
+                # Try to find any centerline model by pattern
+                all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
+                for model in all_models:
+                    if 'centerline' in model.GetName().lower() or 'tree' in model.GetName().lower():
+                        centerline_exists = True
+                        slicer.modules.WorkflowCenterlineModel = model
+                        pass  # Found centerline model by pattern matching
+                        break
+        
+        # Draw circle for the newly added point only if centerline exists
+        # AND only if this is not the very first point being placed
+        if point_count > 0 and centerline_exists:
+            # Additional check: Don't create circle for the first point unless we're sure the user placed it
+            # This prevents automatic circle creation when the workflow is just starting
+            if point_count == 1:
+                # For the first point, only create circle if we're in a resumed workflow state
+                # (i.e., not during initial tool activation)
+                pass  # Skip circle creation for first point during initial setup
+            else:
+                success = draw_circle_for_single_post_branch_point(point_count - 1)
+                # Note: draw_circle_for_single_post_branch_point will hide the fiducial points after creating circles
+                # This keeps the workflow logic intact while simplifying the visual display
+        
+        # Keep placement mode active for continuous point placement
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)
+            
+    except Exception as e:
+        pass
+
 def toggle_branch_point_placement_mode():
     """
     Toggle between starting and stopping branch point placement within the same button
@@ -5123,7 +5561,7 @@ def toggle_branch_point_placement_mode():
             start_new_branch_point_list_placement(count_label)
             
             # Update button to "stop" state
-            branch_button.setText("Stop Mark Branch")
+            branch_button.setText("Stop Branch")
             branch_button.setStyleSheet("""
                 QPushButton { 
                     background-color: #dc3545; 
@@ -5147,7 +5585,7 @@ def toggle_branch_point_placement_mode():
             stop_branch_point_placement_mode()
             
             # Update button to "start" state
-            branch_button.setText("Mark Branch")
+            branch_button.setText("Branch")
             branch_button.setStyleSheet("""
                 QPushButton { 
                     background-color: #0078d4; 
@@ -5174,7 +5612,7 @@ def toggle_branch_point_placement_mode():
 def start_new_branch_point_list_placement(count_label):
     """
     Create a new branch point list and start placement mode with continuous placement enabled.
-    (Exact copy of start_new_point_list_placement with branch naming)
+    Uses the current centerline reference (same as main placement system).
     """
     try:
         # First, remove any existing B-1 nodes to start fresh
@@ -5187,27 +5625,8 @@ def start_new_branch_point_list_placement(count_label):
         # Also clear any existing circles from previous runs
         clear_centerline_circles()
         
-        # Store reference to the most recently used centerline for CPR
-        # This ensures pre/post start/stop points are placed based on the current centerline
-        current_centerline_model = None
-        current_centerline_curve = None
-        
-        # Check if we have stored references from CPR module usage
-        if hasattr(slicer.modules, 'WorkflowCenterlineModel'):
-            current_centerline_model = slicer.modules.WorkflowCenterlineModel
-        if hasattr(slicer.modules, 'WorkflowCenterlineCurve'):
-            current_centerline_curve = slicer.modules.WorkflowCenterlineCurve
-        
-        # If no stored references, find the most recent centerline
-        if not current_centerline_model and not current_centerline_curve:
-            current_centerline_model = find_recent_centerline_model()
-            current_centerline_curve = find_recent_centerline_curve()
-            
-            # Store these for future reference
-            if current_centerline_model:
-                slicer.modules.WorkflowCenterlineModel = current_centerline_model
-            if current_centerline_curve:
-                slicer.modules.WorkflowCenterlineCurve = current_centerline_curve
+        # Get the current centerline reference (same as main placement system)
+        current_centerline_model, current_centerline_curve = get_current_centerline_for_placement()
         
         point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
         
@@ -5444,6 +5863,23 @@ def draw_circle_for_single_branch_point(point_index):
             return False
         
         return draw_circle_for_branch_point(current_point_list, point_index)
+        
+    except Exception as e:
+        return False
+
+def draw_circle_for_single_post_branch_point(point_index):
+    """
+    Draw a circle for a single post branch point using the current post branch point list
+    """
+    try:
+        current_point_list = getattr(slicer.modules, 'CurrentPostBranchAnalysisPointList', None)
+        if not current_point_list:
+            return False
+        
+        if point_index >= current_point_list.GetNumberOfControlPoints():
+            return False
+        
+        return draw_circle_for_post_branch_point(current_point_list, point_index)
         
     except Exception as e:
         return False
@@ -6790,6 +7226,10 @@ def on_retry_centerline(dialog):
     Called when user chooses to retry centerline extraction
     """
     try:
+        # Reset the dialog flag to allow future dialogs
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            slicer.modules.CenterlineDialogShown = False
+        
         dialog.close()
         dialog.setParent(None)
         
@@ -6813,6 +7253,10 @@ def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
     Called when user chooses to continue to CPR analysis
     """
     try:
+        # Reset the dialog flag to allow future dialogs
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            slicer.modules.CenterlineDialogShown = False
+        
         dialog.close()
         dialog.setParent(None)
         switch_to_cpr_module(centerline_model, centerline_curve)
@@ -6829,6 +7273,10 @@ def on_add_more_centerlines(dialog):
     Called when user chooses to add more centerlines
     """
     try:
+        # Reset the dialog flag to allow future dialogs
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            slicer.modules.CenterlineDialogShown = False
+        
         dialog.close()
         dialog.setParent(None)
         
@@ -8108,17 +8556,21 @@ def apply_transform_to_circle(circle_node):
 def draw_circle_for_branch_point(branch_node, point_index):
     """
     Draw a circle for a branch fiducial (post-branch-n / branch-n) similar to standard point placement.
-    Uses the current centerline reference like the main point placement system.
+    Uses the nearest centerline to the placed point instead of the current reference.
     """
     try:
         if not branch_node or point_index >= branch_node.GetNumberOfControlPoints():
             return False
 
-        # Get centerline using current reference (same as main placement)
-        centerline_model, centerline_curve = get_current_centerline_for_placement()
+        # Get the fiducial point position
+        pos = [0.0, 0.0, 0.0]
+        branch_node.GetNthControlPointPosition(point_index, pos)
+
+        # Find the nearest centerline to this point
+        centerline_model, distance = find_nearest_centerline_to_point(pos)
         
         if not centerline_model:
-            # Fallback: Try to find centerline model by name/pattern
+            # Fallback: Try to find any centerline model
             try:
                 centerline_model = slicer.util.getNode('Centerline model')
             except:
@@ -8140,10 +8592,6 @@ def draw_circle_for_branch_point(branch_node, point_index):
             return False
         if radii is None or len(radii) == 0:
             return False
-
-        # Get the fiducial point position
-        pos = [0.0, 0.0, 0.0]
-        branch_node.GetNthControlPointPosition(point_index, pos)
 
         # Find closest centerline point
         min_distance = float('inf')
@@ -8221,6 +8669,117 @@ def draw_circle_for_branch_point(branch_node, point_index):
         return success
     except Exception as e:
         pass  # Error creating branch circle: {str(e)}
+        return False
+
+def draw_circle_for_post_branch_point(post_branch_node, point_index):
+    """
+    Draw a circle for a post branch fiducial similar to standard point placement.
+    Uses the nearest centerline to the placed point instead of the current reference.
+    """
+    try:
+        if not post_branch_node or point_index >= post_branch_node.GetNumberOfControlPoints():
+            return False
+
+        # Get the fiducial point position
+        pos = [0.0, 0.0, 0.0]
+        post_branch_node.GetNthControlPointPosition(point_index, pos)
+
+        # Find the nearest centerline to this point
+        centerline_model, distance = find_nearest_centerline_to_point(pos)
+        
+        if not centerline_model:
+            # Fallback: Try to find any centerline model
+            try:
+                centerline_model = slicer.util.getNode('Centerline model')
+            except:
+                pass
+            if not centerline_model:
+                all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
+                for model in all_models:
+                    if 'centerline' in model.GetName().lower() or 'tree' in model.GetName().lower():
+                        centerline_model = model
+                        break
+        
+        if not centerline_model:
+            pass  # No centerline found for post branch circle creation
+            return False
+
+        points = slicer.util.arrayFromModelPoints(centerline_model)
+        radii = slicer.util.arrayFromModelPointData(centerline_model, 'Radius')
+        if points is None or len(points) == 0:
+            return False
+        if radii is None or len(radii) == 0:
+            return False
+
+        # Find closest centerline point
+        min_distance = float('inf')
+        closest_idx = 0
+        for j, p in enumerate(points):
+            d = ((pos[0]-p[0])**2 + (pos[1]-p[1])**2 + (pos[2]-p[2])**2) ** 0.5
+            if d < min_distance:
+                min_distance = d
+                closest_idx = j
+
+        center_point = points[closest_idx]
+        radius = radii[closest_idx] if closest_idx < len(radii) else 1.0
+
+        # Post branch points are always green
+        expected_label = f"post-branch-{point_index + 1}"
+        color = (0.0, 1.0, 0.0)  # Green for post-branch
+        
+        circle_name = f"Circle_{expected_label}"
+
+        # Replace existing circle with same name if any
+        existing_circle = None
+        try:
+            existing_circle = slicer.util.getNode(circle_name)
+        except:
+            pass
+        if existing_circle:
+            slicer.mrmlScene.RemoveNode(existing_circle)
+
+        # Create new circle node
+        circle_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsClosedCurveNode")
+        circle_node.SetName(circle_name)
+
+        # Configure display properties
+        display_node = circle_node.GetDisplayNode()
+        if display_node:
+            display_node.SetColor(*color)
+            display_node.SetSelectedColor(*color)
+            display_node.SetLineWidth(4.0)
+            display_node.SetVisibility(True)
+            display_node.SetPointLabelsVisibility(False)
+            display_node.SetFillVisibility(False)
+            display_node.SetOutlineVisibility(True)
+
+        # Apply transform (same as main placement)
+        apply_transform_to_circle(circle_node)
+
+        # Calculate direction and create perpendicular circle
+        direction = calculate_centerline_direction(points, closest_idx)
+        success = create_perpendicular_circle(circle_node, center_point, radius, direction)
+
+        # Track and hide fiducial (same as main placement)
+        if success:
+            if not hasattr(slicer.modules, 'WorkflowCenterlineCircleNodes'):
+                slicer.modules.WorkflowCenterlineCircleNodes = []
+            slicer.modules.WorkflowCenterlineCircleNodes.append(circle_node)
+
+            # Hide the fiducial point after creating circle
+            try:
+                post_branch_node.SetNthControlPointVisibility(point_index, False)
+                bdn = post_branch_node.GetDisplayNode()
+                if bdn:
+                    bdn.SetPointLabelsVisibility(False)
+            except Exception:
+                pass
+            
+            pass  # Created circle for {expected_label}
+
+        return success
+    except Exception as e:
+        pass  # Error creating post branch circle: {str(e)}
         return False
 
 def apply_transform_to_node(node, node_description="node"):
