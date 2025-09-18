@@ -7242,18 +7242,15 @@ def on_retry_centerline(dialog):
         )
         
         setup_centerline_completion_monitor()
+
         
-        pass
-        
-    except Exception as e:
-        pass
+
 
 def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
     """
     Called when user chooses to continue to CPR analysis
     """
     try:
-        # Reset the dialog flag to allow future dialogs
         if hasattr(slicer.modules, 'CenterlineDialogShown'):
             slicer.modules.CenterlineDialogShown = False
         
@@ -7262,11 +7259,7 @@ def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
         switch_to_cpr_module(centerline_model, centerline_curve)
         
         draw_circles_on_centerline()
-        
-        pass
-        
-    except Exception as e:
-        pass
+
 
 def on_add_more_centerlines(dialog):
     """
@@ -7283,10 +7276,7 @@ def on_add_more_centerlines(dialog):
         # Create a new centerline extraction setup for additional centerlines
         create_additional_centerline_setup()
         
-        pass
-        
-    except Exception as e:
-        pass
+
 
 def create_additional_centerline_setup():
     """
@@ -7302,7 +7292,6 @@ def create_additional_centerline_setup():
         
         centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
         if not centerline_widget:
-            pass
             return
             
         centerline_module = centerline_widget.self()
@@ -7328,8 +7317,6 @@ def create_additional_centerline_setup():
             display_node.SetLineWidth(3.0)
             display_node.SetVisibility(True)
         
-        pass
-        pass
         
         # Configure the Extract Centerline module with the new nodes
         setup_centerline_for_additional_extraction(centerline_module, new_centerline_model, new_centerline_curve)
@@ -7343,7 +7330,6 @@ def create_additional_centerline_setup():
         return new_centerline_model, new_centerline_curve
         
     except Exception as e:
-        pass
         return None, None
 
 def count_existing_centerlines():
