@@ -5340,8 +5340,9 @@ def on_circle_selection_changed(selected_text):
     try:
         dropdown = getattr(slicer.modules, 'WorkflowCircleDropdown', None)
         radius_slider = getattr(slicer.modules, 'WorkflowRadiusSlider', None)
+        value_label = getattr(slicer.modules, 'WorkflowRadiusValueLabel', None)
         
-        if not dropdown or not radius_slider:
+        if not dropdown or not radius_slider or not value_label:
             return
             
         if selected_text == "No circle selected":
@@ -5352,22 +5353,56 @@ def on_circle_selection_changed(selected_text):
         if current_index > 0:  # Skip "No circle selected" at index 0
             node_name = dropdown.itemData(current_index)
             if node_name:
-                # Find the circle node and get its current radius/scale
+                # Find the circle node and calculate its current geometric radius
                 circle_node = slicer.util.getNode(node_name)
                 if circle_node:
-                    # Get current line width from display node as proxy for radius
-                    display_node = circle_node.GetDisplayNode()
-                    if display_node:
-                        line_width = display_node.GetLineWidth()
-                        # Convert line width to slider value (slider is 0.5-10.0 * 10)
-                        slider_value = int(line_width * 10)
+                    radius_value = calculate_circle_radius(circle_node)
+                    if radius_value > 0:
+                        # Convert radius to slider value (slider is 0.5-10.0 * 10)
+                        slider_value = int(radius_value * 10)
                         slider_value = max(5, min(100, slider_value))  # Clamp to range
                         radius_slider.setValue(slider_value)
+                        value_label.setText(f"{radius_value:.1f}")
         
         pass
         
     except Exception as e:
         pass
+
+def calculate_circle_radius(circle_node):
+    """
+    Calculate the actual geometric radius of a circle node from its control points
+    """
+    try:
+        num_points = circle_node.GetNumberOfControlPoints()
+        if num_points < 3:
+            return 2.0  # Default radius
+            
+        # Calculate center point
+        center_x, center_y, center_z = 0.0, 0.0, 0.0
+        for i in range(num_points):
+            pos = [0, 0, 0]
+            circle_node.GetNthControlPointPosition(i, pos)
+            center_x += pos[0]
+            center_y += pos[1]
+            center_z += pos[2]
+        
+        center_point = [center_x / num_points, center_y / num_points, center_z / num_points]
+        
+        # Calculate radius as average distance from center to control points
+        total_distance = 0.0
+        for i in range(num_points):
+            pos = [0, 0, 0]
+            circle_node.GetNthControlPointPosition(i, pos)
+            import numpy as np
+            distance = np.linalg.norm(np.array(pos) - np.array(center_point))
+            total_distance += distance
+        
+        radius = total_distance / num_points
+        return max(0.5, min(10.0, radius))  # Clamp to reasonable range
+        
+    except Exception as e:
+        return 2.0  # Default radius on error
 
 def on_radius_slider_changed(slider_value):
     """
@@ -5400,25 +5435,63 @@ def on_radius_slider_changed(slider_value):
 
 def apply_radius_to_circle(circle_node, radius_value):
     """
-    Apply the specified radius to a circle node by adjusting its display properties
+    Apply the specified radius to a circle node by scaling its control points
     """
     try:
-        display_node = circle_node.GetDisplayNode()
-        if not display_node:
-            circle_node.CreateDefaultDisplayNodes()
-            display_node = circle_node.GetDisplayNode()
+        if not circle_node:
+            return
             
-        if display_node:
-            # Set line width as proxy for circle thickness/visibility
-            display_node.SetLineWidth(radius_value)
+        # Calculate current radius to determine scale factor
+        current_radius = calculate_circle_radius(circle_node)
+        if current_radius <= 0:
+            current_radius = 2.0  # Default fallback
             
-            # Also try to set glyph scale if available (for control points)
-            if hasattr(display_node, 'SetGlyphScale'):
-                display_node.SetGlyphScale(radius_value * 0.5)  # Scale down for control points
+        # Calculate scale factor
+        scale_factor = radius_value / current_radius
+        
+        # Get the center point
+        num_points = circle_node.GetNumberOfControlPoints()
+        if num_points == 0:
+            return
             
-            # Force update
-            circle_node.Modified()
-            display_node.Modified()
+        # Calculate center point
+        center_x, center_y, center_z = 0.0, 0.0, 0.0
+        for i in range(num_points):
+            pos = [0, 0, 0]
+            circle_node.GetNthControlPointPosition(i, pos)
+            center_x += pos[0]
+            center_y += pos[1]
+            center_z += pos[2]
+        
+        center_point = [center_x / num_points, center_y / num_points, center_z / num_points]
+        
+        # Scale each control point relative to center
+        for i in range(num_points):
+            pos = [0, 0, 0]
+            circle_node.GetNthControlPointPosition(i, pos)
+            
+            # Calculate vector from center to point
+            vector_x = pos[0] - center_point[0]
+            vector_y = pos[1] - center_point[1]
+            vector_z = pos[2] - center_point[2]
+            
+            # Scale the vector
+            scaled_vector_x = vector_x * scale_factor
+            scaled_vector_y = vector_y * scale_factor
+            scaled_vector_z = vector_z  # Don't scale Z to keep circle in plane
+            
+            # Calculate new position
+            new_pos = [
+                center_point[0] + scaled_vector_x,
+                center_point[1] + scaled_vector_y,
+                center_point[2] + scaled_vector_z
+            ]
+            
+            # Update the control point position
+            circle_node.SetNthControlPointPosition(i, new_pos)
+        
+        # Force update
+        circle_node.Modified()
         
         pass
         
