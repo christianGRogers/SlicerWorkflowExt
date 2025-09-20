@@ -20,6 +20,49 @@ UPDATE: Programmatic Segment Editor Integration
 - Scissors tool can be activated/deactivated as needed by user
 """
 
+def hide_status_bar():
+    """
+    Hide the status bar at the bottom of the Slicer main window.
+    Can be called from console to manually hide the status bar.
+    """
+    try:
+        # Access the main window and hide its status bar
+        mainWindow = slicer.util.mainWindow()
+        if mainWindow:
+            statusBar = mainWindow.statusBar()
+            if statusBar:
+                statusBar.hide()
+                return True
+        return False
+    except Exception as e:
+        print(f"Warning: Could not hide status bar: {str(e)}")
+        return False
+
+def show_status_bar():
+    """
+    Show the status bar at the bottom of the Slicer main window.
+    Can be called from console to manually show the status bar.
+    """
+    try:
+        # Access the main window and show its status bar
+        mainWindow = slicer.util.mainWindow()
+        if mainWindow:
+            statusBar = mainWindow.statusBar()
+            if statusBar:
+                statusBar.show()
+                return True
+        return False
+    except Exception as e:
+        print(f"Warning: Could not show status bar: {str(e)}")
+        return False
+
+def set_dark_background():
+    """
+    Convenience function to set 3D view background to dark.
+    Can be called from console or other parts of the workflow.
+    """
+    return set_3d_view_background_black()
+
 def find_working_volume():
     """
     Find the appropriate volume to work with, preferring cropped and visible volumes
@@ -3557,6 +3600,9 @@ def start_with_dicom_data():
     Start the workflow by opening the Add DICOM Data module and waiting for a volume to be loaded.
     """
     try:
+        # Set 3D view background to black at the start of workflow
+        set_3d_view_background_black()
+        
         pass
         
         # Check if there are already volumes in the scene
@@ -3740,6 +3786,9 @@ def check_for_volume_addition():
         if current_count > slicer.modules.BaselineVolumeCount:
             update_volume_waiting_status("Volume detected! Continuing workflow...")
 
+            # Set 3D view background to dark as soon as volume is detected
+            set_3d_view_background_black()
+
             stop_volume_addition_monitoring()
             if volume_nodes:
                 latest_volume = volume_nodes[-1]
@@ -3776,6 +3825,9 @@ def start_with_volume_crop():
     """
     Start the workflow by opening the Volume Crop module and creating an ROI that fits the entire volume.
     """
+    # Set 3D view background to black at the start of workflow
+    set_3d_view_background_black()
+    
     volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
     if not volume_node:
         slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
@@ -5140,6 +5192,98 @@ def create_point_placement_controls():
         stenosis_button.connect('clicked()', lambda: create_stenosis_ratio_measurement())
         layout.addWidget(stenosis_button)
         
+        # Add circle management section
+        circle_section_label = qt.QLabel("Circle Controls:")
+        circle_section_label.setStyleSheet("""
+            QLabel { 
+                color: #333333; 
+                font-weight: bold; 
+                font-size: 14px; 
+                margin-top: 10px; 
+                margin-bottom: 5px; 
+            }
+        """)
+        layout.addWidget(circle_section_label)
+        
+        # Add circle selection dropdown
+        circle_dropdown_label = qt.QLabel("Select Circle:")
+        circle_dropdown_label.setStyleSheet("QLabel { color: #666666; font-size: 12px; margin-bottom: 2px; }")
+        layout.addWidget(circle_dropdown_label)
+        
+        circle_dropdown = qt.QComboBox()
+        circle_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: white;
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                padding: 8px;
+                margin: 3px;
+                font-size: 12px;
+            }
+            QComboBox:hover {
+                border: 1px solid #0078d4;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #666666;
+                margin-right: 5px;
+            }
+        """)
+        layout.addWidget(circle_dropdown)
+        
+        # Add radius slider
+        radius_slider_label = qt.QLabel("Circle Radius:")
+        radius_slider_label.setStyleSheet("QLabel { color: #666666; font-size: 12px; margin-bottom: 2px; margin-top: 8px; }")
+        layout.addWidget(radius_slider_label)
+        
+        radius_slider = qt.QSlider(qt.Qt.Horizontal)
+        radius_slider.setMinimum(5)  # 0.5 * 10 for precision
+        radius_slider.setMaximum(100)  # 10.0 * 10 for precision  
+        radius_slider.setValue(20)  # Default 2.0 * 10
+        radius_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #cccccc;
+                height: 6px;
+                background: #f0f0f0;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #0078d4;
+                border: 1px solid #005a9e;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                margin: -6px 0;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #106ebe;
+            }
+        """)
+        layout.addWidget(radius_slider)
+        
+        # Add radius value display
+        radius_value_label = qt.QLabel("2.0")
+        radius_value_label.setStyleSheet("QLabel { color: #666666; font-size: 11px; text-align: center; }")
+        layout.addWidget(radius_value_label)
+        
+        # Store references for later access
+        slicer.modules.WorkflowCircleDropdown = circle_dropdown
+        slicer.modules.WorkflowRadiusSlider = radius_slider
+        slicer.modules.WorkflowRadiusValueLabel = radius_value_label
+        
+        # Connect the controls to their functions
+        circle_dropdown.connect('currentTextChanged(QString)', lambda text: on_circle_selection_changed(text))
+        radius_slider.connect('valueChanged(int)', lambda value: on_radius_slider_changed(value))
+        
+        # Initialize the dropdown with existing circles
+        update_circle_dropdown()
+        
         layout.addStretch()
         
         main_window.addDockWidget(qt.Qt.RightDockWidgetArea, dock_widget)
@@ -5147,6 +5291,134 @@ def create_point_placement_controls():
         
         slicer.modules.PointPlacementDockWidget = dock_widget
         slicer.modules.PointCountLabel = count_label
+        
+        pass
+        
+    except Exception as e:
+        pass
+
+def update_circle_dropdown():
+    """
+    Update the circle dropdown with all available circle nodes in the scene
+    """
+    try:
+        dropdown = getattr(slicer.modules, 'WorkflowCircleDropdown', None)
+        if not dropdown:
+            return
+            
+        # Clear existing items
+        dropdown.clear()
+        dropdown.addItem("No circle selected")
+        
+        # Find all circle nodes (closed curve nodes with "Circle_" prefix)
+        circle_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsClosedCurveNode')
+        circle_items = []
+        
+        for node in circle_nodes:
+            node_name = node.GetName()
+            if node_name.startswith("Circle_"):
+                # Extract the readable name (remove "Circle_" prefix)
+                display_name = node_name.replace("Circle_", "")
+                circle_items.append((display_name, node_name))
+        
+        # Sort for consistent ordering
+        circle_items.sort(key=lambda x: x[0])
+        
+        # Add items to dropdown
+        for display_name, node_name in circle_items:
+            dropdown.addItem(display_name, node_name)  # userData stores the full node name
+        
+        pass
+        
+    except Exception as e:
+        pass
+
+def on_circle_selection_changed(selected_text):
+    """
+    Handle circle selection change in dropdown
+    """
+    try:
+        dropdown = getattr(slicer.modules, 'WorkflowCircleDropdown', None)
+        radius_slider = getattr(slicer.modules, 'WorkflowRadiusSlider', None)
+        
+        if not dropdown or not radius_slider:
+            return
+            
+        if selected_text == "No circle selected":
+            return
+            
+        # Get the full node name from userData
+        current_index = dropdown.currentIndex
+        if current_index > 0:  # Skip "No circle selected" at index 0
+            node_name = dropdown.itemData(current_index)
+            if node_name:
+                # Find the circle node and get its current radius/scale
+                circle_node = slicer.util.getNode(node_name)
+                if circle_node:
+                    # Get current line width from display node as proxy for radius
+                    display_node = circle_node.GetDisplayNode()
+                    if display_node:
+                        line_width = display_node.GetLineWidth()
+                        # Convert line width to slider value (slider is 0.5-10.0 * 10)
+                        slider_value = int(line_width * 10)
+                        slider_value = max(5, min(100, slider_value))  # Clamp to range
+                        radius_slider.setValue(slider_value)
+        
+        pass
+        
+    except Exception as e:
+        pass
+
+def on_radius_slider_changed(slider_value):
+    """
+    Handle radius slider value change
+    """
+    try:
+        dropdown = getattr(slicer.modules, 'WorkflowCircleDropdown', None)
+        value_label = getattr(slicer.modules, 'WorkflowRadiusValueLabel', None)
+        
+        if not dropdown or not value_label:
+            return
+            
+        # Convert slider value to actual radius (slider is multiplied by 10)
+        radius_value = slider_value / 10.0
+        value_label.setText(f"{radius_value:.1f}")
+        
+        # Apply radius to selected circle
+        current_index = dropdown.currentIndex
+        if current_index > 0:  # Skip "No circle selected" at index 0
+            node_name = dropdown.itemData(current_index)
+            if node_name:
+                circle_node = slicer.util.getNode(node_name)
+                if circle_node:
+                    apply_radius_to_circle(circle_node, radius_value)
+        
+        pass
+        
+    except Exception as e:
+        pass
+
+def apply_radius_to_circle(circle_node, radius_value):
+    """
+    Apply the specified radius to a circle node by adjusting its display properties
+    """
+    try:
+        display_node = circle_node.GetDisplayNode()
+        if not display_node:
+            circle_node.CreateDefaultDisplayNodes()
+            display_node = circle_node.GetDisplayNode()
+            
+        if display_node:
+            # Set line width as proxy for circle thickness/visibility
+            display_node.SetLineWidth(radius_value)
+            
+            # Also try to set glyph scale if available (for control points)
+            if hasattr(display_node, 'SetGlyphScale'):
+                display_node.SetGlyphScale(radius_value * 0.5)  # Scale down for control points
+            
+            # Force update
+            circle_node.Modified()
+            display_node.Modified()
         
         pass
         
@@ -8177,6 +8449,9 @@ def draw_circles_on_centerline():
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
         
+        # Update circle dropdown after creating circles
+        update_circle_dropdown()
+        
         return True
         
     except Exception as e:
@@ -8357,6 +8632,8 @@ def clear_centerline_circles():
         
         if removed_count > 0:
             pass
+            # Update circle dropdown after clearing circles
+            update_circle_dropdown()
         else:
             pass
             
@@ -8505,6 +8782,10 @@ def draw_circle_for_single_point(point_index):
 
             except Exception as hide_error:
                 pass
+        
+        # Update circle dropdown after creating a circle
+        if success:
+            update_circle_dropdown()
         
         return success
         
