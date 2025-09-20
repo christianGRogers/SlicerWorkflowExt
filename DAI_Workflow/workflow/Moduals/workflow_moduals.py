@@ -7242,6 +7242,8 @@ def on_retry_centerline(dialog):
         )
         
         setup_centerline_completion_monitor()
+    except Exception as e:
+        pass
 
         
 
@@ -7259,6 +7261,8 @@ def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
         switch_to_cpr_module(centerline_model, centerline_curve)
         
         draw_circles_on_centerline()
+    except Exception as e:
+        pass
 
 
 def on_add_more_centerlines(dialog):
@@ -7275,6 +7279,8 @@ def on_add_more_centerlines(dialog):
         
         # Create a new centerline extraction setup for additional centerlines
         create_additional_centerline_setup()
+    except Exception as e:
+        pass
         
 
 
@@ -7357,7 +7363,6 @@ def count_existing_centerlines():
         return centerline_count // 2 if centerline_count > 0 else 0
         
     except Exception as e:
-        pass
         return 0
 
 def setup_centerline_for_additional_extraction(centerline_module, new_model, new_curve):
@@ -7413,8 +7418,6 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
         
         # Add the large Apply button again
         add_large_centerline_apply_button()
-        
-        pass
         
     except Exception as e:
         pass
@@ -7477,8 +7480,6 @@ def setup_apply_button_monitoring():
         slicer.modules.ApplyButtonMonitorTimer = timer
         slicer.modules.ApplyMonitorCheckCount = 0
         
-        pass
-        pass
         
     except Exception as e:
         pass
