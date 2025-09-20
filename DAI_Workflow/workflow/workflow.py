@@ -82,10 +82,52 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         """Called when the application closes and the module widget is destroyed."""
         self.removeObservers()
 
+    def hideStatusBar(self) -> None:
+        """Hide the status bar at the bottom of the screen."""
+        try:
+            # Access the main window and hide its status bar
+            mainWindow = slicer.util.mainWindow()
+            if mainWindow:
+                statusBar = mainWindow.statusBar()
+                if statusBar:
+                    statusBar.hide()
+        except Exception as e:
+            # If hiding status bar fails, log it but don't break the workflow
+            print(f"Warning: Could not hide status bar: {str(e)}")
+
+    def showStatusBar(self) -> None:
+        """Show the status bar at the bottom of the screen."""
+        try:
+            # Access the main window and show its status bar
+            mainWindow = slicer.util.mainWindow()
+            if mainWindow:
+                statusBar = mainWindow.statusBar()
+                if statusBar:
+                    statusBar.show()
+        except Exception as e:
+            # If showing status bar fails, log it but don't break the workflow
+            print(f"Warning: Could not show status bar: {str(e)}")
+
+    def setDarkBackground(self) -> None:
+        """Set the 3D view background to dark/black."""
+        try:
+            # Call the function from workflow_moduals to set dark background
+            import Moduals.workflow_moduals as workflow_mod
+            workflow_mod.set_3d_view_background_black()
+        except Exception as e:
+            # If setting dark background fails, log it but don't break the workflow
+            print(f"Warning: Could not set dark background: {str(e)}")
+
     def enter(self) -> None:
         """Called each time the user opens this module."""
         # Make sure parameter node exists and observed
         self.initializeParameterNode()
+        
+        # Hide the status bar by default when entering the workflow module
+        self.hideStatusBar()
+        
+        # Set 3D view background to dark by default when entering the workflow module
+        self.setDarkBackground()
 
     def exit(self) -> None:
         """Called each time the user opens a different module."""
