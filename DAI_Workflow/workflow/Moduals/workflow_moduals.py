@@ -5686,8 +5686,8 @@ def start_new_post_branch_point_list_placement(count_label):
                 slicer.mrmlScene.RemoveNode(node)
                 pass  # Removed existing PB-1 node
         
-        # Also clear any existing circles from previous runs
-        clear_centerline_circles()
+        # Also clear any existing post-branch circles from previous runs
+        clear_branch_circles()
         
         # Get the current centerline reference (same as main placement system)
         current_centerline_model, current_centerline_curve = get_current_centerline_for_placement()
@@ -5967,8 +5967,8 @@ def start_new_branch_point_list_placement(count_label):
                 slicer.mrmlScene.RemoveNode(node)
                 pass  # Removed existing B-1 node
         
-        # Also clear any existing circles from previous runs
-        clear_centerline_circles()
+        # Also clear any existing branch circles from previous runs
+        clear_branch_circles()
         
         # Get the current centerline reference (same as main placement system)
         current_centerline_model, current_centerline_curve = get_current_centerline_for_placement()
@@ -8667,6 +8667,51 @@ def create_axial_circle_points(circle_node, center_point, radius):
         pass
         return False
 
+def clear_branch_circles():
+    """
+    Clear only branch and post-branch circles from the scene, preserving lesion circles
+    """
+    return clear_circles_selective(['branch-', 'post-branch-'])
+
+def clear_circles_selective(circle_types=None):
+    """
+    Clear specific types of circles from the scene
+    
+    Args:
+        circle_types: List of circle type prefixes to clear. If None, clears all.
+                     Examples: ['branch-', 'post-branch-'], ['pre-lesion', 'post-lesion'], etc.
+    """
+    try:
+        removed_count = 0
+        
+        all_closed_curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsClosedCurveNode')
+        for node in all_closed_curve_nodes:
+            node_name = node.GetName()
+            should_remove = False
+            
+            if circle_types is None:
+                # Clear all Circle_ prefixed nodes if no specific types given
+                should_remove = node_name.startswith('Circle_')
+            else:
+                # Check if node matches any of the specified types
+                for circle_type in circle_types:
+                    if node_name.startswith(f'Circle_{circle_type}'):
+                        should_remove = True
+                        break
+            
+            if should_remove:
+                slicer.mrmlScene.RemoveNode(node)
+                removed_count += 1
+        
+        if removed_count > 0:
+            update_circle_dropdown()
+            
+        return removed_count > 0
+        
+    except Exception as e:
+        pass
+        return False
+
 def clear_centerline_circles():
     """
     Clear all centerline circles from the scene
@@ -8698,8 +8743,10 @@ def clear_centerline_circles():
         
         all_closed_curve_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsClosedCurveNode')
         for node in all_closed_curve_nodes:
-            if ('circle' in node.GetName().lower() and 'centerline' in node.GetName().lower()) or \
-               ('axialcircle' in node.GetName().lower()):
+            node_name = node.GetName().lower()
+            if ('circle' in node_name and 'centerline' in node_name) or \
+               ('axialcircle' in node_name) or \
+               (node.GetName().startswith('Circle_')):  # Clear all workflow circles
                 slicer.mrmlScene.RemoveNode(node)
                 removed_count += 1
         
@@ -9007,6 +9054,10 @@ def draw_circle_for_branch_point(branch_node, point_index):
             
             pass  # Created circle for {expected_label}
 
+        # Update circle dropdown after creating a branch circle
+        if success:
+            update_circle_dropdown()
+
         return success
     except Exception as e:
         pass  # Error creating branch circle: {str(e)}
@@ -9117,6 +9168,10 @@ def draw_circle_for_post_branch_point(post_branch_node, point_index):
                 pass
             
             pass  # Created circle for {expected_label}
+
+        # Update circle dropdown after creating a post-branch circle
+        if success:
+            update_circle_dropdown()
 
         return success
     except Exception as e:
