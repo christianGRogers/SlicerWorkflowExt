@@ -618,6 +618,129 @@ def show_red_green_views_only():
     except Exception:
         return False
 
+def set_three_up_view():
+    """
+    Switch Slicer layout to show three slice views side by side: Red, Green, Yellow (Axial, Sagittal, Coronal).
+    This is used before cropping to give a complete view of the volume without 3D view.
+    """
+    try:
+        lm = slicer.app.layoutManager()
+        if not lm:
+            return False
+
+        # Define a custom three-slice layout (Red | Green | Yellow) side by side
+        layout_xml = (
+            '<layout type="horizontal">'
+            '  <item>'
+            '    <view class="vtkMRMLSliceNode" singletontag="Red">'
+            '      <property name="orientation" action="default">Axial</property>'
+            '      <property name="viewlabel" action="default">R</property>'
+            '      <property name="layoutlabel" action="default">Red</property>'
+            '    </view>'
+            '  </item>'
+            '  <item>'
+            '    <view class="vtkMRMLSliceNode" singletontag="Green">'
+            '      <property name="orientation" action="default">Sagittal</property>'
+            '      <property name="viewlabel" action="default">G</property>'
+            '      <property name="layoutlabel" action="default">Green</property>'
+            '    </view>'
+            '  </item>'
+            '  <item>'
+            '    <view class="vtkMRMLSliceNode" singletontag="Yellow">'
+            '      <property name="orientation" action="default">Coronal</property>'
+            '      <property name="viewlabel" action="default">Y</property>'
+            '      <property name="layoutlabel" action="default">Yellow</property>'
+            '    </view>'
+            '  </item>'
+            '</layout>'
+        )
+
+        layout_node = lm.layoutLogic().GetLayoutNode()
+        custom_layout_id = 55902  # Custom ID for three-slice layout
+        # Register or replace the custom layout
+        layout_node.AddLayoutDescription(custom_layout_id, layout_xml)
+        layout_node.SetViewArrangement(custom_layout_id)
+        
+        # Assign background volume for all three views
+        vol = find_working_volume()
+        for name in ("Red", "Green", "Yellow"):
+            w = lm.sliceWidget(name)
+            if not w:
+                continue
+            comp = w.mrmlSliceCompositeNode()
+            if vol and comp:
+                comp.SetBackgroundVolumeID(vol.GetID())
+            logic = w.sliceLogic()
+            if logic:
+                logic.FitSliceToAll()
+
+        # Give time for volumes to load into views before resetting
+        slicer.app.processEvents()
+        
+        # Now call resetSliceViews after volumes are loaded for it to be effective
+        slicer.util.resetSliceViews()
+
+        # Final processing to ensure proper rendering
+        slicer.app.processEvents()
+        qt.QTimer.singleShot(100, lambda: slicer.app.processEvents())
+        
+        print("Switched to three-up view (Red, Green, Yellow) side by side - 3D hidden - Images centered with resetSliceViews after volume loading")
+        return True
+    except Exception as e:
+        print(f"Error setting three-up view: {e}")
+        return False
+
+def reset_slice_views_field_of_view():
+    """
+    Reset the field of view for all slice views to center the images properly.
+    Uses Slicer's built-in resetSliceViews functionality.
+    """
+    try:
+        # Use Slicer's built-in reset field of view functionality
+        slicer.util.resetSliceViews()
+        
+        slicer.app.processEvents()
+        print("Reset field of view for all slice views using built-in resetSliceViews - images centered")
+        return True
+    except Exception as e:
+        print(f"Error resetting slice views field of view: {e}")
+        return False
+
+def set_3d_only_view():
+    """
+    Switch Slicer layout to show only the 3D view.
+    This is used after cropping to focus on 3D visualization.
+    """
+    try:
+        lm = slicer.app.layoutManager()
+        if not lm:
+            return False
+
+        # Set to 3D-only layout (layout ID 4 in Slicer)
+        layout_node = lm.layoutLogic().GetLayoutNode()
+        layout_node.SetViewArrangement(4)  # 3D only view
+        
+        # Make sure 3D view shows the current working volume
+        vol = find_working_volume()
+        if vol:
+            # Ensure volume is visible in 3D
+            vol.SetDisplayVisibility(True)
+            
+            # Get 3D view and reset camera
+            threeDWidget = lm.threeDWidget(0)
+            if threeDWidget:
+                threeDView = threeDWidget.threeDView()
+                if threeDView:
+                    threeDView.resetFocalPoint()
+                    threeDView.resetCamera()
+
+        slicer.app.processEvents()
+        print("Switched to 3D-only view")
+        return True
+    except Exception as e:
+        print(f"Error setting 3D-only view: {e}")
+        return False
+
 def create_curve_models_from_markup(markup_node):
     """
     Create curve models from markup points using the MarkupsToModel module.
@@ -3630,6 +3753,82 @@ def start_with_dicom_data():
     except Exception as e:
         slicer.util.errorDisplay(f"Could not open DICOM module: {str(e)}")
 
+def load_dicom_from_source_file(dicom_path):
+    """
+    Load DICOM data from a path specified in the source_slicer.txt file.
+    This function tries multiple methods to load DICOM data programmatically.
+    """
+    import os
+    try:
+        print(f"Loading DICOM from source file path: {dicom_path}")
+        
+        # Check if path exists
+        if not os.path.exists(dicom_path):
+            print(f"Error: DICOM path does not exist: {dicom_path}")
+            qt.QMessageBox.warning(
+                None,
+                "DICOM Path Not Found",
+                f"The DICOM path specified in source_slicer.txt does not exist:\n\n{dicom_path}\n\nPlease check the path and update the file."
+            )
+            return False
+        
+        # Method 1: Try using slicer.util.loadVolume with the folder
+        try:
+            print("Method 1: Trying slicer.util.loadVolume...")
+            volume_node = slicer.util.loadVolume(dicom_path)
+            if volume_node:
+                print("Success: DICOM loaded via slicer.util.loadVolume")
+                # Set dark background after loading
+                set_3d_view_background_black()
+                # Start the workflow with the loaded volume
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+        except Exception as e:
+            print(f"Method 1 failed: {e}")
+        
+        # Method 2: Try loading DICOM files from directory
+        try:
+            print("Method 2: Trying to find DICOM files in directory...")
+            dicom_files = []
+            for root, dirs, files in os.walk(dicom_path):
+                for file in files:
+                    if file.lower().endswith(('.dcm', '.dicom')) or '.' not in file:
+                        dicom_files.append(os.path.join(root, file))
+            
+            if dicom_files:
+                # Try to load the first DICOM file
+                volume_node = slicer.util.loadVolume(dicom_files[0])
+                if volume_node:
+                    print("Success: DICOM loaded from directory files")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+        except Exception as e:
+            print(f"Method 2 failed: {e}")
+        
+        # Method 3: Show user-friendly error message
+        print("All automatic loading methods failed")
+        qt.QMessageBox.information(
+            None,
+            "DICOM Loading Failed",
+            f"Could not automatically load DICOM from:\n{dicom_path}\n\n"
+            "Please manually:\n"
+            "1. Go to DICOM module\n"
+            "2. Import the DICOM folder\n"
+            "3. Load a volume\n"
+            "4. Return to workflow module"
+        )
+        return False
+        
+    except Exception as e:
+        print(f"Error in load_dicom_from_source_file: {e}")
+        qt.QMessageBox.critical(
+            None,
+            "Error",
+            f"Error loading DICOM from source file:\n{str(e)}"
+        )
+        return False
+
 def setup_volume_addition_monitor():
     """
     Monitor for the addition of a volume to the scene, then continue with volume crop workflow.
@@ -3828,6 +4027,9 @@ def start_with_volume_crop():
     # Set 3D view background to black at the start of workflow
     set_3d_view_background_black()
     
+    # Set three-up view (Red, Green, Yellow) before cropping
+    set_three_up_view()
+    
     volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
     if not volume_node:
         slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
@@ -3938,6 +4140,9 @@ def check_crop_completion(original_volume_node):
                 if 'crop' in roi_node.GetName().lower():
                     slicer.mrmlScene.RemoveNode(roi_node)
                     pass
+            
+            # Switch to 3D-only view after cropping is complete
+            qt.QTimer.singleShot(500, set_3d_only_view)
             
             pass
             create_threshold_segment()
