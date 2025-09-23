@@ -128,6 +128,9 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         # Set 3D view background to dark by default when entering the workflow module
         self.setDarkBackground()
+        
+        # Check for source_slicer.txt file and auto-load DICOM if found
+        self.checkForSourceSlicerFile()
 
     def exit(self) -> None:
         """Called each time the user opens a different module."""
@@ -146,6 +149,46 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # If this module is shown while the scene is closed then recreate a new parameter node immediately
         if self.parent.isEntered:
             self.initializeParameterNode()
+
+    def checkForSourceSlicerFile(self) -> None:
+        """Check for source_slicer.txt file in user directory and auto-load DICOM if found."""
+        import os
+        try:
+            # Prevent multiple attempts in the same session
+            if hasattr(slicer.modules, 'SourceSlicerFileProcessed'):
+                return
+            
+            # Get user directory (e.g., C:\Users\chris)
+            user_home = os.path.expanduser("~")
+            source_file_path = os.path.join(user_home, "source_slicer.txt")
+            
+            print(f"Checking for source file: {source_file_path}")
+            
+            if os.path.exists(source_file_path):
+                # Mark as processed to prevent multiple attempts
+                slicer.modules.SourceSlicerFileProcessed = True
+                
+                try:
+                    with open(source_file_path, 'r', encoding='utf-8') as f:
+                        dicom_path = f.read().strip()
+                    
+                    if dicom_path and os.path.exists(dicom_path):
+                        print(f"Found DICOM path in source file: {dicom_path}")
+                        # Load DICOM automatically using workflow_moduals
+                        import Moduals.workflow_moduals as workflow_mod
+                        workflow_mod.load_dicom_from_source_file(dicom_path)
+                    else:
+                        print(f"Invalid or non-existent DICOM path in source file: {dicom_path}")
+                        
+                except Exception as e:
+                    print(f"Error reading source_slicer.txt: {e}")
+            else:
+                # Mark as processed even if file doesn't exist to prevent repeated checks
+                slicer.modules.SourceSlicerFileProcessed = True
+                print("No source_slicer.txt file found in user directory")
+                
+        except Exception as e:
+            print(f"Error checking for source_slicer.txt: {e}")
 
     def initializeParameterNode(self) -> None:
         """Ensure parameter node exists and observed."""
