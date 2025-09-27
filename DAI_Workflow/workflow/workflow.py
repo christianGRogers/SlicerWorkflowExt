@@ -71,6 +71,9 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
+        # Hide data probe whenever any module is opened
+        self.setupDataProbeAutoHide()
+
         if not hasattr(self.ui, 'startWorkflowButton'):
             startButton = qt.QPushButton("Start Workflow")
             startButton.clicked.connect(self.onStartWorkflow)
@@ -81,6 +84,41 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
         self.removeObservers()
+        
+        # Clean up the data probe hide timer
+        if hasattr(self, 'dataProbeHideTimer'):
+            self.dataProbeHideTimer.stop()
+            self.dataProbeHideTimer = None
+
+    def setupDataProbeAutoHide(self) -> None:
+        """Set up automatic hiding of data probe when modules are switched."""
+        try:
+            # Hide data probe immediately
+            slicer.util.setDataProbeVisible(False)
+            
+            # Try to connect to module manager's active module changed signal
+            try:
+                moduleManager = slicer.app.moduleManager()
+                if moduleManager and hasattr(moduleManager, 'activeModuleChanged'):
+                    moduleManager.activeModuleChanged.connect(self.hideDataProbe)
+            except:
+                pass
+            
+            # Also set up a timer as a fallback to ensure data probe stays hidden
+            if hasattr(qt, 'QTimer'):
+                self.dataProbeHideTimer = qt.QTimer()
+                self.dataProbeHideTimer.timeout.connect(self.hideDataProbe)
+                self.dataProbeHideTimer.start(2000)  # Check every 2 seconds
+            
+        except Exception as e:
+            print(f"Warning: Could not set up data probe auto-hide: {str(e)}")
+
+    def hideDataProbe(self) -> None:
+        """Hide the data probe."""
+        try:
+            slicer.util.setDataProbeVisible(False)
+        except Exception as e:
+            print(f"Warning: Could not hide data probe: {str(e)}")
 
     def hideStatusBar(self) -> None:
         """Hide the status bar at the bottom of the screen."""
