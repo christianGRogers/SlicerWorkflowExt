@@ -73,6 +73,12 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         # Hide data probe whenever any module is opened
         self.setupDataProbeAutoHide()
+        
+        # Hide the Slicer logo
+        self.hideLogo()
+        
+        # Hide help and acknowledgments section
+        self.hideHelpAndAcknowledgments()
 
         if not hasattr(self.ui, 'startWorkflowButton'):
             startButton = qt.QPushButton("Start Workflow")
@@ -105,9 +111,11 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 pass
             
             # Also set up a timer as a fallback to ensure data probe stays hidden
+            # and help sections are removed
             if hasattr(qt, 'QTimer'):
                 self.dataProbeHideTimer = qt.QTimer()
                 self.dataProbeHideTimer.timeout.connect(self.hideDataProbe)
+                self.dataProbeHideTimer.timeout.connect(self.hideHelpAndAcknowledgments)
                 self.dataProbeHideTimer.start(2000)  # Check every 2 seconds
             
         except Exception as e:
@@ -119,6 +127,51 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             slicer.util.setDataProbeVisible(False)
         except Exception as e:
             print(f"Warning: Could not hide data probe: {str(e)}")
+
+    def hideLogo(self) -> None:
+        """Hide the Slicer logo."""
+        try:
+            logoLabel = slicer.util.findChild(slicer.util.mainWindow(), "LogoLabel")
+            if logoLabel:
+                logoLabel.visible = False
+        except Exception as e:
+            print(f"Warning: Could not hide logo: {str(e)}")
+
+    def hideHelpAndAcknowledgments(self) -> None:
+        """Hide the Help and Acknowledgments section from all modules."""
+        try:
+            # Find the main window and look for help-related elements
+            mainWindow = slicer.util.mainWindow()
+            if mainWindow:
+                # Look for common help section identifiers
+                helpElements = [
+                    "HelpCollapsibleButton",
+                    "HelpButton",
+                    "AcknowledgmentCollapsibleButton", 
+                    "AcknowledgmentButton",
+                    "ModuleHelpSection",
+                    "ModuleAcknowledgmentSection"
+                ]
+                
+                for elementName in helpElements:
+                    element = slicer.util.findChild(mainWindow, elementName)
+                    if element:
+                        element.visible = False
+                
+                # Also look for elements by text content
+                try:
+                    # Find all collapsible buttons and hide those with help/acknowledgment text
+                    from qt import QCollapsibleButton
+                    collapsibleButtons = mainWindow.findChildren(QCollapsibleButton)
+                    for button in collapsibleButtons:
+                        buttonText = button.text.lower() if hasattr(button, 'text') else ""
+                        if any(keyword in buttonText for keyword in ['help', 'acknowledgment', 'acknowledgement']):
+                            button.visible = False
+                except:
+                    pass
+                    
+        except Exception as e:
+            print(f"Warning: Could not hide help and acknowledgments: {str(e)}")
 
     def hideStatusBar(self) -> None:
         """Hide the status bar at the bottom of the screen."""
@@ -163,6 +216,12 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         # Hide the status bar by default when entering the workflow module
         self.hideStatusBar()
+        
+        # Hide the Slicer logo when entering the workflow module
+        self.hideLogo()
+        
+        # Hide help and acknowledgments section
+        self.hideHelpAndAcknowledgments()
         
         # Set 3D view background to dark by default when entering the workflow module
         self.setDarkBackground()
