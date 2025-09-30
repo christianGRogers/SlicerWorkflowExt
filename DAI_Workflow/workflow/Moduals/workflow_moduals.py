@@ -1970,34 +1970,18 @@ def open_centerline_module():
         remove_duplicate_centerline_buttons()
         setup_centerline_module()
         
-        # Force point placement tool selection immediately
+        # Allow module to fully initialize before forcing point placement
         slicer.app.processEvents()
+        time.sleep(0.5)  # Give module time to complete initialization
         
-        # Directly enable point placement mode first
-        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-        if interactionNode:
-            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-            interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+        # Now force point placement tool selection after full initialization
+        force_point_placement_tool_selection()
         
-        # Find endpoints node and activate it for placement
-        endpoints_node = None
-        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
-        for node in fiducial_nodes:
-            if "Endpoints" in node.GetName():
-                endpoints_node = node
-                break
-        
-        if endpoints_node:
-            selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
-            if selectionNode:
-                selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
-        
-        time.sleep(0.3)  # Give more time for UI to stabilize
-        
-        # Verify and fix if needed
+        # Additional verification and fixes
         verification_results = verify_extract_centerline_point_list_autoselection()
         if not verification_results["success"]:
             fix_extract_centerline_setup_issues()
+            force_point_placement_tool_selection()  # Force again after fixes
             slicer.app.processEvents()
             time.sleep(0.2)
         
@@ -2383,16 +2367,69 @@ def setup_centerline_module():
         slicer.app.processEvents()
         time.sleep(0.2)
         
-        # Force point placement one more time to ensure it's active
-        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-        if interactionNode:
-            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-            interactionNode.SetPlaceModePersistence(1)
+        # Final point placement tool enforcement
+        force_point_placement_tool_selection()
         
         prompt_for_endpoints()
         
     except Exception as e:
         pass
+
+def force_point_placement_tool_selection():
+    """
+    Force the point placement tool to be selected in the Extract Centerline module.
+    This ensures that "Place control points" is selected instead of "Draw line" or other tools.
+    """
+    try:
+        # Get interaction and selection nodes
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        
+        if not interactionNode or not selectionNode:
+            return False
+        
+        # Find the endpoints node
+        endpoints_node = None
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if "Endpoints" in node.GetName():
+                endpoints_node = node
+                break
+        
+        if not endpoints_node:
+            return False
+        
+        # Set the active placement node FIRST
+        selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
+        selectionNode.SetActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+        
+        # Force interaction mode to Place
+        interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+        # Enable place mode persistence (multiple points)
+        interactionNode.SetPlaceModePersistence(1)
+        
+        # Force GUI update
+        slicer.app.processEvents()
+        
+        # Additional step: Try to access the Extract Centerline widget and force the tool selection
+        try:
+            extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+            if extract_centerline_widget:
+                # Look for the endpoints place widget and activate it
+                place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+                if place_widget and hasattr(place_widget, 'setPlaceModeEnabled'):
+                    place_widget.setPlaceModeEnabled(True)
+                    place_widget.setCurrentNode(endpoints_node)
+        except Exception as e:
+            pass  # If this fails, the main interaction mode setting should still work
+        
+        # Final GUI update
+        slicer.app.processEvents()
+        
+        return True
+        
+    except Exception as e:
+        return False
 
 def verify_extract_centerline_point_list_autoselection():
     """
@@ -2500,6 +2537,9 @@ def fix_extract_centerline_setup_issues():
         
         # Force GUI updates to ensure changes take effect
         slicer.app.processEvents()
+        
+        # Also force point placement tool selection
+        force_point_placement_tool_selection()
                         
     except Exception as e:
         pass
@@ -8093,6 +8133,9 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
             time.sleep(0.2)
             slicer.app.processEvents()
             verification_results = verify_extract_centerline_point_list_autoselection()
+        
+        # Force point placement tool selection one final time
+        force_point_placement_tool_selection()
         
         # Add the large Apply button again
         add_large_centerline_apply_button()
