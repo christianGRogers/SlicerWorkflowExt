@@ -1970,6 +1970,37 @@ def open_centerline_module():
         remove_duplicate_centerline_buttons()
         setup_centerline_module()
         
+        # Force point placement tool selection immediately
+        slicer.app.processEvents()
+        
+        # Directly enable point placement mode first
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+        
+        # Find endpoints node and activate it for placement
+        endpoints_node = None
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if "Endpoints" in node.GetName():
+                endpoints_node = node
+                break
+        
+        if endpoints_node:
+            selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+            if selectionNode:
+                selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
+        
+        time.sleep(0.3)  # Give more time for UI to stabilize
+        
+        # Verify and fix if needed
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        if not verification_results["success"]:
+            fix_extract_centerline_setup_issues()
+            slicer.app.processEvents()
+            time.sleep(0.2)
+        
     except Exception as e:
         pass
         slicer.util.errorDisplay(f"Could not open Extract Centerline module: {str(e)}")
@@ -2073,7 +2104,11 @@ def add_large_centerline_apply_button():
                         
                         def on_apply_button_clicked():
                             pass
-                            setup_centerline_completion_monitor()
+                            # Stop any existing monitoring to prevent duplicates
+                            stop_all_centerline_monitoring()
+                            # Use apply button monitoring instead of centerline completion monitoring
+                            # This provides more direct detection of when Apply is clicked
+                            setup_apply_button_monitoring()
                             original_apply_button.click()
                         
                         large_apply_button.connect('clicked()', on_apply_button_clicked)
@@ -2261,16 +2296,20 @@ def setup_centerline_module():
                                     endpoint_set = True
                                     break
                         
+                        # FORCE point placement mode activation
+                        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                        if interactionNode:
+                            # Force interaction mode to Place
+                            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+                            interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+                        
                         # Set this as the active node for point placement
                         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
                         if selectionNode:
                             selectionNode.SetActivePlaceNodeID(endpoint_point_list.GetID())
                         
-                        # Enable point placement mode with multiple points
-                        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-                        if interactionNode:
-                            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-                            interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+                        # Force GUI updates to ensure the tool is visually selected
+                        slicer.app.processEvents()
                         
                         # Try to configure the place widget
                         if extract_centerline_widget:
@@ -2340,18 +2379,15 @@ def setup_centerline_module():
                     slicer.app.processEvents()
         add_large_centerline_apply_button()
         
-        # Give GUI more time to fully initialize before verification
+        # Final verification and force point placement if needed
         slicer.app.processEvents()
-        time.sleep(0.3)
-        verification_results = verify_extract_centerline_point_list_autoselection()
+        time.sleep(0.2)
         
-        if not verification_results["success"]:
-            pass
-            fix_extract_centerline_setup_issues()
-            # Re-verify after fixes
-            time.sleep(0.2)
-            slicer.app.processEvents()
-            verification_results = verify_extract_centerline_point_list_autoselection()
+        # Force point placement one more time to ensure it's active
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+            interactionNode.SetPlaceModePersistence(1)
         
         prompt_for_endpoints()
         
@@ -2460,7 +2496,11 @@ def fix_extract_centerline_setup_issues():
                     if "Endpoints" in node.GetName():
                         selectionNode.SetActivePlaceNodeID(node.GetID())
                         fixes_applied.append(f"Set active place node to {node.GetName()}")
-                        break      
+                        break
+        
+        # Force GUI updates to ensure changes take effect
+        slicer.app.processEvents()
+                        
     except Exception as e:
         pass
 
@@ -8144,11 +8184,10 @@ def check_for_apply_button_click():
         
         # If we have truly new centerlines, Apply was clicked and processing started/completed
         if new_models or new_curves:
-            pass
-            for model in new_models:
+            # Check if dialog has already been shown for this extraction cycle
+            if hasattr(slicer.modules, 'CenterlineDialogShown') and slicer.modules.CenterlineDialogShown:
                 pass
-            for curve in new_curves:
-                pass
+                return  # Exit early to prevent duplicate dialogs
             
             # Stop Apply button monitoring
             stop_apply_button_monitoring()
@@ -8172,26 +8211,17 @@ def check_for_apply_button_click():
             
             # If we have sufficient data, show dialog immediately
             if best_model or best_curve:
-                pass
-                if best_model:
-                    pass
-                if best_curve:
-                    pass
+                # Stop ALL monitoring to prevent duplicate dialogs
+                stop_all_centerline_monitoring()
                 
-                # Stop any existing centerline monitoring to prevent duplicate dialogs
-                stop_centerline_monitoring()
-                
-                # Mark that we're showing a dialog for this extraction cycle
+                # Mark that we're showing a dialog for this extraction cycle BEFORE showing dialog
                 slicer.modules.CenterlineDialogShown = True
                 
                 show_centerline_completion_dialog(best_model, best_curve)
                 return
             else:
-                # No sufficient data yet, continue monitoring for completion
-                pass
-                # Don't clear the dialog flag - we still want to show dialog when sufficient data is available
-                # Set up monitoring but don't reset baseline (keep existing baseline)
-                setup_centerline_completion_monitor_without_reset(new_models, new_curves)
+                # No sufficient data yet, but don't set up additional monitoring
+                # Let the timer continue to check for data completion
                 return
         
         # Alternative detection: Look for recently modified nodes (processing activity)
@@ -8203,8 +8233,7 @@ def check_for_apply_button_click():
                 time_since_modified = current_time - model.GetMTime()
                 if time_since_modified < 5000:  # Modified within last 5 seconds
                     pass
-                    stop_apply_button_monitoring()
-                    setup_centerline_completion_monitor()
+                    # Just continue with existing monitoring, don't start new ones
                     return
         
     except Exception as e:
