@@ -7776,6 +7776,9 @@ def on_retry_centerline(dialog):
     Called when user chooses to retry centerline extraction
     """
     try:
+        # Stop ALL centerline monitoring systems to prevent double dialogs
+        stop_all_centerline_monitoring()
+        
         # Reset the dialog flag to allow future dialogs
         if hasattr(slicer.modules, 'CenterlineDialogShown'):
             slicer.modules.CenterlineDialogShown = False
@@ -7820,6 +7823,9 @@ def on_add_more_centerlines(dialog):
     Called when user chooses to add more centerlines
     """
     try:
+        # Stop ALL centerline monitoring systems to prevent double dialogs
+        stop_all_centerline_monitoring()
+        
         # Reset the dialog flag to allow future dialogs
         if hasattr(slicer.modules, 'CenterlineDialogShown'):
             slicer.modules.CenterlineDialogShown = False
@@ -7943,6 +7949,75 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
             if not segmentation_set:
                 pass
                 
+            # Set segment selector for the workflow segment
+            workflow_segment_id = workflow_segmentation.GetAttribute("WorkflowCreatedSegmentID")
+            if workflow_segment_id:
+                segmentation = workflow_segmentation.GetSegmentation()
+                segment = segmentation.GetSegment(workflow_segment_id)
+                if segment:
+                    segment_set = False
+                    for selector_name in ['inputSegmentSelector', 'segmentSelector', 'inputSurfaceSegmentSelector']:
+                        if hasattr(centerline_module.ui, selector_name):
+                            try:
+                                getattr(centerline_module.ui, selector_name).setCurrentSegmentID(workflow_segment_id)
+                                segment_set = True
+                                break
+                            except Exception as e:
+                                pass
+                
+        # Create and set up new endpoint fiducial list for point placement
+        try:
+            # Get the count of existing centerlines for unique naming
+            existing_count = count_existing_centerlines()
+            endpoint_point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+            endpoint_point_list.SetName(f"CenterlineEndpoints_{existing_count + 1}")
+            
+            # Try to find and set the endpoint selector using the XML object name
+            endpoints_selector = None
+            extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
+            if extract_centerline_widget:
+                # Use the exact object name from the XML
+                endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
+                if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
+                    endpoints_selector.setCurrentNode(endpoint_point_list)
+                    endpoint_set = True
+            
+            # Fallback to old method if XML-based approach failed
+            if not endpoints_selector:
+                endpoint_set = False
+                for endpoint_selector_attr in ['inputEndPointsSelector', 'endpointsSelector', 'inputFiducialSelector']:
+                    if hasattr(centerline_module.ui, endpoint_selector_attr):
+                        getattr(centerline_module.ui, endpoint_selector_attr).setCurrentNode(endpoint_point_list)
+                        endpoint_set = True
+                        break
+            
+            # Set this as the active node for point placement
+            selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+            if selectionNode:
+                selectionNode.SetActivePlaceNodeID(endpoint_point_list.GetID())
+            
+            # Enable point placement mode with multiple points
+            interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+            if interactionNode:
+                interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+                interactionNode.SetPlaceModePersistence(1)  # Enable "place multiple control points"
+            
+            # Try to configure the place widget
+            if extract_centerline_widget:
+                place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
+                if place_widget:
+                    if hasattr(place_widget, 'setCurrentNode'):
+                        place_widget.setCurrentNode(endpoint_point_list)
+                    if hasattr(place_widget, 'setPlaceModeEnabled'):
+                        place_widget.setPlaceModeEnabled(True)
+            
+            for create_new_attr in ['createNewEndpointsCheckBox', 'createNewPointListCheckBox']:
+                if hasattr(centerline_module.ui, create_new_attr):
+                    getattr(centerline_module.ui, create_new_attr).setChecked(True)
+                    
+        except Exception as e:
+            pass
+                
         # Set output nodes for the new centerline
         try:
             # Set output centerline model
@@ -7964,7 +8039,20 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
         except Exception as e:
             pass
         
+        # Force GUI update and give time for widgets to initialize
         slicer.app.processEvents()
+        time.sleep(0.2)
+        slicer.app.processEvents()
+        
+        # Verify that point placement is properly set up
+        verification_results = verify_extract_centerline_point_list_autoselection()
+        if not verification_results["success"]:
+            pass
+            fix_extract_centerline_setup_issues()
+            # Re-verify after fixes
+            time.sleep(0.2)
+            slicer.app.processEvents()
+            verification_results = verify_extract_centerline_point_list_autoselection()
         
         # Add the large Apply button again
         add_large_centerline_apply_button()
@@ -8139,6 +8227,22 @@ def stop_apply_button_monitoring():
             if hasattr(slicer.modules, attr):
                 delattr(slicer.modules, attr)
             
+        pass
+        
+    except Exception as e:
+        pass
+
+def stop_all_centerline_monitoring():
+    """
+    Stop all centerline monitoring systems to prevent double dialogs
+    """
+    try:
+        # Stop the main centerline completion monitoring
+        stop_centerline_monitoring()
+        
+        # Stop the apply button monitoring
+        stop_apply_button_monitoring()
+        
         pass
         
     except Exception as e:
@@ -10934,36 +11038,7 @@ def setup_extract_centerline_with_verification():
     except Exception as e:
         return False
 
-def fix_extract_centerline_setup_issues():
-    """
-    Attempt to fix common issues with Extract Centerline module setup
-    """
-    try:
-        endpoints_node = slicer.util.getNode("CenterlineEndpoints")
-        if not endpoints_node:
-            endpoints_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
-            endpoints_node.SetName("CenterlineEndpoints")
-        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
-        if selectionNode and endpoints_node:
-            selectionNode.SetActivePlaceNodeID(endpoints_node.GetID())
-        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-        if interactionNode:
-            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-            interactionNode.SetPlaceModePersistence(1)
-        extract_centerline_widget = slicer.modules.extractcenterline.widgetRepresentation()
-        if extract_centerline_widget:
-            endpoints_selector = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsSelector")
-            if endpoints_selector and hasattr(endpoints_selector, 'setCurrentNode'):
-                endpoints_selector.setCurrentNode(endpoints_node)
-            place_widget = extract_centerline_widget.findChild(qt.QWidget, "endPointsMarkupsPlaceWidget")
-            if place_widget:
-                if hasattr(place_widget, 'setCurrentNode'):
-                    place_widget.setCurrentNode(endpoints_node)
-                if hasattr(place_widget, 'setPlaceModeEnabled'):
-                    place_widget.setPlaceModeEnabled(True)
-        slicer.app.processEvents()     
-    except Exception as e:
-        pass
+# Duplicate function removed - using the more comprehensive version at line 2431
 
 
 
