@@ -3866,27 +3866,139 @@ def load_dicom_from_source_file(dicom_path):
         except Exception as e:
             print(f"Method 1 failed: {e}")
         
-        # Method 2: Try loading DICOM files from directory
+        # Method 2: Try to load the directory as a DICOM series (preferred for medical imaging)
         try:
-            print("Method 2: Trying to find DICOM files in directory...")
+            print("Method 2: Trying to load directory as DICOM series...")
+            
+            # First, verify the directory contains DICOM files
             dicom_files = []
             for root, dirs, files in os.walk(dicom_path):
                 for file in files:
-                    if file.lower().endswith(('.dcm', '.dicom')) or '.' not in file:
-                        dicom_files.append(os.path.join(root, file))
+                    file_lower = file.lower()
+                    full_path = os.path.join(root, file)
+                    
+                    # Enhanced DICOM file detection patterns
+                    is_dicom = False
+                    
+                    # Standard DICOM extensions
+                    if file_lower.endswith(('.dcm', '.dicom', '.ima')):
+                        is_dicom = True
+                    # Files with no extension (common in DICOM)
+                    elif '.' not in file:
+                        is_dicom = True
+                    # Files starting with common DICOM prefixes
+                    elif file_lower.startswith(('i', 'im', 'ima', 'dicom')):
+                        is_dicom = True
+                    # Files containing 'ctdc' or similar medical imaging patterns
+                    elif any(pattern in file_lower for pattern in ['ctdc', 'ct', 'mr', 'us', 'xr']):
+                        is_dicom = True
+                    # Files with numeric extensions (.1, .2, .3, etc.) - common in DICOM series
+                    elif file.count('.') >= 1:
+                        parts = file.split('.')
+                        if len(parts) >= 2 and parts[-1].isdigit():
+                            is_dicom = True
+                    
+                    if is_dicom:
+                        dicom_files.append(full_path)
+                        print(f"Found potential DICOM file: {file}")
+            
+            print(f"Found {len(dicom_files)} potential DICOM files")
             
             if dicom_files:
-                # Try to load the first DICOM file
-                volume_node = slicer.util.loadVolume(dicom_files[0])
-                if volume_node:
-                    print("Success: DICOM loaded from directory files")
-                    set_3d_view_background_black()
-                    qt.QTimer.singleShot(1000, start_with_volume_crop)
-                    return True
+                # Method 2a: Try to load the directory itself to get the full series
+                try:
+                    print("Method 2a: Attempting to load directory as DICOM series...")
+                    
+                    # Use DICOM database loading approach for better series handling
+                    import DICOMLib
+                    dicom_widget = slicer.modules.dicom.widgetRepresentation()
+                    
+                    if dicom_widget:
+                        # Try to import the directory into DICOM database and load
+                        print("Using DICOM database import approach...")
+                        
+                        # Import directory to DICOM database
+                        dicom_widget.detailsPopup.importDirectory(dicom_path, dicom_widget.detailsPopup.ImportDirectoryAddLink)
+                        
+                        # Get the database and find imported studies
+                        dicomDatabase = slicer.dicomDatabase
+                        patients = dicomDatabase.patients()
+                        
+                        if patients:
+                            print(f"Found {len(patients)} patients in DICOM database")
+                            # Load the first available series
+                            for patient in patients:
+                                studies = dicomDatabase.studiesForPatient(patient)
+                                for study in studies:
+                                    series_list = dicomDatabase.seriesForStudy(study)
+                                    if series_list:
+                                        series_uid = series_list[0]
+                                        print(f"Loading DICOM series: {series_uid}")
+                                        loadables = DICOMLib.DICOMUtils.getLoadablesFromFileLists([[dicomDatabase.filesForSeries(series_uid)]])
+                                        if loadables:
+                                            volume_node = DICOMLib.DICOMUtils.loadPatientByUID(patient)
+                                            if volume_node:
+                                                print("Success: DICOM series loaded via database import")
+                                                set_3d_view_background_black()
+                                                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                                                return True
+                    
+                except Exception as db_error:
+                    print(f"Method 2a (database) failed: {db_error}")
+                
+                # Method 2b: Try to load directory directly (fallback)
+                try:
+                    print("Method 2b: Attempting direct directory load...")
+                    volume_node = slicer.util.loadVolume(dicom_path)
+                    if volume_node:
+                        print("Success: DICOM series loaded via direct directory load")
+                        set_3d_view_background_black()
+                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        return True
+                except Exception as dir_error:
+                    print(f"Method 2b (direct directory) failed: {dir_error}")
+                
+                # Method 2c: Try loading individual files as last resort (single slice fallback)
+                print("Method 2c: Falling back to individual file loading...")
+                dicom_files.sort()
+                for i, dicom_file in enumerate(dicom_files[:3]):  # Try first 3 files only
+                    try:
+                        print(f"Attempting to load individual file {i+1}: {os.path.basename(dicom_file)}")
+                        volume_node = slicer.util.loadVolume(dicom_file)
+                        if volume_node:
+                            print(f"Warning: Only single slice loaded from {os.path.basename(dicom_file)}")
+                            print("Note: This may not be the complete DICOM series")
+                            set_3d_view_background_black()
+                            qt.QTimer.singleShot(1000, start_with_volume_crop)
+                            return True
+                    except Exception as file_error:
+                        print(f"Failed to load {os.path.basename(dicom_file)}: {file_error}")
+                        continue
+                        
         except Exception as e:
             print(f"Method 2 failed: {e}")
         
-        # Method 3: Show user-friendly error message
+        # Method 3: Try using Slicer's built-in DICOM loading with series detection
+        try:
+            print("Method 3: Trying Slicer's DICOM series loader...")
+            
+            # Use slicer.util.loadVolume with properties to force series loading
+            properties = {}
+            properties['name'] = 'DICOM_Series'
+            properties['center'] = True
+            
+            # Try to load using the directory path with DICOM loading properties
+            volume_node = slicer.util.loadVolume(dicom_path, properties=properties)
+            if volume_node:
+                print("Success: DICOM series loaded via Slicer's series loader")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+                
+        except Exception as e:
+            print(f"Method 3 failed: {e}")
+        
+        # Method 4: Show user-friendly error message
         print("All automatic loading methods failed")
         qt.QMessageBox.information(
             None,
@@ -11136,4 +11248,181 @@ def fix_centerline_issues():
         
     except Exception as e:
         return False
+
+# ===============================================================================
+# DICOM DEBUGGING AND TESTING FUNCTIONS
+# ===============================================================================
+
+def test_dicom_directory_loading(directory_path):
+    """
+    Test DICOM loading from a directory (console helper function).
+    Usage: test_dicom_directory_loading(r"C:\\Users\\croger52\\Desktop\\SYS_01")
+    """
+    import os
+    print(f"\n=== Testing DICOM Directory Loading ===")
+    print(f"Directory: {directory_path}")
+    print(f"Exists: {os.path.exists(directory_path)}")
+    print(f"Is directory: {os.path.isdir(directory_path)}")
+    
+    if not os.path.exists(directory_path):
+        print("Directory does not exist!")
+        return
+    
+    if not os.path.isdir(directory_path):
+        print("Path is not a directory!")
+        return
+    
+    # List all files and identify potential DICOM files
+    try:
+        all_files = []
+        potential_dicom_files = []
+        
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                all_files.append(full_path)
+                
+                file_lower = file.lower()
+                is_dicom = False
+                reason = []
+                
+                # Check various DICOM patterns
+                if file_lower.endswith(('.dcm', '.dicom', '.ima')):
+                    is_dicom = True
+                    reason.append("standard extension")
+                elif '.' not in file:
+                    is_dicom = True
+                    reason.append("no extension")
+                elif file_lower.startswith(('i', 'im', 'ima', 'dicom')):
+                    is_dicom = True
+                    reason.append("DICOM prefix")
+                elif any(pattern in file_lower for pattern in ['ctdc', 'ct', 'mr', 'us', 'xr']):
+                    is_dicom = True
+                    reason.append("medical imaging pattern")
+                elif file.count('.') >= 1:
+                    parts = file.split('.')
+                    if len(parts) >= 2 and parts[-1].isdigit():
+                        is_dicom = True
+                        reason.append("numeric extension")
+                
+                if is_dicom:
+                    potential_dicom_files.append((full_path, ", ".join(reason)))
+        
+        print(f"\nTotal files found: {len(all_files)}")
+        print(f"Potential DICOM files: {len(potential_dicom_files)}")
+        
+        print("\nPotential DICOM files:")
+        for file_path, reason in potential_dicom_files[:10]:  # Show first 10
+            print(f"  - {os.path.basename(file_path)} ({reason})")
+        
+        if len(potential_dicom_files) > 10:
+            print(f"  ... and {len(potential_dicom_files) - 10} more")
+            
+        # Test loading the enhanced function
+        print(f"\n=== Testing Enhanced DICOM Loading ===")
+        print("Note: The enhanced loader now prioritizes loading the entire DICOM series")
+        print("instead of individual slices to get the complete volume.")
+        success = load_dicom_from_source_file(directory_path)
+        print(f"Loading result: {'SUCCESS' if success else 'FAILED'}")
+        
+        if success:
+            # Check if we got a proper volume series
+            volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+            if volume_nodes:
+                latest_volume = volume_nodes[-1]  # Get the most recently loaded volume
+                image_data = latest_volume.GetImageData()
+                if image_data:
+                    dimensions = image_data.GetDimensions()
+                    print(f"Loaded volume dimensions: {dimensions[0]} x {dimensions[1]} x {dimensions[2]}")
+                    if dimensions[2] > 1:
+                        print("✓ Successfully loaded multi-slice DICOM series")
+                    else:
+                        print("⚠ Warning: Only single slice loaded - may need manual DICOM import")
+                else:
+                    print("⚠ Warning: Volume loaded but no image data found")
+        
+    except Exception as e:
+        print(f"Error analyzing directory: {e}")
+
+def debug_dicom_file(file_path):
+    """
+    Debug information about a specific DICOM file.
+    Usage: debug_dicom_file(r"C:\\Users\\croger52\\Desktop\\SYS_01\\i1559699.CTDC.1")
+    """
+    import os
+    try:
+        print(f"\n=== DICOM File Debug Info ===")
+        print(f"File: {file_path}")
+        print(f"Exists: {os.path.exists(file_path)}")
+        
+        if not os.path.exists(file_path):
+            return
+            
+        print(f"Size: {os.path.getsize(file_path)} bytes")
+        
+        # Try to read first few bytes to check if it looks like DICOM
+        try:
+            with open(file_path, 'rb') as f:
+                first_bytes = f.read(200)
+                print(f"First 20 bytes (hex): {first_bytes[:20].hex()}")
+                
+                # Check for DICOM magic number at offset 128
+                if len(first_bytes) > 132:
+                    magic = first_bytes[128:132]
+                    print(f"DICOM magic at 128: {magic}")
+                    is_dicom = magic == b'DICM'
+                    print(f"Valid DICOM header: {is_dicom}")
+                else:
+                    print("File too small to contain DICOM header")
+                
+        except Exception as e:
+            print(f"Error reading file: {e}")
+            
+    except Exception as e:
+        print(f"Error in debug_dicom_file: {e}")
+
+def set_source_path(new_path):
+    """
+    Helper function to update the source_slicer.txt file with a new DICOM path.
+    Usage: set_source_path(r"C:\\Users\\croger52\\Desktop\\SYS_01")
+    """
+    import os
+    try:
+        user_home = os.path.expanduser("~")
+        source_file_path = os.path.join(user_home, "source_slicer.txt")
+        
+        with open(source_file_path, 'w', encoding='utf-8') as f:
+            f.write(new_path)
+            
+        print(f"Updated source_slicer.txt with path: {new_path}")
+        print(f"File location: {source_file_path}")
+        
+        # Reset the processed flag so it can be loaded again
+        if hasattr(slicer.modules, 'SourceSlicerFileProcessed'):
+            delattr(slicer.modules, 'SourceSlicerFileProcessed')
+            
+    except Exception as e:
+        print(f"Error updating source file: {e}")
+
+def list_files_in_source_directory():
+    """
+    List all files in the directory specified in source_slicer.txt
+    """
+    import os
+    try:
+        user_home = os.path.expanduser("~")
+        source_file_path = os.path.join(user_home, "source_slicer.txt")
+        
+        if not os.path.exists(source_file_path):
+            print("source_slicer.txt not found")
+            return
+            
+        with open(source_file_path, 'r', encoding='utf-8') as f:
+            directory_path = f.read().strip()
+            
+        print(f"Source directory: {directory_path}")
+        test_dicom_directory_loading(directory_path)
+        
+    except Exception as e:
+        print(f"Error: {e}")
 
