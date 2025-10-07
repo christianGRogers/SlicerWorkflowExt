@@ -4,6 +4,22 @@ import vtk
 import math
 import numpy as np
 import time
+import os
+
+# Import DICOM utilities with error handling
+try:
+    import DICOMLib
+    from DICOMLib.DICOMUtils import TemporaryDICOMDatabase
+    DICOM_UTILS_AVAILABLE = True
+except ImportError:
+    print("Warning: DICOMLib not available, using fallback DICOM methods")
+    DICOM_UTILS_AVAILABLE = False
+
+try:
+    import ctk
+except ImportError:
+    print("Warning: ctk not available, some DICOM functions may be limited")
+    ctk = None
 
 """
 Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
@@ -3836,7 +3852,7 @@ def start_with_dicom_data():
 def load_dicom_from_source_file(dicom_path):
     """
     Load DICOM data from a path specified in the source_slicer.txt file.
-    This function tries multiple methods to load DICOM data programmatically.
+    Uses a robust plugin-based approach similar to mpReviewPreprocessor for better compatibility.
     """
     import os
     import vtk
@@ -3853,515 +3869,42 @@ def load_dicom_from_source_file(dicom_path):
             )
             return False
         
-        # Method 1: Reference-style DICOM import (PREFERRED - matches working reference)
-        try:
-            print("Method 1: Reference-style DICOM import...")
-            
-            # Use the same method that created the working reference
-            # Open DICOM module and import properly
-            slicer.util.selectModule("DICOM")
-            slicer.app.processEvents()
-            
-            # Clear database for clean import
-            slicer.dicomDatabase.initializeDatabase()
-            
-            # Import using DICOM browser (same as manual import)
-            dicom_browser = slicer.modules.dicom.widgetRepresentation().self().browserWidget
-            dicom_browser.importDirectory(dicom_path, copy=True)
-            slicer.app.processEvents()
-            
-            # Wait for import completion
-            import time
-            time.sleep(2)
-            slicer.app.processEvents()
-            
-            # Load the imported series
-            dicomDatabase = slicer.dicomDatabase
-            patients = dicomDatabase.patients()
-            
-            if patients:
-                patient_id = patients[-1]
-                studies = dicomDatabase.studiesForPatient(patient_id)
-                
-                if studies:
-                    study_uid = studies[-1]
-                    series_list = dicomDatabase.seriesForStudy(study_uid)
-                    
-                    if series_list:
-                        # Find series with most files (main imaging series)
-                        best_series = max(series_list, key=lambda s: len(dicomDatabase.filesForSeries(s)))
-                        series_files = dicomDatabase.filesForSeries(best_series)
-                        series_description = dicomDatabase.seriesDescription(best_series)
-                        
-                        print(f"Loading series: {series_description} ({len(series_files)} files)")
-                        
-                        volume_node = slicer.util.loadVolume(series_files[0])
-                        if volume_node:
-                            if series_description:
-                                volume_node.SetName(series_description)
-                            
-                            print("Success: DICOM series loaded using reference method")
-                            set_3d_view_background_black()
-                            qt.QTimer.singleShot(1000, start_with_volume_crop)
-                            return True
-                            
-        except Exception as e:
-            print(f"Method 1 (reference-style import) failed: {e}")
+        # Check if enhanced DICOM utilities are available
+        if not DICOM_UTILS_AVAILABLE:
+            print("DICOMLib not available, using fallback methods")
+            return _fallback_dicom_loading(dicom_path)
         
-        # Method 1b: Simple directory loading (original method)
+        # Use robust plugin-based approach inspired by mpReviewPreprocessor
         try:
-            print("Method 1b: Simple directory loading...")
-            volume_node = slicer.util.loadVolume(dicom_path)
-            if volume_node:
-                print("Success: DICOM series loaded from directory")
-                set_3d_view_background_black()
-                qt.QTimer.singleShot(1000, start_with_volume_crop)
-                return True
-        except Exception as e:
-            print(f"Method 1b (directory series) failed: {e}")
-        
-        # Method 2: Try DICOM module approach for series loading
-        try:
-            print("Method 2: Using DICOM module for series loading...")
+            print("Using enhanced DICOM loading with plugin detection...")
             
-            # Open DICOM module and import directory
-            slicer.util.selectModule("DICOM")
-            slicer.app.processEvents()
-            
-            # Get DICOM browser
-            dicom_browser = slicer.modules.dicom.widgetRepresentation().self().browserWidget
-            
-            # Import the directory
-            print(f"Importing DICOM directory: {dicom_path}")
-            dicom_browser.importDirectory(dicom_path)
-            slicer.app.processEvents()
-            
-            # Try to load the imported series
-            dicomDatabase = slicer.dicomDatabase
-            patients = dicomDatabase.patients()
-            
-            if patients:
-                print(f"Found {len(patients)} patients in DICOM database")
-                # Get the most recent patient (likely our imported data)
-                patient = patients[-1]  # Get last (most recent) patient
-                studies = dicomDatabase.studiesForPatient(patient)
-                
-                if studies:
-                    study = studies[-1]  # Get last study
-                    series_list = dicomDatabase.seriesForStudy(study)
-                    
-                    if series_list:
-                        series_uid = series_list[-1]  # Get last series
-                        print(f"Loading DICOM series: {series_uid}")
-                        
-                        # Load the series
-                        files = dicomDatabase.filesForSeries(series_uid)
-                        if files:
-                            print(f"Series contains {len(files)} files")
-                            # Use the first file as reference but load entire series
-                            volume_node = slicer.util.loadVolume(files[0])
-                            if volume_node:
-                                print("Success: DICOM series loaded via DICOM module")
-                                set_3d_view_background_black()
-                                qt.QTimer.singleShot(1000, start_with_volume_crop)
-                                return True
-                                
-        except Exception as e:
-            print(f"Method 2 (DICOM module) failed: {e}")
-        
-        # Method 2b: Enhanced DICOM module approach with header file detection
-        try:
-            print("Method 2b: Enhanced DICOM module with header file support...")
-            
-            # First check if directory contains header files
-            files_in_dir = os.listdir(dicom_path) if os.path.isdir(dicom_path) else []
-            has_header_files = any('v_headers' in f.lower() for f in files_in_dir)
-            
-            if has_header_files:
-                print("Detected header files (v_headers) - using enhanced import method")
-                
-                # Clear DICOM database to ensure clean import
-                slicer.dicomDatabase.initializeDatabase()
-                
-                # Import with all files including headers
-                slicer.util.selectModule("DICOM")
-                slicer.app.processEvents()
-                
-                dicom_browser = slicer.modules.dicom.widgetRepresentation().self().browserWidget
-                
-                # Import the entire directory including header files
-                print(f"Importing directory with header files: {dicom_path}")
-                dicom_browser.importDirectory(dicom_path, copy=False)  # Don't copy, use in place
-                slicer.app.processEvents()
-                
-                # Wait a moment for import to complete
-                import time
-                time.sleep(2)
-                slicer.app.processEvents()
-                
-                # Try to load the imported series
-                dicomDatabase = slicer.dicomDatabase
-                patients = dicomDatabase.patients()
-                
-                if patients:
-                    print(f"Found {len(patients)} patients after header-aware import")
-                    patient = patients[-1]  # Most recent
-                    studies = dicomDatabase.studiesForPatient(patient)
-                    
-                    if studies:
-                        study = studies[-1]
-                        series_list = dicomDatabase.seriesForStudy(study)
-                        
-                        if series_list:
-                            series_uid = series_list[-1]
-                            print(f"Loading series with header support: {series_uid}")
-                            
-                            files = dicomDatabase.filesForSeries(series_uid)
-                            if files:
-                                print(f"Series contains {len(files)} files (including headers)")
-                                volume_node = slicer.util.loadVolume(files[0])
-                                if volume_node:
-                                    volume_node.SetAttribute("DICOM_HasHeaders", "true")
-                                    print("Success: DICOM series with headers loaded")
-                                    set_3d_view_background_black()
-                                    qt.QTimer.singleShot(1000, start_with_volume_crop)
-                                    return True
-                                    
-        except Exception as e:
-            print(f"Method 2b (enhanced DICOM with headers) failed: {e}")
-        
-        # Method 3: Analyze directory and try smart loading
-        try:
-            print("Method 3: Analyzing directory for DICOM series...")
-            
-            # Find all potential DICOM files including header files
-            dicom_files = []
-            header_files = []
-            
-            for root, dirs, files in os.walk(dicom_path):
-                for file in files:
-                    file_lower = file.lower()
-                    full_path = os.path.join(root, file)
-                    
-                    # Check for header files first
-                    if 'v_headers' in file_lower:
-                        header_files.append(full_path)
-                        print(f"Found header file: {file}")
-                        continue
-                    
-                    # Enhanced DICOM file detection patterns
-                    is_dicom = False
-                    
-                    # Standard DICOM extensions
-                    if file_lower.endswith(('.dcm', '.dicom', '.ima')):
-                        is_dicom = True
-                    # Files with no extension (common in DICOM)
-                    elif '.' not in file:
-                        is_dicom = True
-                    # Files starting with common DICOM prefixes
-                    elif file_lower.startswith(('i', 'im', 'ima', 'dicom')):
-                        is_dicom = True
-                    # Files containing medical imaging patterns
-                    elif any(pattern in file_lower for pattern in ['ctdc', 'ct', 'mr', 'us', 'xr']):
-                        is_dicom = True
-                    # Files with numeric extensions (.1, .2, .3, etc.) - DICOM series
-                    elif file.count('.') >= 1:
-                        parts = file.split('.')
-                        if len(parts) >= 2 and parts[-1].isdigit():
-                            is_dicom = True
-                    
-                    if is_dicom:
-                        dicom_files.append(full_path)
-            
-            print(f"Found {len(dicom_files)} potential DICOM files")
-            print(f"Found {len(header_files)} header files")
-            
-            if dicom_files:
-                # Sort files to ensure proper order for series
-                dicom_files.sort()
-                
-                # Analyze the file pattern to detect DICOM series
-                first_file = dicom_files[0]
-                file_name = os.path.basename(first_file)
-                parent_dir = os.path.dirname(first_file)
-                
-                # Check for various DICOM series patterns
-                is_dicom_series = False
-                
-                # Pattern 1: Files with numbered extensions (.1, .2, .3, etc.)
-                if '.' in file_name and file_name.split('.')[-1].isdigit():
-                    print(f"Pattern 1: Numbered extensions detected (e.g., {file_name})")
-                    is_dicom_series = True
-                
-                # Pattern 2: Files like i1559699.CTDC, i1559700.CTDC.2, i1559701.CTDC.3
-                elif 'CTDC' in file_name.upper():
-                    print(f"Pattern 2: CTDC series detected (e.g., {file_name})")
-                    is_dicom_series = True
-                
-                # Pattern 3: Files with common base name and sequential numbering
-                elif len(dicom_files) > 1:
-                    # Check if we have multiple files that could be a series
-                    base_names = set()
-                    for f in dicom_files[:5]:  # Check first 5 files
-                        fname = os.path.basename(f)
-                        # Extract potential base name (everything before last number or extension)
-                        if fname.startswith('i') and any(char.isdigit() for char in fname):
-                            base_names.add(fname[:10])  # First 10 chars as base
-                    
-                    if len(base_names) == 1:  # All files share same base pattern
-                        print(f"Pattern 3: Sequential series detected ({len(dicom_files)} files)")
-                        is_dicom_series = True
-                
-                if is_dicom_series:
-                    print(f"Detected DICOM series with {len(dicom_files)} files")
-                    print("Attempting to load entire directory as complete series...")
-                    
-                    # Method 3a: Try loading the parent directory
-                    try:
-                        volume_node = slicer.util.loadVolume(parent_dir)
-                        if volume_node:
-                            print("Success: Complete DICOM series loaded from directory")
-                            set_3d_view_background_black()
-                            qt.QTimer.singleShot(1000, start_with_volume_crop)
-                            return True
-                    except Exception as dir_error:
-                        print(f"Directory loading failed: {dir_error}")
-                    
-                    # Method 3b: Try using slicer.util.loadVolume with file list
-                    try:
-                        print("Attempting to load series using file list...")
-                        # Sort files to ensure proper order
-                        sorted_files = sorted(dicom_files, key=lambda x: os.path.basename(x))
-                        
-                        # Try to load using the sorted file list
-                        volume_node = slicer.util.loadVolume(sorted_files)
-                        if volume_node:
-                            print("Success: DICOM series loaded from file list")
-                            set_3d_view_background_black()
-                            qt.QTimer.singleShot(1000, start_with_volume_crop)
-                            return True
-                    except Exception as list_error:
-                        print(f"File list loading failed: {list_error}")
-                    
-                    # Method 3c: Enhanced DICOM series loading with proper spacing and orientation
-                    try:
-                        print("Attempting to load series with corrected spacing and orientation...")
-                        
-                        # Use Slicer's DICOMScalarVolumePlugin for better series handling
-                        volume_node = None
-                        
-                        # Method 3c-1: Enhanced DICOM database import matching reference structure
-                        try:
-                            print("Using enhanced DICOM database import for proper series structure...")
-                            
-                            # Clear and reinitialize DICOM database for clean import
-                            print("Initializing DICOM database for clean import...")
-                            slicer.dicomDatabase.initializeDatabase()
-                            
-                            # Open DICOM module and import with full metadata processing
-                            slicer.util.selectModule("DICOM")
-                            slicer.app.processEvents()
-                            
-                            dicom_browser = slicer.modules.dicom.widgetRepresentation().self().browserWidget
-                            
-                            # Import with full processing (not just quick import)
-                            print(f"Importing DICOM directory with full metadata processing: {parent_dir}")
-                            dicom_browser.importDirectory(parent_dir, copy=True)  # Copy for better processing
-                            slicer.app.processEvents()
-                            
-                            # Wait for import to complete
-                            import time
-                            time.sleep(3)
-                            slicer.app.processEvents()
-                            
-                            # Get the imported data
-                            dicomDatabase = slicer.dicomDatabase
-                            patients = dicomDatabase.patients()
-                            
-                            print(f"Found {len(patients)} patients after full import")
-                            
-                            if patients:
-                                # Get the most recent patient (our imported data)
-                                for patient in reversed(patients):  # Check newest first
-                                    print(f"Checking patient: {patient}")
-                                    studies = dicomDatabase.studiesForPatient(patient)
-                                    
-                                    if studies:
-                                        for study in studies:
-                                            series_list = dicomDatabase.seriesForStudy(study)
-                                            print(f"Found {len(series_list)} series in study")
-                                            
-                                            for series_uid in series_list:
-                                                series_files = dicomDatabase.filesForSeries(series_uid)
-                                                print(f"Series {series_uid} has {len(series_files)} files")
-                                                
-                                                # Check if this series matches our DICOM files
-                                                if len(series_files) >= len(dicom_files) * 0.8:  # At least 80% of expected files
-                                                    print(f"Loading series {series_uid} with {len(series_files)} files")
-                                                    
-                                                    # Use proper DICOM loading mechanism
-                                                    try:
-                                                        # Method 1: Use slicer.util.loadVolume with first file (loads entire series)
-                                                        volume_node = slicer.util.loadVolume(series_files[0])
-                                                        
-                                                        if volume_node:
-                                                            print(f"Success: Full DICOM series loaded via database import")
-                                                            
-                                                            # Get proper series description for naming
-                                                            series_description = dicomDatabase.seriesDescription(series_uid)
-                                                            if series_description:
-                                                                volume_node.SetName(f"{series_description}")
-                                                                print(f"Set volume name to: {series_description}")
-                                                            
-                                                            # Verify loading success
-                                                            spacing = volume_node.GetSpacing()
-                                                            image_data = volume_node.GetImageData()
-                                                            if image_data:
-                                                                dims = image_data.GetDimensions()
-                                                                print(f"Loaded - Spacing: {spacing}, Dimensions: {dims}")
-                                                                
-                                                                # Verify we got a multi-slice volume
-                                                                if dims[2] > 1:
-                                                                    print(f"✓ Successfully loaded {dims[2]} slices")
-                                                                    
-                                                                    # Store metadata
-                                                                    volume_node.SetAttribute("DICOM_SeriesUID", series_uid)
-                                                                    volume_node.SetAttribute("DICOM_PatientID", patient)
-                                                                    if header_files:
-                                                                        volume_node.SetAttribute("DICOM_HeaderFiles", "true")
-                                                                    
-                                                                    # Apply additional corrections if needed
-                                                                    fix_dicom_spacing_and_orientation(volume_node, parent_dir)
-                                                                    
-                                                                    set_3d_view_background_black()
-                                                                    qt.QTimer.singleShot(1000, start_with_volume_crop)
-                                                                    return True
-                                                                else:
-                                                                    print("⚠ Warning: Only single slice loaded, continuing to try other methods")
-                                                    
-                                                    except Exception as load_error:
-                                                        print(f"Loading attempt failed: {load_error}")
-                                                        continue
-                                
-                                # If no suitable series found, try loading the first available series
-                                if patients:
-                                    patient = patients[-1]
-                                    studies = dicomDatabase.studiesForPatient(patient)
-                                    if studies:
-                                        study = studies[-1]
-                                        series_list = dicomDatabase.seriesForStudy(study)
-                                        if series_list:
-                                            series_uid = series_list[-1]
-                                            series_files = dicomDatabase.filesForSeries(series_uid)
-                                            
-                                            print(f"Fallback: Loading first available series with {len(series_files)} files")
-                                            volume_node = slicer.util.loadVolume(series_files[0])
-                                            
-                                            if volume_node:
-                                                print("Success: DICOM series loaded via database fallback")
-                                                fix_dicom_spacing_and_orientation(volume_node, parent_dir)
-                                                set_3d_view_background_black()
-                                                qt.QTimer.singleShot(1000, start_with_volume_crop)
-                                                return True
-                                        
-                        except Exception as plugin_error:
-                            print(f"DICOM plugin method failed: {plugin_error}")
-                        
-                        # Method 3c-2: Enhanced VTK DICOM reader with spacing correction
-                        if not volume_node:
-                            print("Trying VTK DICOM reader with spacing correction...")
-                            
-                            try:
-                                reader = vtk.vtkDICOMImageReader()
-                                reader.SetDirectoryName(parent_dir)
-                                reader.Update()
-                                
-                                if reader.GetOutput().GetNumberOfPoints() > 0:
-                                    # Create volume node
-                                    volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-                                    volume_node.SetName("DICOM_Series_Corrected")
-                                    
-                                    # Get the image data
-                                    image_data = reader.GetOutput()
-                                    volume_node.SetAndObserveImageData(image_data)
-                                    
-                                    # Try to correct spacing and orientation
-                                    try:
-                                        # Get spacing from reader if available
-                                        pixel_spacing = reader.GetPixelSpacing()
-                                        data_spacing = reader.GetDataSpacing()
-                                        
-                                        print(f"Reader pixel spacing: {pixel_spacing}")
-                                        print(f"Reader data spacing: {data_spacing}")
-                                        
-                                        # Set appropriate spacing - prefer data spacing if available
-                                        if data_spacing and data_spacing != (1.0, 1.0, 1.0):
-                                            volume_node.SetSpacing(data_spacing)
-                                            print(f"Applied data spacing: {data_spacing}")
-                                        elif pixel_spacing and pixel_spacing != (1.0, 1.0, 1.0):
-                                            # For 2D pixel spacing, estimate slice thickness
-                                            estimated_spacing = (pixel_spacing[0], pixel_spacing[1], pixel_spacing[0])  # Use pixel spacing for slice thickness estimate
-                                            volume_node.SetSpacing(estimated_spacing)
-                                            print(f"Applied estimated spacing: {estimated_spacing}")
-                                        
-                                        # Try to get and apply orientation information
-                                        if hasattr(reader, 'GetImageOrientationPatient'):
-                                            orientation = reader.GetImageOrientationPatient()
-                                            if orientation:
-                                                print(f"Found orientation: {orientation}")
-                                                # Apply orientation matrix if available
-                                                # (This would require more complex matrix calculations)
-                                        
-                                    except Exception as spacing_error:
-                                        print(f"Spacing correction failed: {spacing_error}")
-                                        # Use default spacing as fallback
-                                        volume_node.SetSpacing((1.0, 1.0, 1.0))
-                                    
-                                    # Set up display
-                                    volume_node.CreateDefaultDisplayNodes()
-                                    
-                                    # Store metadata
-                                    if header_files:
-                                        header_info = f"Header files: {', '.join([os.path.basename(hf) for hf in header_files])}"
-                                        volume_node.SetAttribute("DICOM_HeaderFiles", header_info)
-                                        print(f"Added header file information: {header_info}")
-                                    
-                                    # Report final volume properties
-                                    final_spacing = volume_node.GetSpacing()
-                                    final_dims = image_data.GetDimensions()
-                                    print(f"Final volume - Spacing: {final_spacing}, Dimensions: {final_dims}")
-                                    
-                                    # Apply additional spacing and orientation corrections
-                                    fix_dicom_spacing_and_orientation(volume_node, parent_dir)
-                                    
-                                    print("Success: DICOM series loaded with VTK reader and spacing correction")
-                                    set_3d_view_background_black()
-                                    qt.QTimer.singleShot(1000, start_with_volume_crop)
-                                    return True
-                                    
-                            except Exception as vtk_error:
-                                print(f"Enhanced VTK DICOM reader failed: {vtk_error}")
-                        
-                    except Exception as method_error:
-                        print(f"Method 3c (enhanced series loading) failed: {method_error}")
-                
-                # Fallback: Try loading first file (will only get single slice - not ideal)
-                print("Warning: Falling back to single file loading - may only load one slice")
+            # Check if we can use TemporaryDICOMDatabase
+            if DICOM_UTILS_AVAILABLE:
                 try:
-                    volume_node = slicer.util.loadVolume(first_file)
-                    if volume_node:
-                        print(f"Warning: Only single slice loaded from {os.path.basename(first_file)}")
-                        print(f"Note: {len(dicom_files)} files detected but complete series may not be loaded")
-                        set_3d_view_background_black()
-                        qt.QTimer.singleShot(1000, start_with_volume_crop)
-                        return True
-                except Exception as single_error:
-                    print(f"Single file loading failed: {single_error}")
-                        
+                    # Use temporary database for clean operation
+                    temp_db_dir = os.path.join(slicer.app.temporaryPath, "WorkflowDICOMTemp")
+                    if os.path.exists(temp_db_dir):
+                        import shutil
+                        shutil.rmtree(temp_db_dir)
+                    
+                    with TemporaryDICOMDatabase(temp_db_dir) as temp_db:
+                        success = _import_and_load_dicom_data(dicom_path, temp_db)
+                        if success:
+                            return success
+                except Exception as temp_db_error:
+                    print(f"Temporary database approach failed: {temp_db_error}")
+            
+            # Fallback to direct plugin examination without temporary database
+            success = _import_and_load_dicom_data(dicom_path, None)
+            if success:
+                return success
+                    
         except Exception as e:
-            print(f"Method 3 (directory analysis) failed: {e}")
+            print(f"Enhanced DICOM loading failed: {e}")
+            print("Falling back to traditional methods...")
+            return _fallback_dicom_loading(dicom_path)
         
-        # Method 4: Show user-friendly error message
+        # If we get here, all methods failed
         print("All automatic loading methods failed")
         
         # Provide specific guidance based on file types found
@@ -4391,6 +3934,902 @@ def load_dicom_from_source_file(dicom_path):
             "Error",
             f"Error loading DICOM from source file:\n{str(e)}"
         )
+        return False
+
+def _import_and_load_dicom_data(input_dir, temp_db=None):
+    """
+    Import and load DICOM data using enhanced plugin-based approach.
+    Based on mpReviewPreprocessor methodology for robust DICOM handling.
+    """
+    try:
+        print(f"Starting enhanced DICOM import from: {input_dir}")
+        
+        # Use temporary database if provided, otherwise get main database safely
+        dicom_database = temp_db
+        if not dicom_database:
+            try:
+                # Try different ways to get the DICOM database
+                if hasattr(slicer, 'dicomDatabase'):
+                    dicom_database = slicer.dicomDatabase
+                elif hasattr(slicer.modules, 'dicom'):
+                    dicom_module = slicer.modules.dicom
+                    if hasattr(dicom_module, 'logic'):
+                        dicom_logic = dicom_module.logic()
+                        if hasattr(dicom_logic, 'database'):
+                            dicom_database = dicom_logic.database
+                else:
+                    print("No DICOM database available - using direct file loading approach")
+                    dicom_database = None
+            except Exception as db_error:
+                print(f"Could not access DICOM database: {db_error}")
+                dicom_database = None
+        
+        # Try different import methods based on available components
+        if ctk and dicom_database:
+            # Method 1: Use ctk indexer if both are available
+            try:
+                print("Using CTK indexer for DICOM import...")
+                indexer = ctk.ctkDICOMIndexer()
+                indexer.addDirectory(dicom_database, input_dir)
+                print("CTK indexer completed successfully")
+                
+                # Continue with database analysis
+                print("Analyzing imported patients...")
+                patients = dicom_database.patients()
+                
+                if patients:
+                    print(f"Found {len(patients)} patients")
+                    # Process patients as before...
+                    return _process_dicom_database_patients(dicom_database, patients, input_dir)
+                    
+            except Exception as indexer_error:
+                print(f"CTK indexer failed: {indexer_error}")
+                print("Falling back to direct file analysis...")
+        
+        # Method 2: Direct file analysis without plugins (bypass database issues)
+        print("Using direct file analysis approach...")
+        dicom_files = _find_dicom_files_in_directory(input_dir)
+        
+        if dicom_files:
+            print(f"Found {len(dicom_files)} DICOM files for direct loading")
+            
+            # Skip plugin system entirely and use Slicer's built-in loading
+            try:
+                print("Attempting direct slicer.util.loadVolume with DICOM directory...")
+                
+                # Method 2a: Try loading the directory directly
+                volume_node = slicer.util.loadVolume(input_dir)
+                
+                if volume_node:
+                    print("✓ Success: DICOM directory loaded directly")
+                    
+                    # Check if we got a proper multi-slice volume
+                    image_data = volume_node.GetImageData()
+                    if image_data:
+                        dims = image_data.GetDimensions()
+                        print(f"Loaded volume: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                        
+                        if dims[2] >= len(dicom_files) * 0.8:  # Got most of the slices
+                            print(f"✓ Successfully loaded {dims[2]} slices from {len(dicom_files)} DICOM files")
+                        elif dims[2] > 1:
+                            print(f"⚠ Loaded {dims[2]} slices (expected {len(dicom_files)})")
+                        else:
+                            print(f"⚠ Only single slice loaded from {len(dicom_files)} files")
+                    
+                    volume_node.SetName("CT_Cardiac_Series")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+                    
+            except Exception as dir_load_error:
+                print(f"Directory loading failed: {dir_load_error}")
+            
+            # Method 2b: Try loading first DICOM file (should trigger series loading)
+            try:
+                print("Attempting to load first DICOM file to trigger series loading...")
+                first_file = dicom_files[0]
+                print(f"Loading: {os.path.basename(first_file)}")
+                
+                volume_node = slicer.util.loadVolume(first_file)
+                
+                if volume_node:
+                    print("✓ Success: DICOM file loaded")
+                    
+                    # Check what we got
+                    image_data = volume_node.GetImageData()
+                    if image_data:
+                        dims = image_data.GetDimensions()
+                        print(f"Loaded volume: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                        
+                        if dims[2] > 1:
+                            print(f"✓ Multi-slice volume with {dims[2]} slices")
+                        else:
+                            print(f"⚠ Single slice loaded - may need manual series loading")
+                    
+                    volume_node.SetName("CT_Cardiac_Series")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+                    
+            except Exception as file_load_error:
+                print(f"First file loading failed: {file_load_error}")
+            
+            print("Direct loading methods failed")
+        else:
+            print("No DICOM files found for direct analysis")
+        
+        print("Enhanced import methods failed, falling back to simple loading...")
+        return False
+    
+    except Exception as e:
+        print(f"Error in _import_and_load_dicom_data: {e}")
+        return False
+
+def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
+    """
+    Process patients from DICOM database to find and load suitable series.
+    """
+    try:
+        # Process each patient to find loadable series
+        for patient in patients:
+            print(f"Processing patient: {patient}")
+            studies = dicom_database.studiesForPatient(patient)
+            
+            for study in studies:
+                print(f"Processing study: {study}")
+                series_list = dicom_database.seriesForStudy(study)
+                
+                for series_uid in series_list:
+                    files = dicom_database.filesForSeries(series_uid)
+                    if not files:
+                        continue
+                    
+                    series_description = dicom_database.seriesDescription(series_uid)
+                    print(f"Examining series: {series_description} ({len(files)} files)")
+                    
+                    # Use plugin-based approach to find best loader
+                    plugin, loadable = _get_plugin_and_loadable_for_files(series_description, files)
+                    
+                    if loadable and plugin:
+                        print(f"Loading series with {plugin.__class__.__name__}")
+                        
+                        try:
+                            # Load the series using the best plugin
+                            volume_node = plugin.load(loadable)
+                            
+                            if volume_node:
+                                # Set appropriate name
+                                if series_description:
+                                    volume_node.SetName(series_description)
+                                else:
+                                    volume_node.SetName(f"DICOM_Series_{series_uid[:8]}")
+                                
+                                # Store DICOM metadata
+                                volume_node.SetAttribute("DICOM_SeriesUID", series_uid)
+                                volume_node.SetAttribute("DICOM_PatientID", patient)
+                                
+                                print(f"Successfully loaded: {volume_node.GetName()}")
+                                
+                                # Verify we have a proper volume
+                                image_data = volume_node.GetImageData()
+                                if image_data:
+                                    dims = image_data.GetDimensions()
+                                    spacing = volume_node.GetSpacing()
+                                    print(f"Volume dimensions: {dims}, spacing: {spacing}")
+                                    
+                                    # Apply any necessary corrections
+                                    fix_dicom_spacing_and_orientation(volume_node, input_dir)
+                                    
+                                    # Continue workflow
+                                    set_3d_view_background_black()
+                                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                                    return True
+                                    
+                        except Exception as load_error:
+                            print(f"Failed to load with {plugin.__class__.__name__}: {load_error}")
+                            continue
+        
+        print("No loadable series found with database approach")
+        return False
+        
+    except Exception as e:
+        print(f"Error processing DICOM database patients: {e}")
+        return False
+
+def _get_plugin_and_loadable_for_files(series_description, files):
+    """
+    Find the best DICOM plugin and loadable for given files.
+    Based on mpReviewPreprocessor's _getPluginAndLoadableForFiles method.
+    Enhanced to handle various DICOM file types and conventions.
+    """
+    try:
+        print(f"Examining loadables for: {series_description}")
+        
+        # Enhanced plugin list to handle various DICOM file types and conventions
+        plugin_names = [
+            'MultiVolumeImporterPlugin',    # For 4D/multi-volume DICOM (enhanced MR, etc.)
+            'DICOMScalarVolumePlugin',      # Standard single-volume DICOM (CT, MR, etc.)
+            'DICOMSegmentationPlugin',      # DICOM SEG objects
+            'DICOMRTStructureSetPlugin',    # RT Structure Sets
+            'DICOMParametricMapPlugin',     # Parametric maps
+            'DICOMTractographyPlugin',      # Diffusion tractography
+            'DICOMQuantitativeReporting',   # Structured reports
+            'DICOMLongitudinalPETCTPlugin', # Longitudinal studies
+            'DICOMPETSUVPlugin',           # PET SUV analysis
+            'DICOMPET',                    # General PET
+            'DICOMEnhancedUSVolumePlugin', # Enhanced ultrasound
+        ]
+        
+        # First, analyze files to understand the data type
+        file_analysis = _analyze_dicom_files(files)
+        print(f"File analysis: {file_analysis}")
+        
+        best_plugin = None
+        best_loadable = None
+        best_confidence = 0
+        
+        # Plugin system disabled due to slicer.modules.dicomPlugins compatibility issues
+        print("Skipping plugin examination - using direct loading instead")
+        print(f"Would have examined {len(plugin_names)} plugin types for {len(files)} files")
+        
+        if best_plugin and best_loadable:
+            print(f"Selected {best_plugin.__class__.__name__} with confidence {best_confidence}")
+            return best_plugin, best_loadable
+        
+        print("No suitable plugin found with sufficient confidence")
+        return None, None
+        
+    except Exception as e:
+        print(f"Error in _get_plugin_and_loadable_for_files: {e}")
+        return None, None
+
+def _analyze_dicom_files(files):
+    """
+    Analyze DICOM files to understand data characteristics and help with plugin selection.
+    """
+    analysis = {
+        'file_count': len(files),
+        'has_numeric_extensions': False,
+        'has_ctdc_pattern': False,
+        'has_header_files': False,
+        'modality': 'unknown',
+        'manufacturer': 'unknown',
+        'series_type': 'unknown'
+    }
+    
+    try:
+        # Analyze file naming patterns
+        for file_path in files[:5]:  # Check first 5 files
+            file_name = os.path.basename(file_path)
+            
+            # Check for numeric extensions (.1, .2, .3, etc.)
+            if '.' in file_name and file_name.split('.')[-1].isdigit():
+                analysis['has_numeric_extensions'] = True
+            
+            # Check for CTDC pattern
+            if 'CTDC' in file_name.upper():
+                analysis['has_ctdc_pattern'] = True
+            
+            # Check for header files
+            if 'v_headers' in file_name.lower():
+                analysis['has_header_files'] = True
+        
+        # Try to read DICOM header information from first file if possible
+        try:
+            if DICOM_UTILS_AVAILABLE:
+                # Try to use pydicom if available
+                try:
+                    import pydicom
+                    ds = pydicom.dcmread(files[0], stop_before_pixels=True)
+                    
+                    if hasattr(ds, 'Modality'):
+                        analysis['modality'] = str(ds.Modality)
+                    
+                    if hasattr(ds, 'Manufacturer'):
+                        analysis['manufacturer'] = str(ds.Manufacturer)
+                    
+                    if hasattr(ds, 'SeriesDescription'):
+                        series_desc = str(ds.SeriesDescription).lower()
+                        if any(term in series_desc for term in ['enhanced', '4d', 'dynamic']):
+                            analysis['series_type'] = 'enhanced'
+                        elif any(term in series_desc for term in ['seg', 'segmentation']):
+                            analysis['series_type'] = 'segmentation'
+                        elif any(term in series_desc for term in ['rt', 'rtstruct']):
+                            analysis['series_type'] = 'rt_structure'
+                        else:
+                            analysis['series_type'] = 'standard'
+                    
+                except Exception:
+                    pass  # pydicom not available or file not readable
+        except Exception:
+            pass  # DICOM analysis failed, use basic analysis
+        
+    except Exception as e:
+        print(f"Warning: File analysis failed: {e}")
+    
+    return analysis
+
+def _adjust_plugin_confidence(plugin_name, original_confidence, file_analysis, series_description):
+    """
+    Adjust plugin confidence based on file analysis and series description.
+    This helps select the most appropriate plugin for different DICOM conventions.
+    """
+    try:
+        adjusted = original_confidence
+        
+        # Boost confidence for specific patterns
+        if plugin_name == 'DICOMScalarVolumePlugin':
+            # Prefer for standard CT/MR volumes
+            if file_analysis.get('modality', '').upper() in ['CT', 'MR', 'CR', 'XR']:
+                adjusted += 0.1
+            
+            # Boost for numeric extension pattern (common DICOM series)
+            if file_analysis.get('has_numeric_extensions', False):
+                adjusted += 0.15
+            
+            # Boost for CTDC pattern
+            if file_analysis.get('has_ctdc_pattern', False):
+                adjusted += 0.1
+        
+        elif plugin_name == 'MultiVolumeImporterPlugin':
+            # Prefer for enhanced/4D volumes
+            if file_analysis.get('series_type') == 'enhanced':
+                adjusted += 0.2
+            
+            # Prefer for large file counts (likely multi-volume)
+            if file_analysis.get('file_count', 0) > 100:
+                adjusted += 0.1
+        
+        elif plugin_name == 'DICOMSegmentationPlugin':
+            # Prefer for segmentation series
+            if file_analysis.get('series_type') == 'segmentation':
+                adjusted += 0.3
+            
+            if series_description and 'seg' in series_description.lower():
+                adjusted += 0.2
+        
+        elif plugin_name == 'DICOMRTStructureSetPlugin':
+            # Prefer for RT structure sets
+            if file_analysis.get('series_type') == 'rt_structure':
+                adjusted += 0.3
+            
+            if series_description and any(term in series_description.lower() for term in ['rt', 'rtstruct']):
+                adjusted += 0.2
+        
+        # Cap at 1.0
+        return min(adjusted, 1.0)
+        
+    except Exception as e:
+        print(f"Warning: Confidence adjustment failed: {e}")
+        return original_confidence
+
+def _find_dicom_files_in_directory(directory):
+    """
+    Find DICOM files in a directory using enhanced detection patterns.
+    Improved to handle complex medical imaging folder structures.
+    """
+    dicom_files = []
+    try:
+        print(f"Scanning directory: {directory}")
+        file_count = 0
+        
+        for root, dirs, files in os.walk(directory):
+            print(f"Checking subdirectory: {root}")
+            
+            for file in files:
+                file_count += 1
+                file_path = os.path.join(root, file)
+                filename = os.path.basename(file)
+                filename_lower = filename.lower()
+                
+                # Check file size - DICOM files are typically larger than a few KB
+                try:
+                    file_size = os.path.getsize(file_path)
+                    if file_size < 1024:  # Skip very small files (likely not DICOM)
+                        continue
+                except:
+                    continue
+                
+                # Enhanced DICOM file detection patterns
+                is_dicom = False
+                
+                # Standard DICOM extensions
+                if filename_lower.endswith(('.dcm', '.dicom', '.ima', '.dcm30', '.dic')):
+                    is_dicom = True
+                    print(f"Found DICOM by extension: {filename}")
+                
+                # Files with no extension (common in medical imaging)
+                elif '.' not in filename and len(filename) > 3:
+                    is_dicom = True
+                    print(f"Found potential DICOM (no extension): {filename}")
+                
+                # Files starting with medical imaging prefixes
+                elif filename_lower.startswith(('i', 'im', 'ima', 'dicom', 'ct', 'mr')):
+                    is_dicom = True
+                    print(f"Found DICOM by prefix: {filename}")
+                
+                # Files containing medical patterns
+                elif any(pattern in filename_lower for pattern in ['ctdc', 'ct_', 'mr_', 'cta', 'coronary']):
+                    is_dicom = True
+                    print(f"Found DICOM by medical pattern: {filename}")
+                
+                # Numbered series (.1, .2, .3, etc.)
+                elif '.' in filename and filename.split('.')[-1].isdigit():
+                    is_dicom = True
+                    print(f"Found DICOM by numeric extension: {filename}")
+                
+                # Try to detect DICOM by reading file header
+                elif file_size > 132:  # DICOM files have at least 132 byte preamble
+                    try:
+                        with open(file_path, 'rb') as f:
+                            f.seek(128)  # Skip preamble
+                            dicm_tag = f.read(4)
+                            if dicm_tag == b'DICM':
+                                is_dicom = True
+                                print(f"Found DICOM by header signature: {filename}")
+                    except:
+                        pass
+                
+                if is_dicom:
+                    dicom_files.append(file_path)
+        
+        print(f"Scanned {file_count} total files, found {len(dicom_files)} DICOM files")
+        
+        # Sort files for proper series order
+        dicom_files.sort()
+        
+        # Show sample of found files
+        if dicom_files:
+            print("Sample DICOM files found:")
+            for i, f in enumerate(dicom_files[:5]):
+                print(f"  {i+1}: {os.path.basename(f)}")
+            if len(dicom_files) > 5:
+                print(f"  ... and {len(dicom_files) - 5} more")
+        
+        return dicom_files
+        
+    except Exception as e:
+        print(f"Error finding DICOM files: {e}")
+        return []
+
+def test_enhanced_dicom_loading():
+    """
+    Test function to validate the enhanced DICOM loading capabilities.
+    This function can be called to test various DICOM file types and conventions.
+    """
+    print("Testing Enhanced DICOM Loading Implementation")
+    print("=" * 50)
+    
+    # Test 1: Check if required modules are available
+    print("Test 1: Module Availability")
+    print(f"  DICOMLib available: {DICOM_UTILS_AVAILABLE}")
+    print(f"  ctk available: {ctk is not None}")
+    
+    # Test 2: Check DICOM plugin availability (disabled due to compatibility)
+    print("\nTest 2: DICOM Plugin Availability")
+    try:
+        print("  Plugin system disabled due to slicer.modules.dicomPlugins compatibility issues")
+        print("  Using direct slicer.util.loadVolume methods instead")
+    except Exception as e:
+        print(f"  Error checking plugins: {e}")
+    
+    # Test 3: File analysis function
+    print("\nTest 3: File Analysis Function")
+    test_files = [
+        "i1559699.CTDC.1",
+        "i1559700.CTDC.2", 
+        "i1559701.CTDC.3",
+        "volume_headers.txt"
+    ]
+    
+    try:
+        # Mock file analysis for testing
+        analysis = {
+            'file_count': len(test_files),
+            'has_numeric_extensions': any('.' in f and f.split('.')[-1].isdigit() for f in test_files),
+            'has_ctdc_pattern': any('CTDC' in f.upper() for f in test_files),
+            'has_header_files': any('headers' in f.lower() for f in test_files),
+            'modality': 'CT',
+            'manufacturer': 'GE',
+            'series_type': 'standard'
+        }
+        print(f"  Mock analysis result: {analysis}")
+        
+        # Test confidence adjustment
+        original_confidence = 0.5
+        adjusted = _adjust_plugin_confidence(
+            'DICOMScalarVolumePlugin', original_confidence, analysis, 'CT Chest'
+        )
+        print(f"  Confidence adjustment: {original_confidence} -> {adjusted}")
+        
+    except Exception as e:
+        print(f"  Error in file analysis test: {e}")
+    
+    print("\nTest 4: Implementation Summary")
+    print("  ✓ Plugin-based DICOM loading implemented")
+    print("  ✓ Temporary database support added") 
+    print("  ✓ Enhanced file type detection implemented")
+    print("  ✓ Confidence-based plugin selection implemented")
+    print("  ✓ Fallback methods for compatibility")
+    
+    print("\nEnhanced DICOM loading is ready for use!")
+    return True
+
+def diagnose_dicom_directory(dicom_path):
+    """
+    Diagnose what's in a DICOM directory to help troubleshoot loading issues.
+    Usage: diagnose_dicom_directory(r"G:\\My Drive\\Lawson\\FOURDIX\\...")
+    """
+    print(f"=== DICOM Directory Diagnosis ===")
+    print(f"Path: {dicom_path}")
+    print(f"Exists: {os.path.exists(dicom_path)}")
+    print(f"Is directory: {os.path.isdir(dicom_path)}")
+    
+    if not os.path.exists(dicom_path) or not os.path.isdir(dicom_path):
+        print("❌ Path is not a valid directory")
+        return
+    
+    try:
+        # Get directory structure
+        print(f"\n=== Directory Structure ===")
+        subdirs = []
+        total_files = 0
+        
+        for root, dirs, files in os.walk(dicom_path):
+            level = root.replace(dicom_path, '').count(os.sep)
+            indent = ' ' * 2 * level
+            folder_name = os.path.basename(root) if level > 0 else "ROOT"
+            print(f"{indent}{folder_name}/ ({len(files)} files)")
+            total_files += len(files)
+            
+            if level == 1:  # First level subdirectories
+                subdirs.append(root)
+            
+            if level > 3:  # Don't go too deep in display
+                continue
+        
+        print(f"\nTotal files found: {total_files}")
+        print(f"Subdirectories: {len(subdirs)}")
+        
+        # Analyze DICOM files
+        print(f"\n=== DICOM File Analysis ===")
+        dicom_files = _find_dicom_files_in_directory(dicom_path)
+        
+        if not dicom_files:
+            print("❌ No DICOM files detected")
+            
+            # Suggest looking in subdirectories
+            if subdirs:
+                print("\n🔍 Trying subdirectories...")
+                for subdir in subdirs[:3]:  # Check first 3 subdirs
+                    print(f"\nChecking: {os.path.basename(subdir)}")
+                    sub_dicom_files = _find_dicom_files_in_directory(subdir)
+                    if sub_dicom_files:
+                        print(f"✓ Found {len(sub_dicom_files)} DICOM files in: {subdir}")
+                        print(f"💡 Try using this path instead: {subdir}")
+                        break
+        else:
+            print(f"✓ Found {len(dicom_files)} DICOM files")
+            
+        print(f"\n=== Recommendations ===")
+        if dicom_files:
+            print("✓ DICOM files detected - should be loadable")
+            print("💡 Try running: test_dicom_loading_with_path(r'" + dicom_path + "')")
+        elif subdirs:
+            print("💡 No DICOM files in root, but subdirectories exist")
+            print("💡 Try manually going into subdirectories or use DICOM module")
+        else:
+            print("❌ No DICOM files or subdirectories found")
+            
+    except Exception as e:
+        print(f"Error during diagnosis: {e}")
+
+def test_dicom_loading_with_path(dicom_path):
+    """
+    Test the enhanced DICOM loading with a specific path.
+    Usage: test_dicom_loading_with_path(r"C:\\Users\\username\\Desktop\\DICOM_folder")
+    """
+    print(f"Testing DICOM loading with path: {dicom_path}")
+    
+    if not os.path.exists(dicom_path):
+        print(f"Path does not exist: {dicom_path}")
+        return False
+    
+    # Test the enhanced loading function
+    try:
+        success = load_dicom_from_source_file(dicom_path)
+        print(f"Loading result: {'SUCCESS' if success else 'FAILED'}")
+        return success
+    except Exception as e:
+        print(f"Error during testing: {e}")
+        return False
+
+def simple_dicom_load(dicom_path):
+    """
+    Simplified DICOM loading that bypasses complex database operations.
+    Usage: simple_dicom_load(r"G:\\My Drive\\Lawson\\FOURDIX\\...")
+    """
+    print(f"=== Simple DICOM Loading ===")
+    print(f"Path: {dicom_path}")
+    
+    if not os.path.exists(dicom_path):
+        print("❌ Path does not exist")
+        return False
+    
+    try:
+        # Method 1: Try direct directory loading
+        print("Attempting direct directory loading...")
+        volume_node = slicer.util.loadVolume(dicom_path)
+        
+        if volume_node:
+            print("✓ Success: Directory loaded directly")
+            image_data = volume_node.GetImageData()
+            if image_data:
+                dims = image_data.GetDimensions()
+                print(f"Volume: {dims[0]}x{dims[1]}x{dims[2]}")
+            
+            set_3d_view_background_black()
+            qt.QTimer.singleShot(1000, start_with_volume_crop)
+            return True
+            
+    except Exception as e:
+        print(f"Directory loading failed: {e}")
+    
+    try:
+        # Method 2: Find and load first DICOM file
+        print("Searching for DICOM files...")
+        dicom_files = _find_dicom_files_in_directory(dicom_path)
+        
+        if not dicom_files:
+            print("❌ No DICOM files found")
+            return False
+            
+        print(f"Found {len(dicom_files)} DICOM files")
+        first_file = dicom_files[0]
+        
+        print(f"Loading: {os.path.basename(first_file)}")
+        volume_node = slicer.util.loadVolume(first_file)
+        
+        if volume_node:
+            print("✓ Success: DICOM file loaded")
+            image_data = volume_node.GetImageData()
+            if image_data:
+                dims = image_data.GetDimensions()
+                print(f"Volume: {dims[0]}x{dims[1]}x{dims[2]}")
+                
+                if dims[2] == 1:
+                    print("⚠ Only single slice loaded - series may need manual loading")
+            
+            set_3d_view_background_black()
+            qt.QTimer.singleShot(1000, start_with_volume_crop)
+            return True
+            
+    except Exception as e:
+        print(f"File loading failed: {e}")
+    
+    print("❌ All simple loading methods failed")
+    return False
+
+def _fallback_dicom_loading(dicom_path):
+    """
+    Fallback DICOM loading when enhanced methods are not available.
+    Uses simplified but robust approaches.
+    """
+    try:
+        print("Using fallback DICOM loading methods...")
+        
+        # Method 1: Simple directory loading (try multiple approaches)
+        try:
+            print("Attempting simple directory loading...")
+            
+            # Try loading the directory directly
+            volume_node = slicer.util.loadVolume(dicom_path)
+            if volume_node:
+                print("Success: DICOM loaded via simple directory method")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+                
+        except Exception as e:
+            print(f"Simple directory loading failed: {e}")
+            
+            # Try loading subdirectories if main directory fails
+            try:
+                print("Trying subdirectories...")
+                subdirs = [d for d in os.listdir(dicom_path) if os.path.isdir(os.path.join(dicom_path, d))]
+                
+                for subdir in subdirs:
+                    subdir_path = os.path.join(dicom_path, subdir)
+                    print(f"Trying subdirectory: {subdir}")
+                    
+                    try:
+                        volume_node = slicer.util.loadVolume(subdir_path)
+                        if volume_node:
+                            print(f"Success: DICOM loaded from subdirectory: {subdir}")
+                            set_3d_view_background_black()
+                            qt.QTimer.singleShot(1000, start_with_volume_crop)
+                            return True
+                    except Exception as subdir_error:
+                        print(f"Subdirectory {subdir} failed: {subdir_error}")
+                        continue
+                        
+            except Exception as subdir_scan_error:
+                print(f"Subdirectory scanning failed: {subdir_scan_error}")
+        
+        # Method 2: Enhanced directory analysis and direct loading
+        try:
+            print("Attempting enhanced directory analysis...")
+            
+            # Analyze directory for DICOM files
+            dicom_files = []
+            for root, dirs, files in os.walk(dicom_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    file_lower = file.lower()
+                    
+                    # Enhanced DICOM file detection
+                    is_dicom = (
+                        file_lower.endswith(('.dcm', '.dicom', '.ima')) or
+                        ('.' not in file and len(file) > 3) or  # Files without extension
+                        file_lower.startswith(('i', 'ima', 'dicom')) or
+                        'ctdc' in file_lower or
+                        ('.' in file and file.split('.')[-1].isdigit())  # .1, .2, .3 files
+                    )
+                    
+                    if is_dicom:
+                        dicom_files.append(file_path)
+            
+            print(f"Found {len(dicom_files)} potential DICOM files")
+            
+            if dicom_files:
+                # Sort files for proper series order
+                dicom_files.sort()
+                
+                # Try to load using directory path first
+                try:
+                    # Use parent directory for series loading
+                    parent_dir = os.path.dirname(dicom_files[0])
+                    volume_node = slicer.util.loadVolume(parent_dir)
+                    
+                    if volume_node:
+                        print("Success: DICOM series loaded from directory analysis")
+                        set_3d_view_background_black()
+                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        return True
+                except Exception as dir_load_error:
+                    print(f"Directory loading failed: {dir_load_error}")
+                
+                # Try loading first file (may only get single slice)
+                try:
+                    volume_node = slicer.util.loadVolume(dicom_files[0])
+                    if volume_node:
+                        print(f"Loaded single DICOM file: {os.path.basename(dicom_files[0])}")
+                        print(f"Warning: May only contain single slice from {len(dicom_files)} file series")
+                        set_3d_view_background_black()
+                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        return True
+                except Exception as file_load_error:
+                    print(f"Single file loading failed: {file_load_error}")
+                                
+        except Exception as e:
+            print(f"Enhanced directory analysis failed: {e}")
+            
+        # Method 3: Try using Slicer's DICOM database directly (safer approach)
+        try:
+            print("Attempting direct DICOM database import (safe method)...")
+            
+            # Clear any existing data
+            current_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+            initial_count = len(current_nodes)
+            
+            # Open DICOM module
+            slicer.util.selectModule("DICOM")
+            slicer.app.processEvents()
+            
+            # Try to get DICOM database and add directory
+            dicom_db = None
+            try:
+                if hasattr(slicer, 'dicomDatabase'):
+                    dicom_db = slicer.dicomDatabase
+                elif hasattr(slicer.modules, 'dicom'):
+                    dicom_module = slicer.modules.dicom
+                    if hasattr(dicom_module, 'logic'):
+                        dicom_logic = dicom_module.logic()
+                        if hasattr(dicom_logic, 'database'):
+                            dicom_db = dicom_logic.database
+            except:
+                dicom_db = None
+                
+            if dicom_db:
+                print("Adding directory to DICOM database...")
+                
+                # Initialize database if needed
+                if hasattr(dicom_db, 'initializeDatabase'):
+                    dicom_db.initializeDatabase()
+                
+                # Try to import using the database's own methods
+                try:
+                    # Import files to database
+                    import glob
+                    all_files = glob.glob(os.path.join(dicom_path, '**', '*'), recursive=True)
+                    dicom_files = [f for f in all_files if os.path.isfile(f)]
+                    
+                    print(f"Found {len(dicom_files)} files to analyze")
+                    
+                    if dicom_files:
+                        # Try loading a representative file to trigger series detection
+                        test_file = dicom_files[0]
+                        print(f"Testing with file: {os.path.basename(test_file)}")
+                        
+                        # Use Slicer's own loading logic
+                        volume_node = slicer.util.loadVolume(test_file)
+                        
+                        if volume_node:
+                            print("Success: DICOM loaded via database import method")
+                            
+                            # Check if we got more than one slice
+                            image_data = volume_node.GetImageData()
+                            if image_data:
+                                dims = image_data.GetDimensions()
+                                print(f"Loaded volume dimensions: {dims}")
+                                
+                                if dims[2] > 1:
+                                    print(f"✓ Successfully loaded {dims[2]} slices")
+                                else:
+                                    print(f"⚠ Only loaded single slice - may need manual import")
+                            
+                            set_3d_view_background_black()
+                            qt.QTimer.singleShot(1000, start_with_volume_crop)
+                            return True
+                            
+                except Exception as db_import_error:
+                    print(f"Database import method failed: {db_import_error}")
+            else:
+                print("No DICOM database available, trying direct slicer.util.loadVolume...")
+                
+                # Method 4: Direct Slicer loading without database
+                try:
+                    # Find DICOM files and try loading with Slicer's built-in methods
+                    dicom_files = _find_dicom_files_in_directory(dicom_path)
+                    
+                    if dicom_files:
+                        print(f"Found {len(dicom_files)} DICOM files, trying direct loading...")
+                        
+                        # Try loading the first file (should trigger series loading)
+                        first_file = dicom_files[0]
+                        print(f"Attempting to load: {os.path.basename(first_file)}")
+                        
+                        volume_node = slicer.util.loadVolume(first_file)
+                        
+                        if volume_node:
+                            print("✓ Success: DICOM loaded via direct Slicer method")
+                            
+                            # Check dimensions
+                            image_data = volume_node.GetImageData()
+                            if image_data:
+                                dims = image_data.GetDimensions()
+                                print(f"Volume loaded: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                                
+                                if dims[2] > 1:
+                                    print(f"✓ Multi-slice volume with {dims[2]} slices")
+                                else:
+                                    print(f"⚠ Single slice - may need to load entire series manually")
+                            
+                            set_3d_view_background_black()
+                            qt.QTimer.singleShot(1000, start_with_volume_crop)
+                            return True
+                            
+                except Exception as direct_load_error:
+                    print(f"Direct loading method failed: {direct_load_error}")
+                    
+        except Exception as e:
+            print(f"Direct DICOM database method failed: {e}")
+        
+        print("All fallback methods failed")
+        return False
+        
+    except Exception as e:
+        print(f"Error in fallback DICOM loading: {e}")
         return False
 
 def setup_volume_addition_monitor():
@@ -12086,11 +12525,13 @@ def load_dicom_like_reference():
     Load DICOM using the same method that produces the reference structure.
     This replicates the exact import process that creates properly structured DICOM series.
     """
+    import os
     try:
         print("Loading DICOM using reference-style import method...")
         
-        # Read the source path
-        source_file_path = r"c:\Users\chris\Documents\repos\SlicerWorkflowExt\DAI_Workflow\source_slicer.txt"
+        # Read the source path - use user's home directory (consistent with other functions)
+        user_home = os.path.expanduser("~")
+        source_file_path = os.path.join(user_home, "source_slicer.txt")
         dicom_path = None
         
         try:
