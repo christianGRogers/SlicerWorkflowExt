@@ -3869,6 +3869,31 @@ def load_dicom_from_source_file(dicom_path):
             )
             return False
         
+        # Enhanced Philips detection - prioritize this approach for Philips files
+        # This checks for v_headers files and manufacturer info to identify Philips DICOMs
+        print("Analyzing DICOM directory for file types...")
+        dicom_files = _find_dicom_files_in_directory(dicom_path)
+        if dicom_files:
+            file_analysis = _analyze_dicom_files(dicom_files)
+            if file_analysis['is_philips']:
+                print("✅ Detected Philips DICOM files - using specialized Philips loading method")
+                print("   This method uses DICOMUtils.importDicom() + DICOMUtils.loadPatientByUID()")
+                
+                # Try the simple method first (exact copy of user's working script)
+                simple_result = load_philips_dicom_simple(dicom_path)
+                if simple_result:
+                    print("✅ Philips DICOM loaded successfully using simple method")
+                    return True
+                
+                # Fall back to enhanced method if simple fails
+                print("Simple method failed, trying enhanced method...")
+                philips_result = _load_philips_dicom_series(dicom_path)
+                if philips_result:
+                    print("✅ Philips DICOM loaded successfully using enhanced method")
+                    return True
+                else:
+                    print("⚠️ Both Philips loading methods failed, falling back to standard methods")
+        
         # Check if enhanced DICOM utilities are available
         if not DICOM_UTILS_AVAILABLE:
             print("DICOMLib not available, using fallback methods")
@@ -3993,6 +4018,23 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
         if dicom_files:
             print(f"Found {len(dicom_files)} DICOM files for direct loading")
             
+            # Check if these are Philips files first - use specialized loader if so
+            file_analysis = _analyze_dicom_files(dicom_files)
+            if file_analysis.get('is_philips', False):
+                print("🏥 Detected Philips DICOM files - using optimized Philips loader...")
+                try:
+                    philips_result = _load_philips_dicom_series(input_dir)
+                    if philips_result:
+                        print("✅ Philips DICOM loading completed successfully!")
+                        set_3d_view_background_black()
+                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        return True
+                    else:
+                        print("❌ Philips loader failed, trying standard methods...")
+                except Exception as philips_error:
+                    print(f"❌ Philips loader error: {philips_error}")
+                    print("Falling back to standard DICOM loading methods...")
+            
             # Skip plugin system entirely and use Slicer's built-in loading
             try:
                 print("Attempting direct slicer.util.loadVolume with DICOM directory...")
@@ -4043,16 +4085,44 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                         
                         if dims[2] > 1:
                             print(f"✓ Multi-slice volume with {dims[2]} slices")
+                            volume_node.SetName("CT_Series")
+                            set_3d_view_background_black()
+                            qt.QTimer.singleShot(1000, start_with_volume_crop)
+                            return True
                         else:
-                            print(f"⚠ Single slice loaded - may need manual series loading")
+                            print(f"⚠ Single slice loaded from {len(dicom_files)} files - trying series loading")
+                            
+                            # Try to load the full series using DICOM module
+                            success = _load_dicom_series_manually(dicom_files, input_dir)
+                            if success:
+                                return True
                     
-                    volume_node.SetName("CT_Cardiac_Series")
+                    # If we still only have one slice, keep it but warn user
+                    volume_node.SetName("CT_SingleSlice")
                     set_3d_view_background_black()
                     qt.QTimer.singleShot(1000, start_with_volume_crop)
                     return True
                     
             except Exception as file_load_error:
                 print(f"First file loading failed: {file_load_error}")
+            
+            # Method 2c: Try manual series loading for numbered DICOM files
+            print("Attempting manual series loading...")
+            success = _load_dicom_series_manually(dicom_files, input_dir)
+            if success:
+                return True
+            
+            # Method 2d: Try Slicer's volume sequence loading
+            print("Attempting Slicer volume sequence loading...")
+            success = _load_as_volume_sequence(dicom_files, input_dir)
+            if success:
+                return True
+            
+            # Method 2e: Last resort - try loading with VTK directly
+            print("Attempting VTK direct loading (last resort)...")
+            success = _load_with_vtk_direct(dicom_files)
+            if success:
+                return True
             
             print("Direct loading methods failed")
         else:
@@ -4183,6 +4253,773 @@ def _get_plugin_and_loadable_for_files(series_description, files):
         print(f"Error in _get_plugin_and_loadable_for_files: {e}")
         return None, None
 
+def _load_via_standardized_temp_folder(dicom_files, series_directory):
+    """
+    Create a temporary folder with standardized DICOM files (.dcm extension) 
+    and proper sequential naming for better Slicer compatibility.
+    """
+    try:
+        import tempfile
+        import shutil
+        import pydicom
+        
+        print(f"Creating standardized temp folder for {len(dicom_files)} DICOM files...")
+        
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp(prefix="slicer_dicom_")
+        print(f"Temp directory: {temp_dir}")
+        
+        # Read all DICOM files and extract metadata for proper sorting
+        dicom_data = []
+        for file_path in dicom_files:
+            try:
+                # Read DICOM metadata
+                ds = pydicom.dcmread(file_path, force=True, stop_before_pixels=True)
+                
+                # Extract key sorting information
+                instance_number = getattr(ds, 'InstanceNumber', 0)
+                slice_location = getattr(ds, 'SliceLocation', 0.0)
+                
+                # Handle string slice locations
+                if isinstance(slice_location, str):
+                    try:
+                        slice_location = float(slice_location)
+                    except:
+                        slice_location = 0.0
+                
+                # Extract slice number from filename as fallback
+                filename_slice = _extract_slice_number(file_path)
+                
+                dicom_data.append({
+                    'file_path': file_path,
+                    'instance_number': instance_number,
+                    'slice_location': slice_location,
+                    'filename_slice': filename_slice,
+                    'filename': os.path.basename(file_path)
+                })
+                
+            except Exception as e:
+                print(f"Warning: Could not read DICOM metadata from {file_path}: {e}")
+                # Add file anyway with basic info
+                dicom_data.append({
+                    'file_path': file_path,
+                    'instance_number': 0,
+                    'slice_location': 0.0,
+                    'filename_slice': _extract_slice_number(file_path),
+                    'filename': os.path.basename(file_path)
+                })
+        
+        # Sort by multiple criteria for proper slice ordering
+        def sort_key(item):
+            return (item['instance_number'], item['slice_location'], item['filename_slice'])
+        
+        dicom_data.sort(key=sort_key)
+        print(f"Sorted {len(dicom_data)} DICOM files by instance/slice order")
+        
+        # Copy files to temp directory with standardized naming
+        standardized_files = []
+        for i, item in enumerate(dicom_data, 1):
+            # Create standardized filename: IMG_0001.dcm, IMG_0002.dcm, etc.
+            standardized_name = f"IMG_{i:04d}.dcm"
+            dest_path = os.path.join(temp_dir, standardized_name)
+            
+            # Copy file to standardized location
+            shutil.copy2(item['file_path'], dest_path)
+            standardized_files.append(dest_path)
+        
+        print(f"Created {len(standardized_files)} standardized DICOM files")
+        
+        # Now try loading from the standardized temp folder
+        print("Loading standardized DICOM series...")
+        
+        # Method 1: Load directory as DICOM series
+        try:
+            volume_node = slicer.util.loadVolume(temp_dir)
+            if volume_node:
+                image_data = volume_node.GetImageData()
+                if image_data:
+                    dims = image_data.GetDimensions()
+                    print(f"✅ Loaded standardized series: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                    
+                    if dims[2] > 1:
+                        volume_node.SetName("CT_Series_Standardized")
+                        
+                        # Clean up temp folder after successful load
+                        def cleanup_temp():
+                            try:
+                                shutil.rmtree(temp_dir, ignore_errors=True)
+                                print("Cleaned up temp directory")
+                            except:
+                                pass
+                        
+                        # Cleanup after a delay
+                        qt.QTimer.singleShot(5000, cleanup_temp)
+                        
+                        return volume_node
+        except Exception as e:
+            print(f"Directory loading failed: {e}")
+        
+        # Method 2: Load using first file in standardized series
+        try:
+            if standardized_files:
+                volume_node = slicer.util.loadVolume(standardized_files[0])
+                if volume_node:
+                    image_data = volume_node.GetImageData()
+                    if image_data:
+                        dims = image_data.GetDimensions()
+                        print(f"✅ Loaded from first standardized file: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                        
+                        if dims[2] > 1:
+                            volume_node.SetName("CT_Series_StandardizedFile")
+                            
+                            # Clean up temp folder after successful load
+                            def cleanup_temp():
+                                try:
+                                    shutil.rmtree(temp_dir, ignore_errors=True)
+                                    print("Cleaned up temp directory")
+                                except:
+                                    pass
+                            
+                            qt.QTimer.singleShot(5000, cleanup_temp)
+                            
+                            return volume_node
+        except Exception as e:
+            print(f"First file loading failed: {e}")
+        
+        # Method 3: Try VTK DICOM reader with standardized files
+        try:
+            result = _load_volume_from_file_list(standardized_files)
+            if result:
+                print("✅ VTK DICOM reader succeeded with standardized files")
+                
+                # Clean up temp folder
+                def cleanup_temp():
+                    try:
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                        print("Cleaned up temp directory")
+                    except:
+                        pass
+                
+                qt.QTimer.singleShot(5000, cleanup_temp)
+                
+                return result
+        except Exception as e:
+            print(f"VTK loading failed: {e}")
+        
+        # Clean up temp folder if all methods failed
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
+            
+        return None
+        
+    except Exception as e:
+        print(f"❌ Standardized temp folder loading failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def _load_philips_dicom_series(dicom_directory):
+    """
+    Load Philips DICOM series using the exact method that works.
+    Based on user's proven successful script - simplified and direct.
+    """
+    try:
+        print("Loading Philips DICOM series using proven DICOMUtils approach...")
+        
+        # Import required modules (exactly as in working script)
+        import DICOMLib
+        from DICOMLib import DICOMUtils
+        import slicer
+        
+        # Track existing volumes
+        existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        print(f"Found {len(existing_volumes)} existing volumes before load")
+        
+        # Ensure DICOM database is properly initialized before importing
+        print("Initializing DICOM database...")
+        try:
+            # Initialize DICOM database if it doesn't exist
+            if not hasattr(slicer, 'dicomDatabase') or slicer.dicomDatabase is None:
+                # Open DICOM module to initialize the database
+                slicer.util.selectModule("DICOM")
+                slicer.app.processEvents()
+                
+                # Alternative initialization if module approach doesn't work
+                if not hasattr(slicer, 'dicomDatabase') or slicer.dicomDatabase is None:
+                    print("Manual DICOM database initialization...")
+                    import DICOMLib
+                    # This should initialize slicer.dicomDatabase
+                    DICOMLib.DICOMUtils.openDatabase()
+            
+            print("✅ DICOM database initialized")
+        except Exception as init_error:
+            print(f"DICOM database initialization error: {init_error}")
+        
+        # Import DICOM directory (ignores unreadable files like v_headers)
+        print(f"Importing DICOM directory: {dicom_directory}")
+        DICOMUtils.importDicom(dicom_directory)
+        
+        # Access the Slicer DICOM database instance (exactly as in working script)
+        db = slicer.dicomDatabase  # ✅ this is the correct database handle
+        
+        # Get all patient UIDs in the database
+        patientUIDs = db.patients()
+        
+        if len(patientUIDs) == 0:
+            print("❌ No DICOM patients found in directory.")
+            return None
+        else:
+            print(f"✅ Found {len(patientUIDs)} patient(s). Loading first one...")
+            firstPatientUID = patientUIDs[0]
+            
+            # Load the patient data (exactly as in working script)
+            DICOMUtils.loadPatientByUID(firstPatientUID)
+            
+            # Check if volume was loaded successfully
+            new_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+            print(f"Found {len(new_volumes)} volumes after load")
+            
+            # Find the newly loaded volume
+            for volume in new_volumes:
+                if volume not in existing_volumes:  # This is a new volume
+                    image_data = volume.GetImageData()
+                    if image_data:
+                        dims = image_data.GetDimensions()
+                        print(f"✅ Philips DICOM loaded successfully: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                        
+                        if dims[2] > 1:  # Ensure it's a multi-slice volume
+                            volume.SetName("CT_Series_Philips")
+                            print(f"✅ Philips volume set as: {volume.GetName()}")
+                            
+                            # Continue workflow after successful loading
+                            print("✅ Enhanced Philips DICOM loaded, continuing workflow...")
+                            qt.QTimer.singleShot(1000, start_with_volume_crop)
+                            
+                            return volume
+            
+            # If no new volumes found, try the most recently loaded volume
+            if new_volumes:
+                latest_volume = new_volumes[-1]
+                image_data = latest_volume.GetImageData()
+                if image_data:
+                    dims = image_data.GetDimensions()
+                    print(f"✅ Using latest volume: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                    if dims[2] > 1:
+                        latest_volume.SetName("CT_Series_Philips")
+                        
+                        # Continue workflow after successful loading
+                        print("✅ Enhanced Philips DICOM (fallback) loaded, continuing workflow...")
+                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        
+                        return latest_volume
+            
+            print("❌ Loading did not produce a valid multi-slice volume")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Philips DICOM loading failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def _load_dicom_series_manually(dicom_files, series_directory):
+    """
+    Manually load DICOM series when automatic loading only gets single slice.
+    This handles numbered series like i1559699.CTDC.1, i1559700.CTDC.2, etc.
+    Now includes Philips-specific loading and standardized temp folder conversion for better compatibility.
+    """
+    try:
+        print(f"Manual series loading for {len(dicom_files)} DICOM files...")
+        
+        # Method -1: Check if this is Philips DICOM and use specialized loading
+        print("Analyzing DICOM files for manufacturer-specific handling...")
+        file_analysis = _analyze_dicom_files(dicom_files)
+        
+        if file_analysis.get('is_philips', False):
+            print("Detected Philips DICOM files - using specialized Philips loader...")
+            try:
+                philips_result = _load_philips_dicom_series(series_directory)
+                if philips_result:
+                    print("✅ Philips-specific loading succeeded!")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+                else:
+                    print("❌ Philips-specific loading failed, trying generic methods...")
+            except Exception as philips_error:
+                print(f"❌ Philips-specific loading error: {philips_error}")
+        
+        # Method 0: Try standardized temp folder conversion first
+        print("Method 0: Standardized DICOM conversion...")
+        try:
+            standardized_result = _load_via_standardized_temp_folder(dicom_files, series_directory)
+            if standardized_result:
+                print("✅ Standardized conversion succeeded!")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+            else:
+                print("❌ Standardized conversion failed, trying fallback methods...")
+        except Exception as std_error:
+            print(f"❌ Standardized conversion error: {std_error}")
+        
+        # Method 1: Try using DICOMLib to create a temporary database and load series
+        try:
+            print("Method 1: Using DICOMLib for series loading...")
+            
+            import DICOMLib
+            print("✓ DICOMLib available")
+            
+            # Create a temporary database in memory
+            db = DICOMLib.DICOMDatabase()
+            
+            # Set up temporary database location
+            import tempfile
+            temp_dir = tempfile.mkdtemp()
+            db_path = os.path.join(temp_dir, "temp_dicom.db")
+            
+            if db.openDatabase(db_path):
+                print(f"✓ Temporary database created: {db_path}")
+                
+                # Index the DICOM files
+                indexer = ctk.ctkDICOMIndexer()
+                indexer.addDirectory(db, series_directory)
+                
+                # Get patients and series
+                patients = db.patients()
+                if patients:
+                    for patient in patients:
+                        studies = db.studiesForPatient(patient)
+                        for study in studies:
+                            series_list = db.seriesForStudy(study)
+                            for series in series_list:
+                                files_in_series = db.filesForSeries(series)
+                                
+                                if len(files_in_series) >= len(dicom_files) * 0.8:  # Got most files
+                                    print(f"✓ Found series with {len(files_in_series)} files")
+                                    
+                                    # Load using slicer with the series files
+                                    volume_node = slicer.util.loadVolume(files_in_series[0])
+                                    
+                                    if volume_node:
+                                        # Check if we got the full volume
+                                        image_data = volume_node.GetImageData()
+                                        if image_data:
+                                            dims = image_data.GetDimensions()
+                                            print(f"✓ Loaded series: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                                            
+                                            if dims[2] > 1:
+                                                volume_node.SetName("CT_Series_Manual")
+                                                set_3d_view_background_black()
+                                                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                                                
+                                                # Cleanup temp database
+                                                db.closeDatabase()
+                                                import shutil
+                                                shutil.rmtree(temp_dir, ignore_errors=True)
+                                                
+                                                return True
+                                    
+                # Cleanup if failed
+                db.closeDatabase()
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+        except Exception as dicomlib_error:
+            print(f"DICOMLib method failed: {dicomlib_error}")
+        
+        # Method 2: Try loading with explicit file list
+        try:
+            print("Method 2: Loading with explicit file list...")
+            
+            # Sort files by slice number if possible
+            sorted_files = sorted(dicom_files, key=lambda x: _extract_slice_number(x))
+            
+            # Try different approaches for multi-file loading
+            approaches = [
+                ("Load file list directly", lambda: slicer.util.loadVolume(sorted_files)),
+                ("VTK DICOM reader", lambda: _load_volume_from_file_list(sorted_files)),
+                ("Load directory with series hint", lambda: _load_with_series_hint(series_directory, sorted_files)),
+            ]
+            
+            for approach_name, approach_func in approaches:
+                try:
+                    print(f"  Trying: {approach_name}...")
+                    volume_node = approach_func()
+                    
+                    if volume_node:
+                        image_data = volume_node.GetImageData()
+                        if image_data:
+                            dims = image_data.GetDimensions()
+                            print(f"✓ Loaded: {dims[0]}x{dims[1]}x{dims[2]} voxels")
+                            
+                            if dims[2] > 1:
+                                volume_node.SetName("CT_Series_FileList")
+                                set_3d_view_background_black()
+                                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                                return True
+                            else:
+                                print(f"  Only got {dims[2]} slices, trying next approach...")
+                            
+                except Exception as approach_error:
+                    print(f"  {approach_name} failed: {approach_error}")
+                    
+        except Exception as filelist_error:
+            print(f"File list method failed: {filelist_error}")
+        
+        # Method 3: Try DICOM browser loading
+        try:
+            print("Method 3: Using DICOM browser...")
+            success = _load_with_dicom_browser(series_directory)
+            if success:
+                return True
+        except Exception as browser_error:
+            print(f"DICOM browser failed: {browser_error}")
+        
+        print("Manual series loading failed")
+        return False
+        
+    except Exception as e:
+        print(f"Error in manual series loading: {e}")
+        return False
+
+def _extract_slice_number(file_path):
+    """Extract slice number from DICOM filename for sorting."""
+    try:
+        filename = os.path.basename(file_path)
+        # For files like i1559699.CTDC.1, extract the final number
+        if '.' in filename:
+            parts = filename.split('.')
+            for part in reversed(parts):
+                if part.isdigit():
+                    return int(part)
+        return 0
+    except:
+        return 0
+
+def _load_volume_from_file_list(file_list):
+    """Try to load volume from an explicit list of DICOM files."""
+    try:
+        print(f"Attempting VTK DICOM reader with {len(file_list)} files...")
+        
+        # Method 1: Use VTK DICOM reader with directory
+        import vtk
+        
+        # Try directory-based reading first
+        directory = os.path.dirname(file_list[0])
+        reader = vtk.vtkDICOMImageReader()
+        reader.SetDirectoryName(directory)
+        
+        try:
+            reader.Update()
+            output = reader.GetOutput()
+            
+            if output and output.GetNumberOfPoints() > 0:
+                dims = output.GetDimensions()
+                print(f"VTK directory reader: {dims[0]}x{dims[1]}x{dims[2]}")
+                
+                if dims[2] > 1:
+                    # Create volume node
+                    volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+                    volume_node.SetAndObserveImageData(output)
+                    volume_node.CreateDefaultDisplayNodes()
+                    return volume_node
+        except Exception as dir_error:
+            print(f"VTK directory reading failed: {dir_error}")
+        
+        # Method 2: Use SimpleITK for DICOM series reading
+        try:
+            print("Trying SimpleITK DICOM series reader...")
+            import SimpleITK as sitk
+            
+            # Read the DICOM series
+            series_reader = sitk.ImageSeriesReader()
+            series_reader.SetFileNames(file_list)
+            
+            # Read the image
+            sitk_image = series_reader.Execute()
+            
+            if sitk_image:
+                print(f"SimpleITK loaded: {sitk_image.GetSize()}")
+                
+                # Convert to VTK and create Slicer volume
+                sitk_utils = slicer.util.getModuleLogic('SimpleITK')
+                if sitk_utils:
+                    volume_node = sitk_utils.sitkImageToVolumeNode(sitk_image)
+                    if volume_node:
+                        volume_node.SetName("DICOM_Series_SimpleITK")
+                        return volume_node
+                
+        except ImportError:
+            print("SimpleITK not available")
+        except Exception as sitk_error:
+            print(f"SimpleITK failed: {sitk_error}")
+        
+        # Method 3: Try VTK ImageReader2 with file pattern
+        try:
+            print("Trying VTK ImageReader2 with file pattern...")
+            
+            # Find a pattern in the files
+            first_file = os.path.basename(file_list[0])
+            if 'CTDC' in first_file:
+                # For files like i1559699.CTDC.1, create pattern like i%d.CTDC.%d
+                base_pattern = first_file.split('.')[0]
+                pattern_file = os.path.join(os.path.dirname(file_list[0]), f"{base_pattern[:8]}*.CTDC.*")
+                print(f"Pattern: {pattern_file}")
+        
+        except Exception as pattern_error:
+            print(f"Pattern method failed: {pattern_error}")
+        
+        print("All VTK methods failed")
+        return None
+        
+    except Exception as e:
+        print(f"VTK DICOM reader failed: {e}")
+        return None
+
+def _load_with_series_hint(directory, file_list):
+    """Try to load DICOM with series loading hints."""
+    try:
+        print(f"Loading with series hint from {len(file_list)} files...")
+        
+        # Try loading with properties that indicate this is a series
+        properties = {
+            'singleFile': False,
+            'multipleFiles': True,
+            'seriesInDirectory': True
+        }
+        
+        # Load the directory but with series properties
+        volume_node = slicer.util.loadVolume(directory, properties=properties)
+        return volume_node
+        
+    except Exception as e:
+        print(f"Series hint loading failed: {e}")
+        return None
+
+def _load_with_dicom_browser(directory):
+    """Try to load using DICOM browser module."""
+    try:
+        print("Loading with DICOM browser...")
+        
+        # Get DICOM browser module
+        if hasattr(slicer.modules, 'dicom'):
+            dicom_module = slicer.modules.dicom
+            
+            # Create widget instance
+            dicom_widget = slicer.modules.DICOMWidget()
+            
+            # Try to import directory
+            dicom_widget.onImportDirectory(directory)
+            
+            # This is a simplified approach - in practice, the DICOM browser
+            # would require user interaction or more complex automation
+            return False
+            
+    except Exception as e:
+        print(f"DICOM browser loading failed: {e}")
+        return False
+
+def _load_as_volume_sequence(dicom_files, directory):
+    """Try to load DICOM files as a volume sequence."""
+    try:
+        print(f"Attempting volume sequence loading for {len(dicom_files)} files...")
+        
+        # Sort files by slice number
+        sorted_files = sorted(dicom_files, key=lambda x: _extract_slice_number(x))
+        
+        # Try to load using Slicer's sequence utilities
+        try:
+            # Load first file to get the base volume
+            base_volume = slicer.util.loadVolume(sorted_files[0])
+            if not base_volume:
+                return False
+            
+            # Check if Slicer automatically loaded the series
+            image_data = base_volume.GetImageData()
+            if image_data:
+                dims = image_data.GetDimensions()
+                print(f"Base volume loaded: {dims[0]}x{dims[1]}x{dims[2]}")
+                
+                if dims[2] >= len(sorted_files) * 0.8:  # Got most of the series
+                    print(f"✓ Slicer automatically loaded {dims[2]} slices!")
+                    base_volume.SetName("CT_AutoSeries")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+                elif dims[2] > 1:
+                    print(f"✓ Partial series loaded: {dims[2]} slices")
+                    base_volume.SetName("CT_PartialSeries")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+                else:
+                    print("Only single slice loaded from base volume")
+            
+            # If single slice, try alternative approaches
+            print("Base volume only loaded single slice, trying alternatives...")
+            
+            # Method: Try loading multiple files at once using different approaches
+            chunk_size = 10
+            for i in range(0, len(sorted_files), chunk_size):
+                chunk = sorted_files[i:i+chunk_size]
+                print(f"  Trying chunk {i//chunk_size + 1}: files {i+1}-{min(i+chunk_size, len(sorted_files))}")
+                
+                try:
+                    # Try loading the chunk
+                    for file_path in chunk:
+                        temp_volume = slicer.util.loadVolume(file_path)
+                        if temp_volume:
+                            temp_data = temp_volume.GetImageData()
+                            if temp_data and temp_data.GetDimensions()[2] > 1:
+                                print(f"✓ Found multi-slice volume in chunk!")
+                                temp_volume.SetName("CT_ChunkSeries")
+                                # Remove other volumes
+                                if base_volume != temp_volume:
+                                    slicer.mrmlScene.RemoveNode(base_volume)
+                                set_3d_view_background_black()
+                                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                                return True
+                            else:
+                                # Clean up single slice
+                                slicer.mrmlScene.RemoveNode(temp_volume)
+                except Exception as chunk_error:
+                    print(f"  Chunk loading failed: {chunk_error}")
+                    
+                # Don't try too many chunks
+                if i > 100:
+                    break
+            
+            # Keep the single slice if nothing else worked
+            print("Keeping single slice volume as fallback")
+            return False
+            
+        except Exception as seq_error:
+            print(f"Volume sequence loading failed: {seq_error}")
+            return False
+            
+    except Exception as e:
+        print(f"Error in volume sequence loading: {e}")
+        return False
+
+def _load_with_vtk_direct(dicom_files):
+    """Last resort: direct VTK DICOM loading with comprehensive error handling."""
+    try:
+        print(f"VTK direct loading for {len(dicom_files)} DICOM files...")
+        
+        import vtk
+        
+        # Sort files numerically 
+        sorted_files = sorted(dicom_files, key=lambda x: _extract_slice_number(x))
+        
+        # Method 1: Try VTK DICOM directory reader
+        try:
+            print("Method 1: VTK DICOM directory reader...")
+            reader = vtk.vtkDICOMImageReader()
+            directory = os.path.dirname(sorted_files[0])
+            reader.SetDirectoryName(directory)
+            reader.Update()
+            
+            output = reader.GetOutput()
+            if output and output.GetNumberOfPoints() > 0:
+                dims = output.GetDimensions()
+                print(f"VTK reader output: {dims[0]}x{dims[1]}x{dims[2]}")
+                
+                if dims[2] > 1:
+                    # Create volume node
+                    volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+                    volume_node.SetAndObserveImageData(output)
+                    volume_node.SetName("VTK_DICOM_Series")
+                    
+                    # Create display node
+                    volume_node.CreateDefaultDisplayNodes()
+                    
+                    # Set up visualization
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    
+                    print("✓ VTK directory loading successful!")
+                    return True
+        except Exception as vtk_error:
+            print(f"VTK directory method failed: {vtk_error}")
+        
+        # Method 2: Try creating a volume from individual slice loading
+        try:
+            print("Method 2: Individual slice loading...")
+            
+            # Load first slice to get dimensions
+            first_reader = vtk.vtkDICOMImageReader()
+            first_reader.SetFileName(sorted_files[0])
+            first_reader.Update()
+            first_output = first_reader.GetOutput()
+            
+            if first_output:
+                dims_2d = first_output.GetDimensions()
+                print(f"Single slice dimensions: {dims_2d[0]}x{dims_2d[1]}")
+                
+                # Create 3D volume by stacking slices
+                num_slices = len(sorted_files)
+                
+                # Use VTK image append to stack slices
+                append_filter = vtk.vtkImageAppend()
+                append_filter.SetAppendAxis(2)  # Stack along Z axis
+                
+                print(f"Loading {num_slices} slices...")
+                loaded_count = 0
+                
+                for i, file_path in enumerate(sorted_files):
+                    try:
+                        slice_reader = vtk.vtkDICOMImageReader()
+                        slice_reader.SetFileName(file_path)
+                        slice_reader.Update()
+                        
+                        slice_output = slice_reader.GetOutput()
+                        if slice_output and slice_output.GetNumberOfPoints() > 0:
+                            append_filter.AddInputData(slice_output)
+                            loaded_count += 1
+                            
+                            if (i + 1) % 50 == 0:  # Progress indicator
+                                print(f"  Loaded {i+1}/{num_slices} slices...")
+                        
+                    except Exception as slice_error:
+                        print(f"  Failed to load slice {i+1}: {slice_error}")
+                
+                if loaded_count > 1:
+                    print(f"Stacking {loaded_count} slices...")
+                    append_filter.Update()
+                    stacked_output = append_filter.GetOutput()
+                    
+                    if stacked_output:
+                        final_dims = stacked_output.GetDimensions()
+                        print(f"Final stacked volume: {final_dims[0]}x{final_dims[1]}x{final_dims[2]}")
+                        
+                        # Create volume node
+                        volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+                        volume_node.SetAndObserveImageData(stacked_output)
+                        volume_node.SetName("VTK_Stacked_Series")
+                        
+                        # Create display node
+                        volume_node.CreateDefaultDisplayNodes()
+                        
+                        # Set up visualization
+                        set_3d_view_background_black()
+                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        
+                        print("✓ VTK slice stacking successful!")
+                        return True
+                        
+        except Exception as stack_error:
+            print(f"VTK slice stacking failed: {stack_error}")
+        
+        print("All VTK direct loading methods failed")
+        return False
+        
+    except Exception as e:
+        print(f"VTK direct loading failed: {e}")
+        return False
+
 def _analyze_dicom_files(files):
     """
     Analyze DICOM files to understand data characteristics and help with plugin selection.
@@ -4194,7 +5031,8 @@ def _analyze_dicom_files(files):
         'has_header_files': False,
         'modality': 'unknown',
         'manufacturer': 'unknown',
-        'series_type': 'unknown'
+        'series_type': 'unknown',
+        'is_philips': False
     }
     
     try:
@@ -4214,9 +5052,18 @@ def _analyze_dicom_files(files):
             if 'v_headers' in file_name.lower():
                 analysis['has_header_files'] = True
         
+        # Enhanced Philips detection - check for v_headers file
+        for file_path in files:
+            file_name = os.path.basename(file_path)
+            if 'v_headers' in file_name.lower() or 'volume_headers' in file_name.lower():
+                analysis['has_header_files'] = True
+                analysis['is_philips'] = True  # v_headers is a strong indicator of Philips
+                print(f"✅ Detected Philips DICOM: found {file_name}")
+                break
+        
         # Try to read DICOM header information from first file if possible
         try:
-            if DICOM_UTILS_AVAILABLE:
+            if DICOM_UTILS_AVAILABLE and not analysis['is_philips']:  # Skip DICOM header read if already detected as Philips
                 # Try to use pydicom if available
                 try:
                     import pydicom
@@ -4227,6 +5074,10 @@ def _analyze_dicom_files(files):
                     
                     if hasattr(ds, 'Manufacturer'):
                         analysis['manufacturer'] = str(ds.Manufacturer)
+                        # Check for Philips manufacturer
+                        if 'philips' in analysis['manufacturer'].lower():
+                            analysis['is_philips'] = True
+                            print(f"✅ Detected Philips DICOM via manufacturer: {analysis['manufacturer']}")
                     
                     if hasattr(ds, 'SeriesDescription'):
                         series_desc = str(ds.SeriesDescription).lower()
@@ -4348,27 +5199,31 @@ def _find_dicom_files_in_directory(directory):
                     is_dicom = True
                     print(f"Found DICOM by prefix: {filename}")
                 
-                # Files containing medical patterns
+                # Files containing medical patterns (but exclude known non-DICOM files)
                 elif any(pattern in filename_lower for pattern in ['ctdc', 'ct_', 'mr_', 'cta', 'coronary']):
-                    is_dicom = True
-                    print(f"Found DICOM by medical pattern: {filename}")
+                    # Exclude known non-DICOM files
+                    if not any(exclude in filename_lower for exclude in ['header', 'readme', 'info', 'summary']):
+                        is_dicom = True
+                        print(f"Found DICOM by medical pattern: {filename}")
                 
-                # Numbered series (.1, .2, .3, etc.)
-                elif '.' in filename and filename.split('.')[-1].isdigit():
+                # Numbered series (.1, .2, .3, etc.) but not headers
+                elif '.' in filename and filename.split('.')[-1].isdigit() and 'header' not in filename_lower:
                     is_dicom = True
                     print(f"Found DICOM by numeric extension: {filename}")
                 
                 # Try to detect DICOM by reading file header
                 elif file_size > 132:  # DICOM files have at least 132 byte preamble
-                    try:
-                        with open(file_path, 'rb') as f:
-                            f.seek(128)  # Skip preamble
-                            dicm_tag = f.read(4)
-                            if dicm_tag == b'DICM':
-                                is_dicom = True
-                                print(f"Found DICOM by header signature: {filename}")
-                    except:
-                        pass
+                    # Skip files that are clearly not DICOM
+                    if not any(exclude in filename_lower for exclude in ['header', 'readme', 'info', 'summary', 'text', 'log']):
+                        try:
+                            with open(file_path, 'rb') as f:
+                                f.seek(128)  # Skip preamble
+                                dicm_tag = f.read(4)
+                                if dicm_tag == b'DICM':
+                                    is_dicom = True
+                                    print(f"Found DICOM by header signature: {filename}")
+                        except:
+                            pass
                 
                 if is_dicom:
                     dicom_files.append(file_path)
@@ -4391,6 +5246,146 @@ def _find_dicom_files_in_directory(directory):
     except Exception as e:
         print(f"Error finding DICOM files: {e}")
         return []
+
+def test_philips_detection(dicom_path):
+    """
+    Test Philips DICOM detection for a given directory.
+    Usage: test_philips_detection(r"C:\\Users\\username\\Desktop\\DICOM_folder")
+    """
+    print(f"=== Testing Philips Detection ===")
+    print(f"Directory: {dicom_path}")
+    
+    if not os.path.exists(dicom_path):
+        print(f"❌ Directory does not exist: {dicom_path}")
+        return False
+    
+    try:
+        # Find DICOM files
+        dicom_files = _find_dicom_files_in_directory(dicom_path)
+        if not dicom_files:
+            print("❌ No DICOM files found")
+            return False
+        
+        print(f"✅ Found {len(dicom_files)} DICOM files")
+        
+        # Analyze files
+        analysis = _analyze_dicom_files(dicom_files)
+        print(f"Manufacturer: {analysis.get('manufacturer', 'Unknown')}")
+        print(f"Is Philips: {analysis.get('is_philips', False)}")
+        print(f"Modality: {analysis.get('modality', 'Unknown')}")
+        print(f"Series Type: {analysis.get('series_type', 'Unknown')}")
+        
+        if analysis.get('is_philips', False):
+            print("🏥 ✅ Philips DICOM detected - will use specialized loader")
+            return True
+        else:
+            print("❌ Not detected as Philips DICOM - will use standard loader")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Detection failed: {e}")
+        return False
+
+def load_philips_dicom_simple(dicom_path):
+    """
+    Load Philips DICOM using the exact user's working method.
+    This is a direct copy of the user's proven script.
+    """
+    try:
+        print("Loading Philips DICOM using user's proven method...")
+        
+        import DICOMLib
+        from DICOMLib import DICOMUtils
+        import slicer
+
+        dicomDataDir = dicom_path
+
+        # Import DICOM directory (ignores unreadable files like v_headers)
+        DICOMUtils.importDicom(dicomDataDir)
+
+        # Access the Slicer DICOM database instance
+        db = slicer.dicomDatabase  # ✅ this is the correct database handle
+
+        # Get all patient UIDs in the database
+        patientUIDs = db.patients()
+
+        if len(patientUIDs) == 0:
+            print("❌ No DICOM patients found in directory.")
+            return None
+        else:
+            print(f"✅ Found {len(patientUIDs)} patient(s). Loading first one...")
+            firstPatientUID = patientUIDs[0]
+            DICOMUtils.loadPatientByUID(firstPatientUID)
+            
+            # Continue workflow after successful loading
+            print("✅ Philips DICOM loaded, continuing workflow...")
+            qt.QTimer.singleShot(1000, start_with_volume_crop)
+            
+            # Return success
+            return True
+            
+    except Exception as e:
+        print(f"❌ Simple Philips loading failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def test_philips_dicom_loading(dicom_path):
+    """
+    Test the complete Philips DICOM loading workflow.
+    Usage: test_philips_dicom_loading(r"C:\\Users\\username\\Desktop\\Philips_DICOM_folder")
+    """
+    print(f"=== Testing Philips DICOM Loading Workflow ===")
+    print(f"Directory: {dicom_path}")
+    
+    if not os.path.exists(dicom_path):
+        print(f"❌ Directory does not exist: {dicom_path}")
+        return False
+    
+    try:
+        # Step 1: Test detection
+        print("\n1. Testing Philips detection...")
+        dicom_files = _find_dicom_files_in_directory(dicom_path)
+        if not dicom_files:
+            print("❌ No DICOM files found")
+            return False
+        
+        analysis = _analyze_dicom_files(dicom_files)
+        print(f"   Files found: {len(dicom_files)}")
+        print(f"   Philips detected: {analysis.get('is_philips', False)}")
+        print(f"   Has v_headers: {analysis.get('has_header_files', False)}")
+        
+        if not analysis.get('is_philips', False):
+            print("❌ Not detected as Philips - this test requires Philips DICOM files")
+            return False
+        
+        # Step 2: Test Philips loading
+        print("\n2. Testing Philips loading method...")
+        initial_volumes = len(slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode'))
+        print(f"   Initial volume count: {initial_volumes}")
+        
+        result = _load_philips_dicom_series(dicom_path)
+        
+        final_volumes = len(slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode'))
+        print(f"   Final volume count: {final_volumes}")
+        
+        if result:
+            print(f"✅ Philips loading successful!")
+            print(f"   Volume name: {result.GetName()}")
+            image_data = result.GetImageData()
+            if image_data:
+                dims = image_data.GetDimensions()
+                print(f"   Dimensions: {dims[0]}x{dims[1]}x{dims[2]}")
+            return True
+        else:
+            print("❌ Philips loading failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 def test_enhanced_dicom_loading():
     """
