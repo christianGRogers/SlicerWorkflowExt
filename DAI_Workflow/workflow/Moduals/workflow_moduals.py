@@ -2933,7 +2933,7 @@ def add_large_cpr_apply_button():
                                     break
                         
                         if original_apply_button:
-                            large_apply_button = qt.QPushButton("APPLY CPR")
+                            large_apply_button = qt.QPushButton("Apply Curved Planar Reformat")
                             large_apply_button.setStyleSheet("""
                                 QPushButton { 
                                     background-color: #28a745; 
@@ -3035,7 +3035,7 @@ def add_large_cpr_apply_button():
                             
                         else:
                             pass
-                            large_apply_button = qt.QPushButton("APPLY CPR")
+                            large_apply_button = qt.QPushButton("Apply Curved Planar Reformat")
                             large_apply_button.setStyleSheet("""
                                 QPushButton { 
                                     background-color: #28a745; 
