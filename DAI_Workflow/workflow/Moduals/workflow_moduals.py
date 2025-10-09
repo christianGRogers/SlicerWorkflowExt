@@ -3519,7 +3519,7 @@ def configure_cross_section_module():
 
 def collapse_parameters_tab():
     """
-    Collapse the Parameters tab in the Cross-Section Analysis module after Apply has been clicked
+    Remove the Parameters section in the Cross-Section Analysis module after Apply has been clicked
     """
     try:
         # Find the Cross-Section Analysis module widget
@@ -3539,11 +3539,10 @@ def collapse_parameters_tab():
             for cb in collapsible_buttons:
                 button_text = cb.text if hasattr(cb, 'text') else ""
                 if "parameter" in button_text.lower():
-                    if cb.collapsed == False:  # If it's currently expanded
-                        cb.collapsed = True    # Collapse it
-                        return True
-                    else:
-                        return True
+                    # Fully hide/remove the parameters section instead of just collapsing
+                    cb.setVisible(False)
+                    cb.hide()
+                    return True
         except Exception as ctk_error:
             pass
         
@@ -3552,10 +3551,10 @@ def collapse_parameters_tab():
         for gb in group_boxes:
             box_title = gb.title if hasattr(gb, 'title') else ""
             if "parameter" in box_title.lower():
-                # For QGroupBox, try to hide or minimize
-                if hasattr(gb, 'setVisible'):
-                    gb.setVisible(False)
-                    return True
+                # Completely hide the parameters section
+                gb.setVisible(False)
+                gb.hide()
+                return True
         
         # Try finding any widget with "parameter" in the name or text
         all_widgets = module_widget.findChildren(qt.QWidget)
@@ -3563,16 +3562,19 @@ def collapse_parameters_tab():
             # Check object name
             if hasattr(widget, 'objectName') and widget.objectName():
                 if "parameter" in widget.objectName().lower():
-                    if hasattr(widget, 'setVisible'):
-                        widget.setVisible(False)
-                        return True
+                    # Fully hide the widget
+                    widget.setVisible(False)
+                    widget.hide()
+                    return True
             
             # Check if it's a collapsible widget with parameter text
             if hasattr(widget, 'text') and widget.text:
                 if "parameter" in widget.text().lower():
-                    if hasattr(widget, 'collapsed'):
-                        widget.collapsed = True
-                        return True
+                    # Fully hide instead of just collapsing
+                    widget.setVisible(False)
+                    if hasattr(widget, 'hide'):
+                        widget.hide()
+                    return True
         
         return False
         
