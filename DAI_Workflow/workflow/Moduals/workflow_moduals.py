@@ -2933,7 +2933,7 @@ def add_large_cpr_apply_button():
                                     break
                         
                         if original_apply_button:
-                            large_apply_button = qt.QPushButton("APPLY CPR")
+                            large_apply_button = qt.QPushButton("Apply Curved Planar Reformat")
                             large_apply_button.setStyleSheet("""
                                 QPushButton { 
                                     background-color: #28a745; 
@@ -3035,7 +3035,7 @@ def add_large_cpr_apply_button():
                             
                         else:
                             pass
-                            large_apply_button = qt.QPushButton("APPLY CPR")
+                            large_apply_button = qt.QPushButton("Apply Curved Planar Reformat")
                             large_apply_button.setStyleSheet("""
                                 QPushButton { 
                                     background-color: #28a745; 
@@ -3519,7 +3519,7 @@ def configure_cross_section_module():
 
 def collapse_parameters_tab():
     """
-    Collapse the Parameters tab in the Cross-Section Analysis module after Apply has been clicked
+    Remove the Parameters section in the Cross-Section Analysis module after Apply has been clicked
     """
     try:
         # Find the Cross-Section Analysis module widget
@@ -3539,11 +3539,10 @@ def collapse_parameters_tab():
             for cb in collapsible_buttons:
                 button_text = cb.text if hasattr(cb, 'text') else ""
                 if "parameter" in button_text.lower():
-                    if cb.collapsed == False:  # If it's currently expanded
-                        cb.collapsed = True    # Collapse it
-                        return True
-                    else:
-                        return True
+                    # Fully hide/remove the parameters section instead of just collapsing
+                    cb.setVisible(False)
+                    cb.hide()
+                    return True
         except Exception as ctk_error:
             pass
         
@@ -3552,10 +3551,10 @@ def collapse_parameters_tab():
         for gb in group_boxes:
             box_title = gb.title if hasattr(gb, 'title') else ""
             if "parameter" in box_title.lower():
-                # For QGroupBox, try to hide or minimize
-                if hasattr(gb, 'setVisible'):
-                    gb.setVisible(False)
-                    return True
+                # Completely hide the parameters section
+                gb.setVisible(False)
+                gb.hide()
+                return True
         
         # Try finding any widget with "parameter" in the name or text
         all_widgets = module_widget.findChildren(qt.QWidget)
@@ -3563,16 +3562,19 @@ def collapse_parameters_tab():
             # Check object name
             if hasattr(widget, 'objectName') and widget.objectName():
                 if "parameter" in widget.objectName().lower():
-                    if hasattr(widget, 'setVisible'):
-                        widget.setVisible(False)
-                        return True
+                    # Fully hide the widget
+                    widget.setVisible(False)
+                    widget.hide()
+                    return True
             
             # Check if it's a collapsible widget with parameter text
             if hasattr(widget, 'text') and widget.text:
                 if "parameter" in widget.text().lower():
-                    if hasattr(widget, 'collapsed'):
-                        widget.collapsed = True
-                        return True
+                    # Fully hide instead of just collapsing
+                    widget.setVisible(False)
+                    if hasattr(widget, 'hide'):
+                        widget.hide()
+                    return True
         
         return False
         
@@ -3871,28 +3873,20 @@ def load_dicom_from_source_file(dicom_path):
         
         # Enhanced Philips detection - prioritize this approach for Philips files
         # This checks for v_headers files and manufacturer info to identify Philips DICOMs
-        print("Analyzing DICOM directory for file types...")
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         if dicom_files:
             file_analysis = _analyze_dicom_files(dicom_files)
             if file_analysis['is_philips']:
-                print("✅ Detected Philips DICOM files - using specialized Philips loading method")
-                print("   This method uses DICOMUtils.importDicom() + DICOMUtils.loadPatientByUID()")
                 
                 # Try the simple method first (exact copy of user's working script)
                 simple_result = load_philips_dicom_simple(dicom_path)
                 if simple_result:
-                    print("✅ Philips DICOM loaded successfully using simple method")
                     return True
                 
                 # Fall back to enhanced method if simple fails
-                print("Simple method failed, trying enhanced method...")
                 philips_result = _load_philips_dicom_series(dicom_path)
                 if philips_result:
-                    print("✅ Philips DICOM loaded successfully using enhanced method")
                     return True
-                else:
-                    print("⚠️ Both Philips loading methods failed, falling back to standard methods")
         
         # Check if enhanced DICOM utilities are available
         if not DICOM_UTILS_AVAILABLE:
@@ -4426,8 +4420,6 @@ def _load_philips_dicom_series(dicom_directory):
     Based on user's proven successful script - simplified and direct.
     """
     try:
-        print("Loading Philips DICOM series using proven DICOMUtils approach...")
-        
         # Import required modules (exactly as in working script)
         import DICOMLib
         from DICOMLib import DICOMUtils
@@ -4435,10 +4427,8 @@ def _load_philips_dicom_series(dicom_directory):
         
         # Track existing volumes
         existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-        print(f"Found {len(existing_volumes)} existing volumes before load")
         
         # Ensure DICOM database is properly initialized before importing
-        print("Initializing DICOM database...")
         try:
             # Initialize DICOM database if it doesn't exist
             if not hasattr(slicer, 'dicomDatabase') or slicer.dicomDatabase is None:
@@ -4448,17 +4438,13 @@ def _load_philips_dicom_series(dicom_directory):
                 
                 # Alternative initialization if module approach doesn't work
                 if not hasattr(slicer, 'dicomDatabase') or slicer.dicomDatabase is None:
-                    print("Manual DICOM database initialization...")
                     import DICOMLib
                     # This should initialize slicer.dicomDatabase
                     DICOMLib.DICOMUtils.openDatabase()
-            
-            print("✅ DICOM database initialized")
         except Exception as init_error:
-            print(f"DICOM database initialization error: {init_error}")
+            pass
         
         # Import DICOM directory (ignores unreadable files like v_headers)
-        print(f"Importing DICOM directory: {dicom_directory}")
         DICOMUtils.importDicom(dicom_directory)
         
         # Access the Slicer DICOM database instance (exactly as in working script)
@@ -4468,10 +4454,8 @@ def _load_philips_dicom_series(dicom_directory):
         patientUIDs = db.patients()
         
         if len(patientUIDs) == 0:
-            print("❌ No DICOM patients found in directory.")
             return None
         else:
-            print(f"✅ Found {len(patientUIDs)} patient(s). Loading first one...")
             firstPatientUID = patientUIDs[0]
             
             # Load the patient data (exactly as in working script)
@@ -4479,7 +4463,6 @@ def _load_philips_dicom_series(dicom_directory):
             
             # Check if volume was loaded successfully
             new_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-            print(f"Found {len(new_volumes)} volumes after load")
             
             # Find the newly loaded volume
             for volume in new_volumes:
@@ -4487,14 +4470,11 @@ def _load_philips_dicom_series(dicom_directory):
                     image_data = volume.GetImageData()
                     if image_data:
                         dims = image_data.GetDimensions()
-                        print(f"✅ Philips DICOM loaded successfully: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                         
                         if dims[2] > 1:  # Ensure it's a multi-slice volume
                             volume.SetName("CT_Series_Philips")
-                            print(f"✅ Philips volume set as: {volume.GetName()}")
                             
                             # Continue workflow after successful loading
-                            print("✅ Enhanced Philips DICOM loaded, continuing workflow...")
                             qt.QTimer.singleShot(1000, start_with_volume_crop)
                             
                             return volume
@@ -4505,23 +4485,17 @@ def _load_philips_dicom_series(dicom_directory):
                 image_data = latest_volume.GetImageData()
                 if image_data:
                     dims = image_data.GetDimensions()
-                    print(f"✅ Using latest volume: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                     if dims[2] > 1:
                         latest_volume.SetName("CT_Series_Philips")
                         
                         # Continue workflow after successful loading
-                        print("✅ Enhanced Philips DICOM (fallback) loaded, continuing workflow...")
                         qt.QTimer.singleShot(1000, start_with_volume_crop)
                         
                         return latest_volume
             
-            print("❌ Loading did not produce a valid multi-slice volume")
             return None
             
     except Exception as e:
-        print(f"❌ Philips DICOM loading failed: {e}")
-        import traceback
-        traceback.print_exc()
         return None
 
 def _load_dicom_series_manually(dicom_files, series_directory):
@@ -5058,7 +5032,6 @@ def _analyze_dicom_files(files):
             if 'v_headers' in file_name.lower() or 'volume_headers' in file_name.lower():
                 analysis['has_header_files'] = True
                 analysis['is_philips'] = True  # v_headers is a strong indicator of Philips
-                print(f"✅ Detected Philips DICOM: found {file_name}")
                 break
         
         # Try to read DICOM header information from first file if possible
@@ -5077,7 +5050,6 @@ def _analyze_dicom_files(files):
                         # Check for Philips manufacturer
                         if 'philips' in analysis['manufacturer'].lower():
                             analysis['is_philips'] = True
-                            print(f"✅ Detected Philips DICOM via manufacturer: {analysis['manufacturer']}")
                     
                     if hasattr(ds, 'SeriesDescription'):
                         series_desc = str(ds.SeriesDescription).lower()
@@ -5276,14 +5248,11 @@ def test_philips_detection(dicom_path):
         print(f"Series Type: {analysis.get('series_type', 'Unknown')}")
         
         if analysis.get('is_philips', False):
-            print("🏥 ✅ Philips DICOM detected - will use specialized loader")
             return True
         else:
-            print("❌ Not detected as Philips DICOM - will use standard loader")
             return False
             
     except Exception as e:
-        print(f"❌ Detection failed: {e}")
         return False
 
 def load_philips_dicom_simple(dicom_path):
@@ -5292,8 +5261,6 @@ def load_philips_dicom_simple(dicom_path):
     This is a direct copy of the user's proven script.
     """
     try:
-        print("Loading Philips DICOM using user's proven method...")
-        
         import DICOMLib
         from DICOMLib import DICOMUtils
         import slicer
@@ -5304,30 +5271,24 @@ def load_philips_dicom_simple(dicom_path):
         DICOMUtils.importDicom(dicomDataDir)
 
         # Access the Slicer DICOM database instance
-        db = slicer.dicomDatabase  # ✅ this is the correct database handle
+        db = slicer.dicomDatabase
 
         # Get all patient UIDs in the database
         patientUIDs = db.patients()
 
         if len(patientUIDs) == 0:
-            print("❌ No DICOM patients found in directory.")
             return None
         else:
-            print(f"✅ Found {len(patientUIDs)} patient(s). Loading first one...")
             firstPatientUID = patientUIDs[0]
             DICOMUtils.loadPatientByUID(firstPatientUID)
             
             # Continue workflow after successful loading
-            print("✅ Philips DICOM loaded, continuing workflow...")
             qt.QTimer.singleShot(1000, start_with_volume_crop)
             
             # Return success
             return True
             
     except Exception as e:
-        print(f"❌ Simple Philips loading failed: {e}")
-        import traceback
-        traceback.print_exc()
         return None
 
 def test_philips_dicom_loading(dicom_path):
@@ -5356,7 +5317,6 @@ def test_philips_dicom_loading(dicom_path):
         print(f"   Has v_headers: {analysis.get('has_header_files', False)}")
         
         if not analysis.get('is_philips', False):
-            print("❌ Not detected as Philips - this test requires Philips DICOM files")
             return False
         
         # Step 2: Test Philips loading
@@ -5370,21 +5330,11 @@ def test_philips_dicom_loading(dicom_path):
         print(f"   Final volume count: {final_volumes}")
         
         if result:
-            print(f"✅ Philips loading successful!")
-            print(f"   Volume name: {result.GetName()}")
-            image_data = result.GetImageData()
-            if image_data:
-                dims = image_data.GetDimensions()
-                print(f"   Dimensions: {dims[0]}x{dims[1]}x{dims[2]}")
             return True
         else:
-            print("❌ Philips loading failed")
             return False
             
     except Exception as e:
-        print(f"❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
         return False
 
 def test_enhanced_dicom_loading():
