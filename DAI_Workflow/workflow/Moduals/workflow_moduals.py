@@ -14730,29 +14730,25 @@ def create_custom_crop_interface():
         else:
             print("⚠️ Warning: Could not create CropROI")
         
-        # Switch to a layout that shows both 3D view and slice views for ROI positioning
-        show_crop_layout_with_roi()
+        # Switch to the same three-up view used in the original workflow
+        setup_crop_display_layout()
         
         # Create the custom crop widget
         crop_widget = qt.QWidget()
-        crop_widget.setWindowTitle("Clean Crop Interface - ROI Ready")
+        crop_widget.setWindowTitle("Clean Crop Interface")
         crop_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
-        crop_widget.resize(480, 400)
+        crop_widget.resize(400, 250)
         
         # Set up layout
         layout = qt.QVBoxLayout()
         
         # Title
-        title_label = qt.QLabel("🎯 Volume Cropping Interface")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 15px; color: #2c3e50; background-color: #ecf0f1; border-radius: 5px; margin: 5px;")
+        title_label = qt.QLabel("Volume Cropping Interface")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px; color: #2c3e50; background-color: #ecf0f1; border-radius: 5px; margin: 5px;")
         title_label.setAlignment(qt.Qt.AlignCenter)
         layout.addWidget(title_label)
         
-        # Instructions
-        instructions = qt.QLabel("✅ ROI box has been created and is visible in the 3D view.\n\n📋 Instructions:\n1. Adjust the ROI box size and position in the 3D view\n2. Click 'Crop Volume' to apply cropping\n3. Use scissors tool to refine segmentation after cropping")
-        instructions.setWordWrap(True)
-        instructions.setStyleSheet("padding: 15px; color: #2c3e50; font-size: 13px; background-color: #f8f9fa; border-radius: 5px; margin: 5px;")
-        layout.addWidget(instructions)
+
         
         # Crop button
         crop_button = qt.QPushButton("CROP VOLUME")
@@ -14863,6 +14859,7 @@ def execute_custom_crop():
     """
     Execute the custom crop operation using the ROI in the scene.
     If no ROI exists, create one automatically.
+    Continues with the normal workflow after cropping.
     """
     try:
         print("🔄 Executing custom crop operation...")
@@ -14870,10 +14867,15 @@ def execute_custom_crop():
         # Check if ROI exists, create if needed
         ensure_crop_roi_exists()
         
-        # Perform the crop with default ROI name
-        cropped_volume = cropVolumeWithNamedROI("CropROI", "CroppedVolume")
+        # Perform the crop with timestamp to avoid naming conflicts
+        import time
+        timestamp = int(time.time())
+        cropped_volume = cropVolumeWithNamedROI("CropROI", f"CroppedVolume_{timestamp}")
         
         if cropped_volume:
+            # Store the cropped volume reference
+            slicer.modules.WorkflowCroppedVolume = cropped_volume
+            
             # Reset slice views to show the cropped volume properly
             slicer.util.resetSliceViews()
             
@@ -14905,11 +14907,55 @@ def execute_custom_crop():
                 
                 # Reset button after 2 seconds
                 qt.QTimer.singleShot(2000, lambda: reset_crop_button(button, original_text))
+            
+            # Continue with the normal workflow - threshold segmentation
+            qt.QTimer.singleShot(2500, lambda: continue_workflow_after_custom_crop())
+            
         else:
             print("❌ Custom crop operation failed")
             
     except Exception as e:
         print(f"❌ Error during custom crop execution: {e}")
+
+
+def continue_workflow_after_custom_crop():
+    """
+    Continue the normal workflow after custom cropping is completed.
+    This ensures the same behavior as the original workflow.
+    """
+    try:
+        print("🔄 Continuing workflow after custom crop...")
+        
+        # Clean up the custom crop interface
+        cleanup_custom_crop_interface()
+        
+        # Find the cropped volume
+        volume_node = find_working_volume()
+        if not volume_node:
+            print("❌ No cropped volume found")
+            return
+            
+        # Continue with threshold segmentation (same as original workflow)
+        threshold_values = prompt_for_threshold_range()
+        if threshold_values is None:
+            print("⚠️ User cancelled threshold selection")
+            return
+        
+        threshold_value_low, threshold_value_high = threshold_values
+        
+        # Create segmentation from threshold
+        segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
+        
+        if segmentation_node:
+            # Show segmentation in 3D and load into segment editor (same as original)
+            show_segmentation_in_3d(segmentation_node)
+            load_into_segment_editor(segmentation_node, volume_node)
+            print("✅ Workflow continued successfully after custom crop")
+        else:
+            print("❌ Failed to create segmentation after custom crop")
+            
+    except Exception as e:
+        print(f"❌ Error continuing workflow after custom crop: {e}")
 
 
 def ensure_crop_roi_exists():
@@ -14995,73 +15041,36 @@ def ensure_crop_roi_exists():
         return None
 
 
-def show_crop_layout_with_roi():
+def setup_crop_display_layout():
     """
-    Switch to a layout optimized for crop ROI positioning with 3D view prominently displayed.
-    Shows 3D view on the left and Red slice view on the right for easy ROI manipulation.
+    Set up the display layout for cropping - uses the same three-up view as the original workflow.
+    This ensures consistent behavior between first and subsequent croppings.
     """
     try:
-        lm = slicer.app.layoutManager()
-        if not lm:
-            return False
-
-        # Define a custom layout (3D view | Red slice view) for crop ROI positioning
-        layout_xml = (
-            '<layout type="horizontal">'
-            '  <item splitSize="300">'
-            '    <view class="vtkMRMLViewNode" singletontag="1">'
-            '      <property name="viewlabel" action="default">1</property>'
-            '    </view>'
-            '  </item>'
-            '  <item splitSize="200">'
-            '    <view class="vtkMRMLSliceNode" singletontag="Red">'
-            '      <property name="orientation" action="default">Axial</property>'
-            '      <property name="viewlabel" action="default">R</property>'
-            '      <property name="layoutlabel" action="default">Red</property>'
-            '    </view>'
-            '  </item>'
-            '</layout>'
-        )
-
-        layout_node = lm.layoutLogic().GetLayoutNode()
-        custom_layout_id = 55903  # Custom ID for crop ROI layout
-        # Register or replace the custom layout
-        layout_node.AddLayoutDescription(custom_layout_id, layout_xml)
-        layout_node.SetViewArrangement(custom_layout_id)
+        print("🖥️ Setting up crop display layout...")
         
-        # Assign background volume to slice view
-        vol = find_working_volume()
-        if vol:
-            # Set volume in Red slice view
-            w = lm.sliceWidget("Red")
-            if w:
-                comp = w.mrmlSliceCompositeNode()
-                if comp:
-                    comp.SetBackgroundVolumeID(vol.GetID())
-                logic = w.sliceLogic()
-                if logic:
-                    logic.FitSliceToAll()
-
-        # Set 3D view background to black for better ROI visibility
-        set_3d_view_background_black()
+        # Use the same three-up view as the original workflow
+        success = set_three_up_view()
         
-        # Reset 3D view camera to show the volume and ROI nicely
-        threeDWidget = lm.threeDWidget(0)
-        if threeDWidget:
-            threeDView = threeDWidget.threeDView()
-            if threeDView:
-                threeDView.resetFocalPoint()
-                threeDView.resetCamera()
-
-        # Process events to ensure layout is applied
-        slicer.app.processEvents()
+        if success:
+            # Ensure the current volume is properly displayed in all views
+            vol = find_working_volume()
+            if vol:
+                set_volume_visible_in_slice_views(vol)
+            
+            print("✅ Crop display layout ready - same as original workflow")
+        else:
+            print("⚠️ Using fallback display setup")
+            # Fallback to standard layout
+            lm = slicer.app.layoutManager()
+            if lm:
+                layout_node = lm.layoutLogic().GetLayoutNode()
+                layout_node.SetViewArrangement(slicer.vtkMRMLLayoutNode.SlicerLayoutConventionalView)
         
-        print("🖥️ Switched to crop ROI layout (3D + Red slice view) for easy ROI positioning")
-        print("📐 3D view camera positioned for optimal ROI visibility")
-        return True
+        return success
         
     except Exception as e:
-        print(f"❌ Error setting crop ROI layout: {e}")
+        print(f"❌ Error setting up crop display layout: {e}")
         return False
 
 
@@ -15198,7 +15207,8 @@ def reset_scissors_button(button):
 
 def finish_custom_crop_workflow():
     """
-    Finish the custom crop workflow and continue to next steps
+    Finish the custom crop workflow and continue to next steps.
+    This is called by the "FINISH SEGMENTATION - CONTINUE" button.
     """
     try:
         print("🔄 Finishing custom crop workflow...")
@@ -15206,7 +15216,7 @@ def finish_custom_crop_workflow():
         # Clean up the custom crop interface
         cleanup_custom_crop_interface()
         
-        # Continue with the normal workflow
+        # Continue with the normal workflow (same as scissors workflow)
         on_continue_from_scissors()
         
         print("✅ Custom crop workflow finished, continuing to next steps")
