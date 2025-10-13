@@ -14712,7 +14712,7 @@ def cropVolumeWithNamedROI(roiName="CropROI", outputName="CroppedVolume"):
 def create_custom_crop_interface():
     """
     Create a clean custom interface for cropping when the crop module GUI becomes distorted.
-    This creates a floating dialog with a single crop button and scissors controls.
+    This creates a fixed left-side module with crop button and scissors controls.
     Automatically creates and shows the ROI for cropping.
     """
     try:
@@ -14733,20 +14733,68 @@ def create_custom_crop_interface():
         # Switch to the same three-up view used in the original workflow
         setup_crop_display_layout()
         
-        # Create the custom crop widget
+        # Create the custom crop widget as a fixed left-side module
         crop_widget = qt.QWidget()
-        crop_widget.setWindowTitle("Clean Crop Interface")
-        crop_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
-        crop_widget.resize(400, 250)
+        crop_widget.setWindowTitle("Crop Tools")
+        
+        # Set up as a dockable widget on the left side
+        crop_widget.setWindowFlags(qt.Qt.Widget)
+        crop_widget.setFixedWidth(280)
+        crop_widget.setStyleSheet("""
+            QWidget {
+                background-color: #f8f9fa;
+                border: 2px solid #dee2e6;
+                border-radius: 8px;
+            }
+        """)
+        
+        # Position on the left side of the screen
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            screen_geometry = qt.QApplication.desktop().availableGeometry()
+            crop_widget.setGeometry(10, 100, 280, 400)
+            crop_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.FramelessWindowHint)
         
         # Set up layout
         layout = qt.QVBoxLayout()
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(15)
+        
+        # Header with title and close button
+        header_layout = qt.QHBoxLayout()
         
         # Title
-        title_label = qt.QLabel("Volume Cropping Interface")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px; color: #2c3e50; background-color: #ecf0f1; border-radius: 5px; margin: 5px;")
-        title_label.setAlignment(qt.Qt.AlignCenter)
-        layout.addWidget(title_label)
+        title_label = qt.QLabel("Crop Tools")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
+        header_layout.addWidget(title_label)
+        
+        # Close button
+        close_button = qt.QPushButton("×")
+        close_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                border: none; 
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: bold;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }
+            QPushButton:hover { 
+                background-color: #c0392b; 
+            }
+        """)
+        close_button.connect('clicked()', lambda: cleanup_custom_crop_interface())
+        header_layout.addWidget(close_button)
+        
+        # Add header to main layout
+        header_widget = qt.QWidget()
+        header_widget.setLayout(header_layout)
+        header_widget.setStyleSheet("padding: 10px; background-color: #ecf0f1; border-radius: 6px; margin-bottom: 10px;")
+        layout.addWidget(header_widget)
         
 
         
@@ -14757,11 +14805,12 @@ def create_custom_crop_interface():
                 background-color: #3498db; 
                 color: white; 
                 border: none; 
-                padding: 15px; 
+                padding: 12px; 
                 font-weight: bold;
-                border-radius: 8px;
-                font-size: 14px;
-                min-height: 50px;
+                border-radius: 6px;
+                font-size: 13px;
+                min-height: 45px;
+                margin: 5px;
             }
             QPushButton:hover { 
                 background-color: #2980b9; 
@@ -14776,7 +14825,7 @@ def create_custom_crop_interface():
         layout.addWidget(crop_button)
         
         # Add spacing
-        layout.addSpacing(20)
+        layout.addSpacing(10)
         
         # Scissors toggle button
         scissors_button = qt.QPushButton("Toggle Scissors Tool")
@@ -14785,10 +14834,12 @@ def create_custom_crop_interface():
                 background-color: #e74c3c; 
                 color: white; 
                 border: none; 
-                padding: 12px; 
+                padding: 10px; 
                 font-weight: bold;
                 border-radius: 6px;
                 font-size: 12px;
+                min-height: 40px;
+                margin: 5px;
             }
             QPushButton:hover { 
                 background-color: #c0392b; 
@@ -14802,19 +14853,22 @@ def create_custom_crop_interface():
         scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
         layout.addWidget(scissors_button)
         
+        # Add spacing
+        layout.addSpacing(15)
+        
         # Continue workflow button
-        continue_button = qt.QPushButton("FINISH SEGMENTATION - CONTINUE")
+        continue_button = qt.QPushButton("FINISH & CONTINUE")
         continue_button.setStyleSheet("""
             QPushButton { 
                 background-color: #27ae60; 
                 color: white; 
                 border: none; 
-                padding: 15px; 
+                padding: 12px; 
                 font-weight: bold;
-                border-radius: 8px;
-                font-size: 14px;
-                min-height: 50px;
-                margin-top: 10px;
+                border-radius: 6px;
+                font-size: 13px;
+                min-height: 45px;
+                margin: 5px;
             }
             QPushButton:hover { 
                 background-color: #229954; 
@@ -14828,18 +14882,16 @@ def create_custom_crop_interface():
         continue_button.connect('clicked()', lambda: finish_custom_crop_workflow())
         layout.addWidget(continue_button)
         
+        # Add stretch to push everything to the top
+        layout.addStretch()
+        
         # Set layout and show
         crop_widget.setLayout(layout)
         
-        # Position the widget
-        main_window = slicer.util.mainWindow()
-        if main_window:
-            screen_geometry = qt.QApplication.desktop().availableGeometry()
-            x = screen_geometry.width() - crop_widget.width - 50
-            y = 100
-            crop_widget.move(x, y)
-        
+        # Show the fixed left-side module
         crop_widget.show()
+        crop_widget.raise_()
+        crop_widget.activateWindow()
         
         # Store references
         slicer.modules.CustomCropWidget = crop_widget
@@ -14847,7 +14899,7 @@ def create_custom_crop_interface():
         slicer.modules.CustomScissorsButton = scissors_button
         slicer.modules.CustomContinueButton = continue_button
         
-        print("✅ Custom crop interface created successfully")
+        print("✅ Custom crop interface created as fixed left-side module")
         return crop_widget
         
     except Exception as e:
@@ -14926,9 +14978,6 @@ def continue_workflow_after_custom_crop():
     try:
         print("🔄 Continuing workflow after custom crop...")
         
-        # Clean up the custom crop interface
-        cleanup_custom_crop_interface()
-        
         # Find the cropped volume
         volume_node = find_working_volume()
         if not volume_node:
@@ -14950,12 +14999,110 @@ def continue_workflow_after_custom_crop():
             # Show segmentation in 3D and load into segment editor (same as original)
             show_segmentation_in_3d(segmentation_node)
             load_into_segment_editor(segmentation_node, volume_node)
+            
+            # Update the custom crop interface to show it's ready for scissors/continue
+            update_crop_interface_for_segmentation_phase()
+            
             print("✅ Workflow continued successfully after custom crop")
+            print("✅ Crop tools interface still available for scissors tool and workflow continuation")
         else:
             print("❌ Failed to create segmentation after custom crop")
             
     except Exception as e:
         print(f"❌ Error continuing workflow after custom crop: {e}")
+
+
+def update_crop_interface_for_segmentation_phase():
+    """
+    Update the custom crop interface for the segmentation phase.
+    Disable the crop button and highlight the scissors and continue tools.
+    """
+    try:
+        if not hasattr(slicer.modules, 'CustomCropWidget'):
+            return
+            
+        crop_widget = slicer.modules.CustomCropWidget
+        if not crop_widget:
+            return
+            
+        # Update the crop button to show it's completed
+        if hasattr(slicer.modules, 'CustomCropButton'):
+            crop_button = slicer.modules.CustomCropButton
+            if crop_button:
+                crop_button.setText("✓ VOLUME CROPPED")
+                crop_button.setEnabled(False)
+                crop_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #95a5a6; 
+                        color: white; 
+                        border: none; 
+                        padding: 12px; 
+                        font-weight: bold;
+                        border-radius: 6px;
+                        font-size: 13px;
+                        min-height: 45px;
+                        margin: 5px;
+                    }
+                """)
+        
+        # Highlight the scissors button to show it's the next step
+        if hasattr(slicer.modules, 'CustomScissorsButton'):
+            scissors_button = slicer.modules.CustomScissorsButton
+            if scissors_button:
+                scissors_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #e74c3c; 
+                        color: white; 
+                        border: 3px solid #f39c12;
+                        padding: 10px; 
+                        font-weight: bold;
+                        border-radius: 6px;
+                        font-size: 12px;
+                        min-height: 40px;
+                        margin: 5px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #c0392b; 
+                        border: 3px solid #e67e22;
+                    }
+                    QPushButton:pressed { 
+                        background-color: #a93226; 
+                    }
+                """)
+        
+        # Highlight the continue button as well
+        if hasattr(slicer.modules, 'CustomContinueButton'):
+            continue_button = slicer.modules.CustomContinueButton
+            if continue_button:
+                continue_button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #27ae60; 
+                        color: white; 
+                        border: 3px solid #f39c12;
+                        padding: 12px; 
+                        font-weight: bold;
+                        border-radius: 6px;
+                        font-size: 13px;
+                        min-height: 45px;
+                        margin: 5px;
+                    }
+                    QPushButton:hover { 
+                        background-color: #229954; 
+                        border: 3px solid #e67e22;
+                    }
+                    QPushButton:pressed { 
+                        background-color: #1e8449; 
+                    }
+                """)
+        
+        # Ensure the widget is visible and on top
+        crop_widget.show()
+        crop_widget.raise_()
+        
+        print("✅ Crop interface updated for segmentation phase")
+        
+    except Exception as e:
+        print(f"❌ Error updating crop interface for segmentation phase: {e}")
 
 
 def ensure_crop_roi_exists():
