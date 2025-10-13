@@ -145,6 +145,24 @@ try:
     create_contrast_mask = getattr(workflow_moduals, 'create_contrast_mask', None)
     create_analysis_masks_manually = getattr(workflow_moduals, 'create_analysis_masks_manually', None)
     
+    # Restart cropping workflow functions
+    test_restart_cropping_with_preservation = getattr(workflow_moduals, 'test_restart_cropping_with_preservation', None)
+    show_restart_cropping_help = getattr(workflow_moduals, 'show_restart_cropping_help', None)
+    store_existing_centerlines = getattr(workflow_moduals, 'store_existing_centerlines', None)
+    clear_workflow_for_cropping_restart = getattr(workflow_moduals, 'clear_workflow_for_cropping_restart', None)
+    restart_cropping_preserving_centerlines = getattr(workflow_moduals, 'restart_cropping_preserving_centerlines', None)
+    
+    # Module reset functions
+    reset_crop_module_to_default = getattr(workflow_moduals, 'reset_crop_module_to_default', None)
+    reset_all_workflow_modules = getattr(workflow_moduals, 'reset_all_workflow_modules', None)
+    cleanup_crop_module_custom_elements = getattr(workflow_moduals, 'cleanup_crop_module_custom_elements', None)
+    restore_all_crop_ui_elements = getattr(workflow_moduals, 'restore_all_crop_ui_elements', None)
+    remove_custom_crop_buttons = getattr(workflow_moduals, 'remove_custom_crop_buttons', None)
+    test_crop_module_reset = getattr(workflow_moduals, 'test_crop_module_reset', None)
+    test_full_workflow_reset = getattr(workflow_moduals, 'test_full_workflow_reset', None)
+    restart_cropping_simple = getattr(workflow_moduals, 'restart_cropping_simple', None)
+    manual_restart_cropping_help = getattr(workflow_moduals, 'manual_restart_cropping_help', None)
+    
     print("Workflow test functions loaded successfully from workflow_moduals")
 
 except ImportError as e:
@@ -206,6 +224,20 @@ except ImportError as e:
     create_soft_tissue_mask = _unavailable_function('create_soft_tissue_mask')
     create_contrast_mask = _unavailable_function('create_contrast_mask')
     create_analysis_masks_manually = _unavailable_function('create_analysis_masks_manually')
+    test_restart_cropping_with_preservation = _unavailable_function('test_restart_cropping_with_preservation')
+    show_restart_cropping_help = _unavailable_function('show_restart_cropping_help')
+    store_existing_centerlines = _unavailable_function('store_existing_centerlines')
+    clear_workflow_for_cropping_restart = _unavailable_function('clear_workflow_for_cropping_restart')
+    restart_cropping_preserving_centerlines = _unavailable_function('restart_cropping_preserving_centerlines')
+    reset_crop_module_to_default = _unavailable_function('reset_crop_module_to_default')
+    reset_all_workflow_modules = _unavailable_function('reset_all_workflow_modules')
+    cleanup_crop_module_custom_elements = _unavailable_function('cleanup_crop_module_custom_elements')
+    restore_all_crop_ui_elements = _unavailable_function('restore_all_crop_ui_elements')
+    remove_custom_crop_buttons = _unavailable_function('remove_custom_crop_buttons')
+    test_crop_module_reset = _unavailable_function('test_crop_module_reset')
+    test_full_workflow_reset = _unavailable_function('test_full_workflow_reset')
+    restart_cropping_simple = _unavailable_function('restart_cropping_simple')
+    manual_restart_cropping_help = _unavailable_function('manual_restart_cropping_help')
 
 def list_available_functions():
     """List all available test functions with their descriptions."""
@@ -270,6 +302,24 @@ MASK CREATION TESTS:
 • create_soft_tissue_mask() - Create a soft tissue density mask
 • create_contrast_mask() - Create a contrast-enhanced tissue mask
 • create_analysis_masks_manually() - Manually create analysis masks
+
+RESTART CROPPING WORKFLOW:
+• test_restart_cropping_with_preservation() - Restart cropping while preserving existing centerlines
+• show_restart_cropping_help() - Display help for restart cropping functionality
+• store_existing_centerlines() - Store centerlines before workflow restart
+• clear_workflow_for_cropping_restart() - Clear workflow data while preserving centerlines
+• restart_cropping_preserving_centerlines() - Restart cropping workflow with preservation
+
+MODULE RESET FUNCTIONS:
+• reset_crop_module_to_default() - Reset Crop Volume module to original default state
+• reset_all_workflow_modules() - Reset all workflow modules to default states
+• cleanup_crop_module_custom_elements() - Remove custom elements from Crop module
+• restore_all_crop_ui_elements() - Restore all UI elements to visible state
+• remove_custom_crop_buttons() - Remove custom buttons added during workflow
+• test_crop_module_reset() - Test function to quickly reset Crop module
+• test_full_workflow_reset() - Test function to reset all workflow modules
+• restart_cropping_simple() - Simple restart cropping without preservation (safer)
+• manual_restart_cropping_help() - Show manual restart steps if auto-restart fails
 
 USAGE EXAMPLES:
 >>> import workflow_test_functions as test
