@@ -119,15 +119,14 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 self.dataProbeHideTimer.start(2000)  # Check every 2 seconds
             
         except Exception as e:
-            print(f"Warning: Could not set up data probe auto-hide: {str(e)}")
+            pass
 
     def hideDataProbe(self) -> None:
         """Hide the data probe."""
         try:
             slicer.util.setDataProbeVisible(False)
         except Exception as e:
-            print(f"Warning: Could not hide data probe: {str(e)}")
-
+            pass
     def hideLogo(self) -> None:
         """Hide the Slicer logo."""
         try:
@@ -135,7 +134,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if logoLabel:
                 logoLabel.visible = False
         except Exception as e:
-            print(f"Warning: Could not hide logo: {str(e)}")
+           pass
 
     def hideHelpAndAcknowledgments(self) -> None:
         """Hide the Help and Acknowledgments section from all modules."""
@@ -171,7 +170,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     pass
                     
         except Exception as e:
-            print(f"Warning: Could not hide help and acknowledgments: {str(e)}")
+            pass
 
     def hideStatusBar(self) -> None:
         """Hide the status bar at the bottom of the screen."""
@@ -184,7 +183,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     statusBar.hide()
         except Exception as e:
             # If hiding status bar fails, log it but don't break the workflow
-            print(f"Warning: Could not hide status bar: {str(e)}")
+            pass
 
     def showStatusBar(self) -> None:
         """Show the status bar at the bottom of the screen."""
@@ -197,7 +196,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     statusBar.show()
         except Exception as e:
             # If showing status bar fails, log it but don't break the workflow
-            print(f"Warning: Could not show status bar: {str(e)}")
+            pass
 
     def setDarkBackground(self) -> None:
         """Set the 3D view background to dark/black."""
@@ -207,7 +206,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             workflow_mod.set_3d_view_background_black()
         except Exception as e:
             # If setting dark background fails, log it but don't break the workflow
-            print(f"Warning: Could not set dark background: {str(e)}")
+            pass
 
     def enter(self) -> None:
         """Called each time the user opens this module."""

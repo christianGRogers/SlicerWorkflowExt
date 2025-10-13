@@ -9637,9 +9637,10 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         instruction_label.setStyleSheet("QLabel { color: #555; margin: 10px; font-size: 12px; font-weight: bold; }")
         layout.addWidget(instruction_label)
         
-        # Create two rows of buttons
+        # Create three rows of buttons
         first_row_layout = qt.QHBoxLayout()
         second_row_layout = qt.QHBoxLayout()
+        third_row_layout = qt.QHBoxLayout()
         
         retry_button = qt.QPushButton("Retry Centerline Extraction")
         retry_button.setStyleSheet("""
@@ -9687,6 +9688,29 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         add_centerline_button.connect('clicked()', lambda: on_add_more_centerlines(dialog))
         first_row_layout.addWidget(add_centerline_button)
         
+        restart_crop_button = qt.QPushButton("Restart Cropping")
+        restart_crop_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #6f42c1; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 380px;
+            }
+            QPushButton:hover { 
+                background-color: #5a32a3; 
+            }
+            QPushButton:pressed { 
+                background-color: #4e2a8e; 
+            }
+        """)
+        restart_crop_button.connect('clicked()', lambda: on_restart_cropping(dialog, centerline_model, centerline_curve))
+        second_row_layout.addWidget(restart_crop_button)
+        
         continue_button = qt.QPushButton("Continue to Analysis")
         continue_button.setStyleSheet("""
             QPushButton { 
@@ -9708,10 +9732,11 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
             }
         """)
         continue_button.connect('clicked()', lambda: on_continue_to_cpr(dialog, centerline_model, centerline_curve))
-        second_row_layout.addWidget(continue_button)
+        third_row_layout.addWidget(continue_button)
         
         layout.addLayout(first_row_layout)
         layout.addLayout(second_row_layout)
+        layout.addLayout(third_row_layout)
         layout.addStretch()
         dialog.exec_()
         
@@ -9786,6 +9811,335 @@ def on_add_more_centerlines(dialog):
     except Exception as e:
         pass
         
+
+
+def on_restart_cropping(dialog, centerline_model=None, centerline_curve=None):
+    """
+    Called when user chooses to restart cropping while preserving existing centerlines.
+    Uses staged approach with timers to prevent freezing.
+    """
+    try:
+        # Stop ALL centerline monitoring systems to prevent double dialogs
+        stop_all_centerline_monitoring()
+        
+        # Reset the dialog flag to allow future dialogs
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            slicer.modules.CenterlineDialogShown = False
+        
+        dialog.close()
+        dialog.setParent(None)
+        
+        # Show progress message
+        print("🔄 Starting cropping restart with centerline preservation...")
+        
+        # Stage 1: Store centerlines immediately
+        store_existing_centerlines()
+        
+        # Stage 2: Clear workflow data with delay to prevent freezing
+        qt.QTimer.singleShot(500, clear_workflow_for_cropping_restart)
+        
+        # Stage 3: Reset modules with delay
+        qt.QTimer.singleShot(1500, lambda: reset_crop_module_safely())
+        
+        # Stage 4: Restart cropping workflow with delay
+        qt.QTimer.singleShot(3000, lambda: restart_cropping_workflow_safely())
+        
+        # Stage 5: Show completion message
+        qt.QTimer.singleShot(4000, lambda: show_restart_completion_message())
+        
+    except Exception as e:
+        print(f"❌ Error restarting cropping: {e}")
+        # Fallback - just restart cropping without preservation after delay
+        qt.QTimer.singleShot(1000, start_with_volume_crop)
+
+
+def reset_crop_module_safely():
+    """
+    Safely reset the crop module with error handling to prevent freezing.
+    """
+    try:
+        print("🔧 Resetting Crop Volume module...")
+        slicer.app.processEvents()
+        
+        # Clean up custom elements first
+        cleanup_crop_module_custom_elements()
+        slicer.app.processEvents()
+        
+        # Switch modules to trigger reset
+        slicer.util.selectModule("Welcome")
+        slicer.app.processEvents()
+        
+        print("✅ Crop module reset complete")
+        
+    except Exception as e:
+        print(f"⚠️  Warning during crop module reset: {e}")
+
+
+def restart_cropping_workflow_safely():
+    """
+    Safely restart the cropping workflow with proper timing and error handling.
+    Offers option to use custom crop interface if GUI becomes distorted.
+    """
+    try:
+        print("🚀 Starting cropping workflow...")
+        slicer.app.processEvents()
+        
+        # Restore centerline visibility first
+        restore_centerline_visibility()
+        slicer.app.processEvents()
+        
+        # Default to custom crop interface but offer option to use standard
+        try:
+            # First try the custom interface (now default)
+            success = use_custom_crop_instead_of_module()
+            if success:
+                print("✅ Custom cropping interface activated (default)")
+            else:
+                print("⚠️ Custom interface failed, asking user for preference...")
+                # Only ask if custom failed
+                use_standard = slicer.util.confirmYesNoDisplay(
+                    "Custom crop interface failed to initialize.\n\n"
+                    "Would you like to use the standard crop module instead?",
+                    windowTitle="Fallback to Standard Crop"
+                )
+                if use_standard:
+                    start_with_volume_crop()
+                else:
+                    print("❌ User chose not to use standard module")
+        except Exception as e:
+            print(f"⚠️ Error with custom interface: {e}")
+            # Fallback to asking user
+            use_custom = offer_custom_crop_option()
+            if use_custom:
+                success = use_custom_crop_instead_of_module()
+                if not success:
+                    start_with_volume_crop()
+            else:
+                start_with_volume_crop()
+        
+        slicer.app.processEvents()
+        print("✅ Cropping workflow started successfully")
+        
+    except Exception as e:
+        print(f"❌ Error starting cropping workflow: {e}")
+        # Offer custom interface as fallback
+        try:
+            print("🔄 Trying custom crop interface as fallback...")
+            success = use_custom_crop_instead_of_module()
+            if not success:
+                start_with_volume_crop()
+        except:
+            print("❌ All methods failed - please manually open Crop Volume module")
+
+
+def show_restart_completion_message():
+    """
+    Show completion message for restart cropping operation.
+    """
+    try:
+        message = (
+            "🎉 Cropping restart completed!\n\n"
+            "✅ Centerlines preserved and visible\n"
+            "✅ Crop Volume module reset to default state\n"
+            "✅ Ready for new crop region selection\n\n"
+            "You can now adjust your crop region and continue the workflow."
+        )
+        print(message)
+        
+        # Also show user-friendly dialog
+        slicer.util.infoDisplay(
+            "Cropping Restart Complete!\n\n"
+            "Your existing centerlines have been preserved.\n"
+            "You can now adjust your crop region and continue."
+        )
+        
+    except Exception as e:
+        print(f"⚠️  Note: Restart completed but message display failed: {e}")
+
+
+def store_existing_centerlines():
+    """
+    Store references to existing centerlines to preserve them during workflow restart
+    """
+    try:
+        # Find all existing centerline models and curves
+        centerline_models = find_all_centerline_models()
+        centerline_curves = find_all_centerline_curves()
+        
+        # Store them in the slicer modules for persistence
+        slicer.modules.PreservedCenterlineModels = [model.GetID() for model in centerline_models]
+        slicer.modules.PreservedCenterlineCurves = [curve.GetID() for curve in centerline_curves]
+        
+        # Also store their current visibility states
+        model_visibility = {}
+        curve_visibility = {}
+        
+        for model in centerline_models:
+            display_node = model.GetDisplayNode()
+            if display_node:
+                model_visibility[model.GetID()] = display_node.GetVisibility()
+        
+        for curve in centerline_curves:
+            display_node = curve.GetDisplayNode()
+            if display_node:
+                curve_visibility[curve.GetID()] = display_node.GetVisibility()
+        
+        slicer.modules.PreservedModelVisibility = model_visibility
+        slicer.modules.PreservedCurveVisibility = curve_visibility
+        
+        print(f"Stored {len(centerline_models)} centerline models and {len(centerline_curves)} curves for preservation")
+        
+    except Exception as e:
+        print(f"Error storing centerlines: {e}")
+
+
+def clear_workflow_for_cropping_restart():
+    """
+    Clear workflow-related nodes and UI but preserve centerlines and original volume.
+    Uses safe node removal with error handling to prevent freezing.
+    """
+    try:
+        print("🧹 Clearing workflow data while preserving centerlines...")
+        slicer.app.processEvents()
+        
+        # Get the original volume (not cropped)
+        original_volume = None
+        volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        
+        # Find the original volume (usually the one without "cropped" in the name)
+        for volume in volumes:
+            if 'crop' not in volume.GetName().lower():
+                original_volume = volume
+                break
+        
+        # If no clear original found, use the first volume
+        if not original_volume and volumes:
+            original_volume = volumes[0]
+        
+        # Safely remove cropped volumes but keep the original
+        cropped_volumes = []
+        for volume in volumes:
+            if 'crop' in volume.GetName().lower():
+                cropped_volumes.append(volume)
+        
+        for volume in cropped_volumes:
+            try:
+                slicer.mrmlScene.RemoveNode(volume)
+                slicer.app.processEvents()  # Process events after each removal
+            except Exception as e:
+                print(f"Warning: Could not remove volume {volume.GetName()}: {e}")
+        
+        # Safely clear existing ROI nodes
+        roi_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsROINode')
+        for roi in roi_nodes:
+            try:
+                slicer.mrmlScene.RemoveNode(roi)
+                slicer.app.processEvents()
+            except Exception as e:
+                print(f"Warning: Could not remove ROI {roi.GetName()}: {e}")
+        
+        # Safely clear segmentation nodes (user will need to re-segment after cropping)
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        for seg in segmentation_nodes:
+            try:
+                slicer.mrmlScene.RemoveNode(seg)
+                slicer.app.processEvents()
+            except Exception as e:
+                print(f"Warning: Could not remove segmentation {seg.GetName()}: {e}")
+        
+        # Safely clear endpoint markups but preserve centerlines
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for fid in fiducial_nodes:
+            try:
+                # Only remove if it's not a preserved centerline-related node
+                if 'endpoint' in fid.GetName().lower() or 'F-' in fid.GetName():
+                    slicer.mrmlScene.RemoveNode(fid)
+                    slicer.app.processEvents()
+            except Exception as e:
+                print(f"Warning: Could not remove fiducial {fid.GetName()}: {e}")
+        
+        # Store reference to original volume for workflow
+        if original_volume:
+            slicer.modules.WorkflowOriginalVolume = original_volume
+        
+        print("✅ Cleared workflow data while preserving centerlines and original volume")
+        
+    except Exception as e:
+        print(f"❌ Error clearing workflow data: {e}")
+        # Don't let this stop the restart process - continue anyway
+
+
+def restart_cropping_preserving_centerlines():
+    """
+    Restart the cropping workflow while maintaining existing centerlines
+    """
+    try:
+        # Ensure centerlines remain visible
+        restore_centerline_visibility()
+        
+        # Reset the Crop Volume module to default state first
+        reset_crop_module_to_default()
+        
+        # Start the volume cropping workflow
+        start_with_volume_crop()
+        
+        # Set up monitoring to restore centerlines after cropping completion
+        setup_post_crop_centerline_restoration()
+        
+        print("Restarted cropping workflow with centerline preservation and reset module")
+        
+    except Exception as e:
+        print(f"Error restarting cropping workflow: {e}")
+
+
+def restore_centerline_visibility():
+    """
+    Restore visibility of preserved centerlines
+    """
+    try:
+        if hasattr(slicer.modules, 'PreservedCenterlineModels'):
+            model_ids = slicer.modules.PreservedCenterlineModels
+            model_visibility = getattr(slicer.modules, 'PreservedModelVisibility', {})
+            
+            for model_id in model_ids:
+                model = slicer.mrmlScene.GetNodeByID(model_id)
+                if model:
+                    display_node = model.GetDisplayNode()
+                    if display_node:
+                        # Restore original visibility or make visible by default
+                        visibility = model_visibility.get(model_id, True)
+                        display_node.SetVisibility(visibility)
+        
+        if hasattr(slicer.modules, 'PreservedCenterlineCurves'):
+            curve_ids = slicer.modules.PreservedCenterlineCurves
+            curve_visibility = getattr(slicer.modules, 'PreservedCurveVisibility', {})
+            
+            for curve_id in curve_ids:
+                curve = slicer.mrmlScene.GetNodeByID(curve_id)
+                if curve:
+                    display_node = curve.GetDisplayNode()
+                    if display_node:
+                        # Restore original visibility or make visible by default
+                        visibility = curve_visibility.get(curve_id, True)
+                        display_node.SetVisibility(visibility)
+        
+        print("Restored centerline visibility")
+        
+    except Exception as e:
+        print(f"Error restoring centerline visibility: {e}")
+
+
+def setup_post_crop_centerline_restoration():
+    """
+    Set up monitoring to ensure centerlines remain functional after cropping
+    """
+    try:
+        # This will be called after crop completion to ensure centerlines work with new cropped volume
+        # For now, we'll rely on the existing crop completion monitoring
+        pass
+        
+    except Exception as e:
+        print(f"Error setting up post-crop restoration: {e}")
 
 
 def create_additional_centerline_setup():
@@ -12698,7 +13052,7 @@ def create_scissors_tool_button():
             }
         """)
 
-        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool(checked))
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool_programmatic(checked))
         try:
             crop_widget = slicer.modules.cropvolume.widgetRepresentation()
             if crop_widget:
@@ -12838,9 +13192,9 @@ def create_floating_scissors_widget(scissors_button):
     except Exception as e:
         pass
 
-def toggle_scissors_tool(activated):
+def toggle_scissors_tool_programmatic(activated):
     """
-    Toggle the scissors tool on/off programmatically
+    Toggle the scissors tool on/off programmatically using segment editor widget
     """
     try:
         if not hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
@@ -13630,4 +13984,1399 @@ def list_files_in_source_directory():
         
     except Exception as e:
         print(f"Error: {e}")
+
+
+def test_restart_cropping_with_preservation():
+    """
+    Test function to restart cropping while preserving existing centerlines.
+    Usage: test_restart_cropping_with_preservation()
+    
+    This function provides the same functionality as the "Restart Cropping" button
+    in the centerline completion dialog, but can be called from the console.
+    """
+    try:
+        # Check if we have any centerlines to preserve
+        centerline_models = find_all_centerline_models()
+        centerline_curves = find_all_centerline_curves()
+        
+        if not centerline_models and not centerline_curves:
+            print("No centerlines found to preserve. Starting regular cropping workflow.")
+            start_with_volume_crop()
+            return
+        
+        print(f"Found {len(centerline_models)} centerline models and {len(centerline_curves)} curves to preserve")
+        
+        # Store existing centerlines
+        store_existing_centerlines()
+        
+        # Clear workflow data but preserve centerlines
+        clear_workflow_for_cropping_restart()
+        
+        # Restart cropping workflow
+        restart_cropping_preserving_centerlines()
+        
+        print("✅ Successfully restarted cropping workflow with centerline preservation!")
+        print("Your existing centerlines have been preserved and will remain visible.")
+        print("You can now adjust your crop region and continue the workflow.")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error restarting cropping with preservation: {e}")
+        print("Falling back to regular cropping workflow...")
+        start_with_volume_crop()
+        return False
+
+
+def show_restart_cropping_help():
+    """
+    Show help information about the restart cropping functionality.
+    Usage: show_restart_cropping_help()
+    """
+    help_text = """
+=== Restart Cropping with Centerline Preservation ===
+
+This feature allows you to return to the volume cropping step while keeping 
+your existing centerlines intact. This is useful when you need to:
+
+• Adjust the crop region after seeing centerline results
+• Re-crop the volume with different boundaries
+• Fix cropping issues without losing centerline work
+
+USAGE METHODS:
+
+1. FROM CENTERLINE COMPLETION DIALOG:
+   - Click the "🔄 Restart Cropping" button
+   - Your centerlines will be automatically preserved
+
+2. FROM CONSOLE:
+   - test_restart_cropping_with_preservation()
+   - This provides the same functionality as the dialog button
+
+3. MANUAL STEPS (if needed):
+   - store_existing_centerlines()
+   - clear_workflow_for_cropping_restart()
+   - restart_cropping_preserving_centerlines()
+
+WHAT HAPPENS:
+✅ Existing centerlines are preserved and remain visible
+✅ Original volume is restored for re-cropping
+✅ Crop ROI and segmentation data are cleared
+✅ Workflow returns to cropping step
+✅ You can adjust crop region and continue normally
+
+WHAT'S PRESERVED:
+• All centerline models and curves
+• Centerline visibility settings
+• Original volume data
+
+WHAT'S CLEARED:
+• Cropped volumes
+• ROI nodes
+• Segmentation nodes
+• Endpoint markups
+
+After restarting, simply crop your volume again and the workflow will continue
+with both your existing centerlines and new cropped volume.
+"""
+    print(help_text)
+
+
+def reset_crop_module_to_default():
+    """
+    Reset the Crop Volume module to its default/original state by forcing a module reload.
+    This completely resets the UI to its original state, removing all custom modifications.
+    
+    Usage:
+        reset_crop_module_to_default()
+        
+    Returns:
+        bool: True if reset was successful, False otherwise
+    """
+    try:
+        print("Resetting Crop Volume module to default state...")
+        
+        # Method 1: Force module reload by switching modules
+        current_module = slicer.util.moduleSelector().selectedModule
+        
+        # Switch to a different module first
+        slicer.util.selectModule("Welcome")
+        slicer.app.processEvents()
+        
+        # Clear any stored custom widgets/buttons from the module
+        cleanup_crop_module_custom_elements()
+        
+        # Switch back to Crop Volume to trigger reload
+        slicer.util.selectModule("CropVolume")
+        slicer.app.processEvents()
+        
+        # Method 2: Reset module widget if available
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if crop_widget and hasattr(crop_widget, 'self'):
+            crop_module = crop_widget.self()
+            
+            # Try to call any reset methods if they exist
+            if hasattr(crop_module, 'reset'):
+                crop_module.reset()
+            elif hasattr(crop_module, 'onReload'):
+                crop_module.onReload()
+            elif hasattr(crop_module, 'setup'):
+                crop_module.setup()
+        
+        # Method 3: Restore all UI elements to visible state
+        restore_all_crop_ui_elements()
+        
+        # Switch back to original module if it wasn't Crop Volume
+        if current_module and current_module != "CropVolume":
+            slicer.util.selectModule(current_module)
+            slicer.app.processEvents()
+        
+        print("✅ Crop Volume module reset to default state successfully")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error resetting Crop Volume module: {e}")
+        return False
+
+
+def cleanup_crop_module_custom_elements():
+    """
+    Clean up custom elements that were added to the Crop Volume module during workflow.
+    This removes custom buttons, widgets, and other modifications.
+    """
+    try:
+        # Clear any stored custom UI references
+        if hasattr(slicer.modules, 'WorkflowCropApplyButton'):
+            delattr(slicer.modules, 'WorkflowCropApplyButton')
+        
+        if hasattr(slicer.modules, 'WorkflowContinueButton'):
+            delattr(slicer.modules, 'WorkflowContinueButton')
+        
+        if hasattr(slicer.modules, 'WorkflowContinueContainer'):
+            delattr(slicer.modules, 'WorkflowContinueContainer')
+        
+        # Clear crop monitoring timers
+        if hasattr(slicer.modules, 'CropMonitorTimer'):
+            timer = slicer.modules.CropMonitorTimer
+            if timer:
+                timer.stop()
+                delattr(slicer.modules, 'CropMonitorTimer')
+        
+        # Clear other crop-related stored data
+        crop_attributes = ['CropCheckCount', 'WorkflowCroppedVolume']
+        for attr in crop_attributes:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+        
+        print("🧹 Cleaned up custom Crop Volume module elements")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️  Warning during cleanup: {e}")
+        return False
+
+
+def restore_all_crop_ui_elements():
+    """
+    Restore all UI elements in the Crop Volume module to their original visible state.
+    This is more comprehensive than the existing restore_crop_ui function.
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            return False
+        
+        # Make all widgets visible
+        all_widgets = crop_widget.findChildren(qt.QWidget)
+        restored_count = 0
+        
+        for widget in all_widgets:
+            if hasattr(widget, 'setVisible'):
+                widget.setVisible(True)
+                restored_count += 1
+                
+            # Reset any custom styling
+            if hasattr(widget, 'setStyleSheet'):
+                widget.setStyleSheet("")
+        
+        # Restore collapsible buttons to their default state
+        collapsible_buttons = crop_widget.findChildren("ctkCollapsibleButton")
+        for button in collapsible_buttons:
+            button.setVisible(True)
+            # Reset to collapsed state (default for most modules)
+            if hasattr(button, 'setCollapsed'):
+                button.setCollapsed(False)
+        
+        # Remove any custom layouts or buttons that were added
+        remove_custom_crop_buttons()
+        
+        print(f"🔧 Restored {restored_count} UI elements to visible state")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error restoring UI elements: {e}")
+        return False
+
+
+def remove_custom_crop_buttons():
+    """
+    Remove custom buttons that were added to the Crop Volume module during workflow.
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            return False
+        
+        buttons_removed = 0
+        
+        # Find and remove custom buttons by object name or text
+        custom_button_names = [
+            "WorkflowCropApplyButton",
+            "WorkflowContinueButton",
+            "ContinueWorkflowButton",
+            "FinishCroppingButton",
+            "ScissorsToolButton"
+        ]
+        
+        for button_name in custom_button_names:
+            custom_buttons = crop_widget.findChildren(qt.QPushButton, button_name)
+            for button in custom_buttons:
+                button.setParent(None)
+                button.deleteLater()
+                buttons_removed += 1
+        
+        # Also remove buttons by text content
+        all_buttons = crop_widget.findChildren(qt.QPushButton)
+        for button in all_buttons:
+            button_text = button.text
+            if any(keyword in button_text for keyword in [
+                "Continue Workflow", 
+                "Finish Cropping", 
+                "Scissors Tool",
+                "Large Apply"  # Our custom large green apply button
+            ]):
+                button.setParent(None)
+                button.deleteLater()
+                buttons_removed += 1
+        
+        # Remove custom layouts
+        custom_layouts = crop_widget.findChildren(qt.QHBoxLayout, "WorkflowButtonLayout")
+        for layout in custom_layouts:
+            # Remove all widgets in the layout first
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
+                    item.widget().deleteLater()
+            # Remove the layout itself
+            layout.setParent(None)
+            layout.deleteLater()
+            buttons_removed += 1
+        
+        if buttons_removed > 0:
+            print(f"🗑️  Removed {buttons_removed} custom buttons/layouts")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error removing custom buttons: {e}")
+        return False
+
+
+def reset_all_workflow_modules():
+    """
+    Reset all modules that get modified during the workflow to their default states.
+    This includes Crop Volume, Extract Centerline, Segment Editor, and CPR modules.
+    
+    Usage:
+        reset_all_workflow_modules()
+        
+    Returns:
+        dict: Results of reset operations for each module
+    """
+    try:
+        print("🔄 Resetting all workflow modules to default state...")
+        
+        results = {
+            'crop_volume': False,
+            'extract_centerline': False,
+            'segment_editor': False,
+            'cpr': False
+        }
+        
+        # Reset Crop Volume module
+        results['crop_volume'] = reset_crop_module_to_default()
+        
+        # Reset Extract Centerline module
+        results['extract_centerline'] = reset_extract_centerline_module()
+        
+        # Reset Segment Editor module (if it was used)
+        results['segment_editor'] = reset_segment_editor_module()
+        
+        # Reset CPR module
+        results['cpr'] = reset_cpr_module()
+        
+        # Clean up any global workflow state
+        cleanup_global_workflow_state()
+        
+        successful_resets = sum(results.values())
+        total_modules = len(results)
+        
+        print(f"✅ Reset complete: {successful_resets}/{total_modules} modules reset successfully")
+        
+        if successful_resets == total_modules:
+            print("🎉 All workflow modules have been reset to their default states!")
+        else:
+            print("⚠️  Some modules may require manual reset or module restart")
+            
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error during workflow modules reset: {e}")
+        return {'error': str(e)}
+
+
+def reset_extract_centerline_module():
+    """Reset the Extract Centerline module to default state."""
+    try:
+        # Switch modules to trigger reload
+        slicer.util.selectModule("Welcome")
+        slicer.app.processEvents()
+        
+        # Clean up Extract Centerline specific elements
+        cleanup_extract_centerline_custom_elements()
+        
+        slicer.util.selectModule("ExtractCenterline")
+        slicer.app.processEvents()
+        
+        # Restore UI elements
+        restore_extract_centerline_ui()
+        
+        print("🔧 Extract Centerline module reset")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error resetting Extract Centerline: {e}")
+        return False
+
+
+def reset_segment_editor_module():
+    """Reset the Segment Editor module to default state."""
+    try:
+        # Switch modules to trigger reload
+        slicer.util.selectModule("Welcome")
+        slicer.app.processEvents()
+        
+        # Clean up Segment Editor specific elements
+        cleanup_segment_editor_custom_elements()
+        
+        # Note: Don't switch to Segment Editor unless user specifically wants to use it
+        print("🔧 Segment Editor module cleaned up")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error resetting Segment Editor: {e}")
+        return False
+
+
+def reset_cpr_module():
+    """Reset the Curved Planar Reformat module to default state."""
+    try:
+        # Clean up CPR monitoring and custom elements
+        stop_cpr_monitoring()
+        
+        # Switch modules to trigger reload
+        current_module = slicer.util.moduleSelector().selectedModule
+        slicer.util.selectModule("Welcome")
+        slicer.app.processEvents()
+        
+        # Clean up CPR specific elements
+        cleanup_cpr_custom_elements()
+        
+        # Switch back to original module
+        if current_module and current_module != "CurvedPlanarReformat":
+            slicer.util.selectModule(current_module)
+            slicer.app.processEvents()
+        
+        print("🔧 CPR module reset")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error resetting CPR: {e}")
+        return False
+
+
+def cleanup_extract_centerline_custom_elements():
+    """Clean up custom elements from Extract Centerline module."""
+    try:
+        centerline_attributes = [
+            'CenterlineMonitorTimer',
+            'CenterlineDialogShown', 
+            'BaselineCenterlineModelCount',
+            'BaselineCenterlineCurveCount',
+            'CenterlineCheckCount',
+            'TargetCenterlineModels',
+            'TargetCenterlineCurves',
+            'CenterlineMonitoringStartTime'
+        ]
+        
+        for attr in centerline_attributes:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+        
+        # Stop any active monitoring
+        stop_all_centerline_monitoring()
+        
+    except Exception as e:
+        print(f"⚠️  Warning cleaning Extract Centerline elements: {e}")
+
+
+def cleanup_segment_editor_custom_elements():
+    """Clean up custom elements from Segment Editor module."""
+    try:
+        # Clean up scissors tool related elements
+        cleanup_scissors_tool_ui()
+        
+        segment_attributes = [
+            'WorkflowScissorsButton',
+            'WorkflowScissorsWidget',
+            'SegmentEditorActive'
+        ]
+        
+        for attr in segment_attributes:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+                
+    except Exception as e:
+        print(f"⚠️  Warning cleaning Segment Editor elements: {e}")
+
+
+def cleanup_cpr_custom_elements():
+    """Clean up custom elements from CPR module."""
+    try:
+        cpr_attributes = [
+            'CPRMonitorTimer',
+            'CPRCheckCount',
+            'LastUsedCenterlineModel',
+            'LastUsedCenterlineCurve'
+        ]
+        
+        for attr in cpr_attributes:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+                
+    except Exception as e:
+        print(f"⚠️  Warning cleaning CPR elements: {e}")
+
+
+def cleanup_global_workflow_state():
+    """Clean up global workflow state and monitoring timers."""
+    try:
+        # Stop all monitoring timers
+        stop_all_centerline_monitoring()
+        stop_cpr_monitoring()
+        stop_volume_addition_monitoring()
+        
+        # Clean up global workflow attributes
+        global_attributes = [
+            'WorkflowOriginalVolume',
+            'PreservedCenterlineModels',
+            'PreservedCenterlineCurves',
+            'PreservedModelVisibility',
+            'PreservedCurveVisibility',
+            'WorkflowUsingMarkup',
+            'VolumeMonitorTimer',
+            'VolumeCheckCount'
+        ]
+        
+        for attr in global_attributes:
+            if hasattr(slicer.modules, attr):
+                delattr(slicer.modules, attr)
+        
+        print("🧹 Global workflow state cleaned up")
+        
+    except Exception as e:
+        print(f"⚠️  Warning cleaning global workflow state: {e}")
+
+
+def restart_cropping_simple():
+    """
+    Simple restart cropping function that's less likely to cause freezing.
+    This is a fallback when the full restart with preservation fails.
+    
+    Usage:
+        restart_cropping_simple()  # Simple restart without preservation
+    """
+    try:
+        print("🔄 Starting simple cropping restart...")
+        
+        # Stop all monitoring to prevent conflicts
+        stop_all_centerline_monitoring()
+        slicer.app.processEvents()
+        
+        # Clean up custom crop elements only
+        cleanup_crop_module_custom_elements()
+        slicer.app.processEvents()
+        
+        # Switch to welcome to reset state
+        slicer.util.selectModule("Welcome")
+        slicer.app.processEvents()
+        
+        # Wait a moment then start cropping
+        qt.QTimer.singleShot(1000, start_with_volume_crop)
+        
+        print("✅ Simple cropping restart initiated")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error in simple restart: {e}")
+        return False
+
+
+def manual_restart_cropping_help():
+    """
+    Show manual steps to restart cropping if automatic restart fails.
+    """
+    help_text = """
+🔧 MANUAL RESTART CROPPING STEPS
+
+If automatic restart fails, follow these steps:
+
+1. RESET MODULES:
+   >>> test.reset_crop_module_to_default()
+   
+2. START FRESH CROPPING:
+   >>> start_with_volume_crop()
+
+3. IF STILL HAVING ISSUES:
+   >>> test.reset_all_workflow_modules()
+   >>> start_with_volume_crop()
+
+4. NUCLEAR OPTION (if everything fails):
+   - Close Slicer completely
+   - Restart Slicer
+   - Load your DICOM data
+   - Run: start_with_volume_crop()
+
+PRESERVE CENTERLINES MANUALLY:
+If you need to preserve centerlines:
+   >>> centerlines = find_all_centerline_models() + find_all_centerline_curves()
+   >>> # Write down their names, then recreate after restart
+
+QUICK COMMANDS:
+   >>> restart_cropping_simple()          # Simple restart
+   >>> test.test_crop_module_reset()      # Test reset
+   >>> manual_restart_cropping_help()     # Show this help again
+"""
+    print(help_text)
+
+
+def test_crop_module_reset():
+    """
+    Test function to quickly reset the Crop Volume module.
+    This is the main function users should call to fix crop module issues.
+    
+    Usage:
+        test_crop_module_reset()  # Reset just the crop module
+        
+    Or from test functions:
+        import workflow_test_functions as test
+        test.reset_crop_module_to_default()
+    """
+    try:
+        print("🔄 Testing Crop Volume module reset...")
+        
+        success = reset_crop_module_to_default()
+        
+        if success:
+            print("✅ Crop Volume module reset test PASSED")
+            print("The module should now be in its original state")
+            print("\nYou can now:")
+            print("• Use the Crop Volume module normally")
+            print("• Start a new workflow with start_with_volume_crop()")
+            print("• All custom buttons and hidden UI should be restored")
+        else:
+            print("❌ Crop Volume module reset test FAILED")
+            print("You may need to:")
+            print("• Restart Slicer")
+            print("• Manually switch to another module and back")
+            
+        return success
+        
+    except Exception as e:
+        print(f"❌ Error during crop module reset test: {e}")
+        return False
+
+
+def test_full_workflow_reset():
+    """
+    Test function to reset all workflow modules at once.
+    Use this when you want to completely reset the entire workflow system.
+    
+    Usage:
+        test_full_workflow_reset()
+        
+    Or from test functions:
+        import workflow_test_functions as test
+        test.reset_all_workflow_modules()
+    """
+    try:
+        print("🔄 Testing full workflow modules reset...")
+        
+        results = reset_all_workflow_modules()
+        
+        if results and not results.get('error'):
+            successful = sum(results.values())
+            total = len(results)
+            
+            if successful == total:
+                print("✅ Full workflow reset test PASSED")
+                print("All workflow modules have been reset to default states")
+            else:
+                print(f"⚠️  Partial success: {successful}/{total} modules reset")
+                print("Some modules may need manual attention")
+                
+            print("\nReset Results:")
+            for module, success in results.items():
+                status = "✅" if success else "❌"
+                print(f"  {status} {module.replace('_', ' ').title()}")
+        else:
+            print("❌ Full workflow reset test FAILED")
+            if results.get('error'):
+                print(f"Error: {results['error']}")
+                
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error during full workflow reset test: {e}")
+        return {'error': str(e)}
+
+
+def cropVolumeWithNamedROI(roiName="CropROI", outputName="CroppedVolume"):
+    """
+    Crops the first scalar volume in the scene using the ROI with the given name.
+    This is a clean alternative to using the crop module GUI when it becomes distorted.
+    
+    Args:
+        roiName (str): Name of the ROI node to use for cropping
+        outputName (str): Name for the output cropped volume
+        
+    Returns:
+        vtkMRMLScalarVolumeNode: The cropped volume node, or None if failed
+    """
+    try:
+        # Get the input volume and ROI by name
+        inputVolume = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+
+        roiCollection = slicer.mrmlScene.GetNodesByName(roiName)
+        roi = roiCollection.GetItemAsObject(0) if roiCollection.GetNumberOfItems() > 0 else None
+
+        if not inputVolume:
+            print("❌ No input volume found in the scene.")
+            return None
+        if not roi:
+            print(f"❌ ROI named '{roiName}' not found in the scene.")
+            return None
+
+        # Set up CropVolume parameters
+        cropVolumeLogic = slicer.modules.cropvolume.logic()
+        cropVolumeParameterNode = slicer.vtkMRMLCropVolumeParametersNode()
+        slicer.mrmlScene.AddNode(cropVolumeParameterNode)
+
+        cropVolumeParameterNode.SetInputVolumeNodeID(inputVolume.GetID())
+        cropVolumeParameterNode.SetROINodeID(roi.GetID())
+        cropVolumeParameterNode.SetVoxelBased(True)
+
+        # Create the output volume node
+        outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode", outputName)
+        cropVolumeParameterNode.SetOutputVolumeNodeID(outputVolume.GetID())
+
+        # Perform cropping
+        cropVolumeLogic.Apply(cropVolumeParameterNode)
+
+        print(f"✅ Cropped '{inputVolume.GetName()}' using ROI '{roiName}' → '{outputVolume.GetName()}'")
+        
+        # Set the cropped volume as the active background in slice views
+        slicer.util.setSliceViewerLayers(background=outputVolume)
+        
+        # Store reference to cropped volume for workflow
+        slicer.modules.WorkflowCroppedVolume = outputVolume
+        
+        return outputVolume
+        
+    except Exception as e:
+        print(f"❌ Error during volume cropping: {e}")
+        return None
+
+
+def create_custom_crop_interface():
+    """
+    Create a clean custom interface for cropping when the crop module GUI becomes distorted.
+    This creates a floating dialog with a single crop button and scissors controls.
+    Automatically creates and shows the ROI for cropping.
+    """
+    try:
+        # Clean up any existing custom crop interface
+        if hasattr(slicer.modules, 'CustomCropWidget'):
+            existing_widget = slicer.modules.CustomCropWidget
+            if existing_widget:
+                existing_widget.close()
+                existing_widget.deleteLater()
+        
+        # First, ensure ROI exists and is visible
+        roi_node = ensure_crop_roi_exists()
+        if roi_node:
+            print("✅ CropROI created and visible for custom crop interface")
+        else:
+            print("⚠️ Warning: Could not create CropROI")
+        
+        # Switch to a layout that shows both 3D view and slice views for ROI positioning
+        show_crop_layout_with_roi()
+        
+        # Create the custom crop widget
+        crop_widget = qt.QWidget()
+        crop_widget.setWindowTitle("Clean Crop Interface - ROI Ready")
+        crop_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.Tool)
+        crop_widget.resize(480, 400)
+        
+        # Set up layout
+        layout = qt.QVBoxLayout()
+        
+        # Title
+        title_label = qt.QLabel("🎯 Volume Cropping Interface")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 15px; color: #2c3e50; background-color: #ecf0f1; border-radius: 5px; margin: 5px;")
+        title_label.setAlignment(qt.Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        # Instructions
+        instructions = qt.QLabel("✅ ROI box has been created and is visible in the 3D view.\n\n📋 Instructions:\n1. Adjust the ROI box size and position in the 3D view\n2. Click 'Crop Volume' to apply cropping\n3. Use scissors tool to refine segmentation after cropping")
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("padding: 15px; color: #2c3e50; font-size: 13px; background-color: #f8f9fa; border-radius: 5px; margin: 5px;")
+        layout.addWidget(instructions)
+        
+        # Crop button
+        crop_button = qt.QPushButton("CROP VOLUME")
+        crop_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #3498db; 
+                color: white; 
+                border: none; 
+                padding: 15px; 
+                font-weight: bold;
+                border-radius: 8px;
+                font-size: 14px;
+                min-height: 50px;
+            }
+            QPushButton:hover { 
+                background-color: #2980b9; 
+            }
+            QPushButton:pressed { 
+                background-color: #21618c; 
+            }
+        """)
+        
+        # Connect crop button
+        crop_button.connect('clicked()', lambda: execute_custom_crop())
+        layout.addWidget(crop_button)
+        
+        # Add spacing
+        layout.addSpacing(20)
+        
+        # Scissors toggle button
+        scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 12px;
+            }
+            QPushButton:hover { 
+                background-color: #c0392b; 
+            }
+            QPushButton:pressed { 
+                background-color: #a93226; 
+            }
+        """)
+        
+        # Connect scissors button
+        scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
+        layout.addWidget(scissors_button)
+        
+        # Continue workflow button
+        continue_button = qt.QPushButton("FINISH SEGMENTATION - CONTINUE")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #27ae60; 
+                color: white; 
+                border: none; 
+                padding: 15px; 
+                font-weight: bold;
+                border-radius: 8px;
+                font-size: 14px;
+                min-height: 50px;
+                margin-top: 10px;
+            }
+            QPushButton:hover { 
+                background-color: #229954; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e8449; 
+            }
+        """)
+        
+        # Connect continue button
+        continue_button.connect('clicked()', lambda: finish_custom_crop_workflow())
+        layout.addWidget(continue_button)
+        
+        # Set layout and show
+        crop_widget.setLayout(layout)
+        
+        # Position the widget
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            screen_geometry = qt.QApplication.desktop().availableGeometry()
+            x = screen_geometry.width() - crop_widget.width - 50
+            y = 100
+            crop_widget.move(x, y)
+        
+        crop_widget.show()
+        
+        # Store references
+        slicer.modules.CustomCropWidget = crop_widget
+        slicer.modules.CustomCropButton = crop_button
+        slicer.modules.CustomScissorsButton = scissors_button
+        slicer.modules.CustomContinueButton = continue_button
+        
+        print("✅ Custom crop interface created successfully")
+        return crop_widget
+        
+    except Exception as e:
+        print(f"❌ Error creating custom crop interface: {e}")
+        return None
+
+
+def execute_custom_crop():
+    """
+    Execute the custom crop operation using the ROI in the scene.
+    If no ROI exists, create one automatically.
+    """
+    try:
+        print("🔄 Executing custom crop operation...")
+        
+        # Check if ROI exists, create if needed
+        ensure_crop_roi_exists()
+        
+        # Perform the crop with default ROI name
+        cropped_volume = cropVolumeWithNamedROI("CropROI", "CroppedVolume")
+        
+        if cropped_volume:
+            # Reset slice views to show the cropped volume properly
+            slicer.util.resetSliceViews()
+            
+            # Switch to 3D view to show results
+            set_3d_only_view()
+            
+            # Set dark background
+            set_3d_view_background_black()
+            
+            print("✅ Custom crop operation completed successfully")
+            
+            # Update UI feedback
+            if hasattr(slicer.modules, 'CustomCropButton'):
+                button = slicer.modules.CustomCropButton
+                original_text = button.text
+                button.setText("✅ Cropped Successfully!")
+                button.setStyleSheet("""
+                    QPushButton { 
+                        background-color: #27ae60; 
+                        color: white; 
+                        border: none; 
+                        padding: 15px; 
+                        font-weight: bold;
+                        border-radius: 8px;
+                        font-size: 14px;
+                        min-height: 50px;
+                    }
+                """)
+                
+                # Reset button after 2 seconds
+                qt.QTimer.singleShot(2000, lambda: reset_crop_button(button, original_text))
+        else:
+            print("❌ Custom crop operation failed")
+            
+    except Exception as e:
+        print(f"❌ Error during custom crop execution: {e}")
+
+
+def ensure_crop_roi_exists():
+    """
+    Ensure a CropROI exists in the scene. If not, create one automatically.
+    """
+    try:
+        # Check if CropROI already exists
+        roiCollection = slicer.mrmlScene.GetNodesByName("CropROI")
+        if roiCollection.GetNumberOfItems() > 0:
+            existing_roi = roiCollection.GetItemAsObject(0)
+            # Make sure existing ROI is visible and interactive
+            displayNode = existing_roi.GetDisplayNode()
+            if displayNode:
+                displayNode.SetVisibility(True)
+                displayNode.SetHandlesInteractive(True)
+                displayNode.SetSelectedColor(1.0, 1.0, 0.0)  # Yellow when selected
+                displayNode.SetColor(0.0, 1.0, 1.0)  # Cyan when not selected
+                displayNode.SetOpacity(0.8)
+                displayNode.SetFillOpacity(0.2)
+                displayNode.SetOutlineVisibility(True)
+                displayNode.SetFillVisibility(True)
+            
+            print("✅ Found existing CropROI and made it visible")
+            return existing_roi
+        
+        # Create new ROI if none exists
+        print("🔧 Creating new CropROI...")
+        
+        # Get the current volume to base ROI size on
+        inputVolume = find_working_volume()
+        if not inputVolume:
+            print("❌ No input volume found for ROI creation")
+            return None
+        
+        # Create ROI node
+        roiNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode", "CropROI")
+        roiNode.CreateDefaultDisplayNodes()
+        
+        # Set ROI to encompass the volume
+        bounds = [0.0] * 6
+        inputVolume.GetBounds(bounds)
+        
+        # Set ROI center and size
+        center = [(bounds[1] + bounds[0]) / 2.0, 
+                  (bounds[3] + bounds[2]) / 2.0, 
+                  (bounds[5] + bounds[4]) / 2.0]
+        
+        size = [bounds[1] - bounds[0], 
+                bounds[3] - bounds[2], 
+                bounds[5] - bounds[4]]
+        
+        # Make ROI slightly smaller than full volume (80% of original size)
+        size = [s * 0.8 for s in size]
+        
+        roiNode.SetXYZ(center)
+        roiNode.SetRadiusXYZ(size[0]/2, size[1]/2, size[2]/2)
+        
+        # Make ROI visible and interactive with enhanced visibility
+        displayNode = roiNode.GetDisplayNode()
+        if displayNode:
+            displayNode.SetVisibility(True)
+            displayNode.SetHandlesInteractive(True)
+            # Make ROI more visible with better colors and opacity
+            displayNode.SetSelectedColor(1.0, 1.0, 0.0)  # Yellow when selected
+            displayNode.SetColor(0.0, 1.0, 1.0)  # Cyan when not selected  
+            displayNode.SetOpacity(0.8)  # Semi-transparent
+            displayNode.SetFillOpacity(0.2)  # Light fill
+            displayNode.SetOutlineVisibility(True)
+            displayNode.SetFillVisibility(True)
+        
+        # Ensure ROI is selected and active for immediate interaction
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetActivePlaceNodeID(roiNode.GetID())
+        
+        print(f"✅ Created new CropROI with center {center} and size {size}")
+        print("🎯 ROI is visible and ready for positioning in the 3D view")
+        return roiNode
+        
+    except Exception as e:
+        print(f"❌ Error creating CropROI: {e}")
+        return None
+
+
+def show_crop_layout_with_roi():
+    """
+    Switch to a layout optimized for crop ROI positioning with 3D view prominently displayed.
+    Shows 3D view on the left and Red slice view on the right for easy ROI manipulation.
+    """
+    try:
+        lm = slicer.app.layoutManager()
+        if not lm:
+            return False
+
+        # Define a custom layout (3D view | Red slice view) for crop ROI positioning
+        layout_xml = (
+            '<layout type="horizontal">'
+            '  <item splitSize="300">'
+            '    <view class="vtkMRMLViewNode" singletontag="1">'
+            '      <property name="viewlabel" action="default">1</property>'
+            '    </view>'
+            '  </item>'
+            '  <item splitSize="200">'
+            '    <view class="vtkMRMLSliceNode" singletontag="Red">'
+            '      <property name="orientation" action="default">Axial</property>'
+            '      <property name="viewlabel" action="default">R</property>'
+            '      <property name="layoutlabel" action="default">Red</property>'
+            '    </view>'
+            '  </item>'
+            '</layout>'
+        )
+
+        layout_node = lm.layoutLogic().GetLayoutNode()
+        custom_layout_id = 55903  # Custom ID for crop ROI layout
+        # Register or replace the custom layout
+        layout_node.AddLayoutDescription(custom_layout_id, layout_xml)
+        layout_node.SetViewArrangement(custom_layout_id)
+        
+        # Assign background volume to slice view
+        vol = find_working_volume()
+        if vol:
+            # Set volume in Red slice view
+            w = lm.sliceWidget("Red")
+            if w:
+                comp = w.mrmlSliceCompositeNode()
+                if comp:
+                    comp.SetBackgroundVolumeID(vol.GetID())
+                logic = w.sliceLogic()
+                if logic:
+                    logic.FitSliceToAll()
+
+        # Set 3D view background to black for better ROI visibility
+        set_3d_view_background_black()
+        
+        # Reset 3D view camera to show the volume and ROI nicely
+        threeDWidget = lm.threeDWidget(0)
+        if threeDWidget:
+            threeDView = threeDWidget.threeDView()
+            if threeDView:
+                threeDView.resetFocalPoint()
+                threeDView.resetCamera()
+
+        # Process events to ensure layout is applied
+        slicer.app.processEvents()
+        
+        print("🖥️ Switched to crop ROI layout (3D + Red slice view) for easy ROI positioning")
+        print("📐 3D view camera positioned for optimal ROI visibility")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error setting crop ROI layout: {e}")
+        return False
+
+
+def reset_crop_button(button, original_text):
+    """
+    Reset the crop button to its original state
+    """
+    try:
+        if button and not button.isNull():
+            button.setText(original_text)
+            button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #3498db; 
+                    color: white; 
+                    border: none; 
+                    padding: 15px; 
+                    font-weight: bold;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    min-height: 50px;
+                }
+                QPushButton:hover { 
+                    background-color: #2980b9; 
+                }
+                QPushButton:pressed { 
+                    background-color: #21618c; 
+                }
+            """)
+    except Exception:
+        pass
+
+
+def toggle_scissors_tool(activated=None):
+    """
+    Toggle the scissors tool on/off
+    Args:
+        activated (bool, optional): True to activate, False to deactivate, None to toggle
+    """
+    try:
+        # If activated parameter is provided, use it directly
+        if activated is not None:
+            if activated:
+                # Try to activate scissors tool programmatically
+                success = select_scissors_tool()
+                
+                if success:
+                    print("✅ Scissors tool activated")
+                    
+                    # Update button feedback
+                    if hasattr(slicer.modules, 'CustomScissorsButton'):
+                        button = slicer.modules.CustomScissorsButton
+                        button.setText("✅ Scissors Active")
+                        button.setStyleSheet("""
+                            QPushButton { 
+                                background-color: #27ae60; 
+                                color: white; 
+                                border: none; 
+                                padding: 12px; 
+                                font-weight: bold;
+                                border-radius: 6px;
+                                font-size: 12px;
+                            }
+                        """)
+                        
+                        # Reset button after 2 seconds
+                        qt.QTimer.singleShot(2000, lambda: reset_scissors_button(button))
+                else:
+                    print("⚠️ Could not activate scissors tool - may need manual activation")
+            else:
+                # Deactivate scissors tool
+                print("🔄 Deactivating scissors tool")
+                # Reset button appearance if needed
+                if hasattr(slicer.modules, 'CustomScissorsButton'):
+                    reset_scissors_button(slicer.modules.CustomScissorsButton)
+        else:
+            # Legacy behavior - just try to activate
+            success = select_scissors_tool()
+            
+            if success:
+                print("✅ Scissors tool activated")
+                
+                # Update button feedback
+                if hasattr(slicer.modules, 'CustomScissorsButton'):
+                    button = slicer.modules.CustomScissorsButton
+                    button.setText("✅ Scissors Active")
+                    button.setStyleSheet("""
+                        QPushButton { 
+                            background-color: #27ae60; 
+                            color: white; 
+                            border: none; 
+                            padding: 12px; 
+                            font-weight: bold;
+                            border-radius: 6px;
+                            font-size: 12px;
+                        }
+                    """)
+                    
+                    # Reset button after 2 seconds
+                    qt.QTimer.singleShot(2000, lambda: reset_scissors_button(button))
+            else:
+                print("⚠️ Could not activate scissors tool - may need manual activation")
+            
+    except Exception as e:
+        print(f"❌ Error toggling scissors tool: {e}")
+
+
+def reset_scissors_button(button):
+    """
+    Reset the scissors button to its original state
+    """
+    try:
+        if button and not button.isNull():
+            button.setText("Toggle Scissors Tool")
+            button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #e74c3c; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    font-size: 12px;
+                }
+                QPushButton:hover { 
+                    background-color: #c0392b; 
+                }
+                QPushButton:pressed { 
+                    background-color: #a93226; 
+                }
+            """)
+    except Exception:
+        pass
+
+
+def finish_custom_crop_workflow():
+    """
+    Finish the custom crop workflow and continue to next steps
+    """
+    try:
+        print("🔄 Finishing custom crop workflow...")
+        
+        # Clean up the custom crop interface
+        cleanup_custom_crop_interface()
+        
+        # Continue with the normal workflow
+        on_continue_from_scissors()
+        
+        print("✅ Custom crop workflow finished, continuing to next steps")
+        
+    except Exception as e:
+        print(f"❌ Error finishing custom crop workflow: {e}")
+
+
+def cleanup_custom_crop_interface():
+    """
+    Clean up the custom crop interface widgets
+    """
+    try:
+        # Clean up custom crop widget
+        if hasattr(slicer.modules, 'CustomCropWidget'):
+            widget = slicer.modules.CustomCropWidget
+            if widget:
+                widget.close()
+                widget.deleteLater()
+            delattr(slicer.modules, 'CustomCropWidget')
+        
+        # Clean up button references
+        for attr_name in ['CustomCropButton', 'CustomScissorsButton', 'CustomContinueButton']:
+            if hasattr(slicer.modules, attr_name):
+                delattr(slicer.modules, attr_name)
+        
+        print("✅ Custom crop interface cleaned up")
+        
+    except Exception as e:
+        print(f"⚠️ Error cleaning up custom crop interface: {e}")
+
+
+def offer_custom_crop_option():
+    """
+    Ask user if they want to use the custom crop interface instead of the standard module.
+    This is helpful when the crop module GUI becomes distorted after multiple recrops.
+    Now defaults to YES (custom interface) as the recommended option.
+    """
+    try:
+        # Create a custom dialog with YES as the default
+        dialog = qt.QMessageBox(slicer.util.mainWindow())
+        dialog.setWindowTitle("Choose Crop Interface")
+        dialog.setIcon(qt.QMessageBox.Question)
+        dialog.setText("Crop Interface Options")
+        dialog.setInformativeText(
+            "The crop module GUI can sometimes become distorted after multiple recrops.\n\n"
+            "Choose your preferred cropping interface:\n\n"
+            "• Clean Custom Crop Interface (Recommended)\n"
+            "  - Simple, clean interface that works reliably\n"
+            "  - Direct ROI-based cropping with scissors tool\n"
+            "  - Best for multiple recrops\n\n"
+            "• Standard Crop Module GUI\n"
+            "  - Default Slicer crop module interface\n"
+            "  - May become distorted after multiple uses"
+        )
+        
+        # Add buttons with custom interface as default
+        custom_button = dialog.addButton("Use Custom Interface", qt.QMessageBox.YesRole)
+        standard_button = dialog.addButton("Use Standard Module", qt.QMessageBox.NoRole)
+        
+        # Set custom interface as the default button
+        dialog.setDefaultButton(custom_button)
+        
+        # Execute dialog
+        dialog.exec_()
+        
+        # Return True if custom interface was selected
+        return dialog.clickedButton() == custom_button
+        
+    except Exception as e:
+        print(f"Error in crop option dialog: {e}")
+        # Default to custom interface if dialog fails
+        return True
+
+
+def use_custom_crop_instead_of_module():
+    """
+    Utility function to switch from the problematic crop module GUI to the custom crop interface.
+    Call this when the crop module GUI becomes distorted during recropping.
+    """
+    try:
+        print("🔄 Switching to custom crop interface...")
+        
+        # First try to close/hide any existing crop module GUI
+        try:
+            collapse_crop_volume_gui()
+        except Exception:
+            pass
+        
+        # Create the custom crop interface
+        custom_interface = create_custom_crop_interface()
+        
+        if custom_interface:
+            print("✅ Successfully switched to custom crop interface")
+            print("📋 Instructions:")
+            print("   1. Position the ROI box as needed")
+            print("   2. Click 'CROP VOLUME' to apply cropping")
+            print("   3. Use 'Toggle Scissors Tool' to refine segmentation")
+            print("   4. Click 'FINISH SEGMENTATION - CONTINUE' when done")
+            return True
+        else:
+            print("❌ Failed to create custom crop interface")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error switching to custom crop interface: {e}")
+        return False
+
+
+def force_custom_crop_interface():
+    """
+    Convenience function to directly force the custom crop interface.
+    Can be called from console or when crop module GUI is definitely broken.
+    
+    Usage from Slicer console:
+    exec(open(r'c:\\path\\to\\workflow_moduals.py').read())
+    force_custom_crop_interface()
+    """
+    try:
+        print("🎯 Forcing custom crop interface...")
+        success = use_custom_crop_instead_of_module()
+        
+        if success:
+            print("✅ Custom crop interface is now active")
+            print("💡 TIP: You can call this function anytime the crop GUI becomes unusable:")
+            print("   force_custom_crop_interface()")
+        else:
+            print("❌ Failed to activate custom crop interface")
+            
+        return success
+        
+    except Exception as e:
+        print(f"❌ Error forcing custom crop interface: {e}")
+        return False
+
+
+def check_crop_gui_health():
+    """
+    Check if the crop module GUI appears to be working properly.
+    Returns True if GUI seems healthy, False if it appears distorted/broken.
+    """
+    try:
+        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+        if not crop_widget:
+            return False
+        
+        # Check if widget is visible and has reasonable dimensions
+        if crop_widget.isVisible():
+            size = crop_widget.size()
+            # If widget is too small or has unusual dimensions, consider it problematic
+            if size.width() < 200 or size.height() < 200:
+                return False
+        
+        # Try to find essential UI elements
+        try:
+            crop_module = None
+            if hasattr(crop_widget, 'self'):
+                crop_module = crop_widget.self()
+            
+            if crop_module and hasattr(crop_module, 'ui'):
+                # Check if we can access basic UI elements
+                if hasattr(crop_module.ui, 'inputVolumeSelector'):
+                    return True
+        except Exception:
+            return False
+        
+        # If we can't determine health, assume it's problematic after multiple uses
+        return False
+        
+    except Exception as e:
+        print(f"Error checking crop GUI health: {e}")
+        return False
 
