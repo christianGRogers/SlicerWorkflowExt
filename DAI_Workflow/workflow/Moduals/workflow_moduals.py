@@ -36,6 +36,122 @@ UPDATE: Programmatic Segment Editor Integration
 - Scissors tool can be activated/deactivated as needed by user
 """
 
+# Initialize workflow by collapsing left panel on module load
+def initialize_workflow_ui():
+    """Initialize the workflow UI state - collapse left panel on startup"""
+    try:
+        # Use QTimer to ensure this runs after the UI is fully loaded
+        qt.QTimer.singleShot(1000, force_collapse_left_panel_on_startup)
+    except:
+        pass
+
+# Call initialization when module is imported
+try:
+    initialize_workflow_ui()
+except:
+    pass
+
+# Console testing functions
+def test_panel_collapse():
+    """Console function to test panel collapse"""
+    print("Testing left panel collapse...")
+    result = collapse_left_module_panel()
+    if result:
+        print("✅ Panel collapse test PASSED")
+    else:
+        print("❌ Panel collapse test FAILED")
+    return result
+
+def test_panel_expand():
+    """Console function to test panel expand"""
+    print("Testing left panel expand...")
+    result = expand_left_module_panel()
+    if result:
+        print("✅ Panel expand test PASSED")
+    else:
+        print("❌ Panel expand test FAILED")
+    return result
+
+def debug_panel_widgets():
+    """Console function to debug what panel widgets exist"""
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            print("❌ No main window found")
+            return
+            
+        print("🔍 Searching for panel widgets...")
+        
+        # Find all dock widgets
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            print(f"Found {len(dock_widgets)} dock widgets:")
+            for i, widget in enumerate(dock_widgets):
+                name = widget.objectName()
+                visible = widget.isVisible()
+                print(f"  {i+1}. '{name}' (visible: {visible})")
+        except Exception as e:
+            print(f"Could not get dock widgets: {e}")
+        
+        # Find all widgets with 'panel' or 'module' in name
+        try:
+            all_widgets = main_window.findChildren(qt.QWidget)
+            panel_widgets = []
+            for w in all_widgets:
+                widget_name = w.objectName()
+                if widget_name and ('panel' in widget_name.lower() or 'module' in widget_name.lower()):
+                    panel_widgets.append(w)
+                    
+            print(f"\nFound {len(panel_widgets)} panel-related widgets:")
+            for i, widget in enumerate(panel_widgets):
+                name = widget.objectName()
+                visible = widget.isVisible()
+                print(f"  {i+1}. '{name}' (visible: {visible})")
+        except Exception as e:
+            print(f"Could not get panel widgets: {e}")
+            
+    except Exception as e:
+        print(f"❌ Debug failed: {e}")
+
+# Console helper for users to test
+def collapse_panel():
+    """Quick console command to collapse panel"""
+    print("🔄 Attempting to collapse left module panel...")
+    result = collapse_left_module_panel()
+    if not result:
+        print("🔍 Let's see what widgets are available:")
+        debug_panel_widgets()
+    return result
+
+def expand_panel():
+    """Quick console command to expand panel"""  
+    print("🔄 Attempting to expand left module panel...")
+    result = expand_left_module_panel()
+    if not result:
+        print("🔍 Let's see what widgets are available:")
+        debug_panel_widgets()
+    return result
+
+def test_panel_management():
+    """Complete test of panel management"""
+    print("🧪 Testing Panel Management System")
+    print("=" * 40)
+    
+    print("\n1. Debugging available widgets:")
+    debug_panel_widgets()
+    
+    print("\n2. Testing collapse:")
+    collapse_result = test_panel_collapse()
+    
+    print("\n3. Testing expand:")
+    expand_result = test_panel_expand()
+    
+    print(f"\n📊 Results:")
+    print(f"   Collapse: {'✅ PASS' if collapse_result else '❌ FAIL'}")
+    print(f"   Expand:   {'✅ PASS' if expand_result else '❌ FAIL'}")
+    
+    return collapse_result and expand_result
+
 
 
 
@@ -101,6 +217,152 @@ def find_working_volume():
         
     except Exception as e:
         return slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+
+def force_collapse_left_panel_on_startup():
+    """Force collapse of left panel on startup - more aggressive approach"""
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            return False
+            
+        success = False
+        
+        # Method 1: Try to find and hide the module panel dock widget
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            for widget in dock_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
+                    widget.hide()
+                    success = True
+                    print(f"✅ Hidden dock widget: {widget_name}")
+        except Exception as e:
+            print(f"Method 1 failed: {e}")
+        
+        # Method 2: Try specific known panel names
+        try:
+            known_panel_names = ['PanelDockWidget', 'ModulePanelDockWidget']
+            for panel_name in known_panel_names:
+                panels = main_window.findChildren(qt.QWidget, panel_name)
+                for panel in panels:
+                    panel.hide()
+                    success = True
+                    print(f"✅ Hidden panel: {panel_name}")
+        except Exception as e:
+            print(f"Method 2 failed: {e}")
+        
+        # Method 3: Try to find all QWidget children and hide panel-related ones
+        try:
+            all_widgets = main_window.findChildren(qt.QWidget)
+            for widget in all_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ("PanelDockWidget" in widget_name or "ModulePanel" in widget_name):
+                    widget.hide()
+                    success = True
+                    print(f"✅ Hidden widget: {widget_name}")
+        except Exception as e:
+            print(f"Method 3 failed: {e}")
+        
+        if success:
+            print("✅ Left module panel collapsed on startup")
+        else:
+            print("⚠️ No panel widgets found to hide")
+            
+        return success
+        
+    except Exception as e:
+        print(f"⚠️ Could not force collapse left module panel: {e}")
+        return False
+
+def collapse_left_module_panel():
+    """
+    Collapse the left module panel to maximize view space during workflow.
+    """
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            return False
+        
+        success = False
+        
+        # Method 1: Find and collapse/hide dock widgets
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            for widget in dock_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
+                    widget.hide()
+                    success = True
+                    print(f"✅ Collapsed dock widget: {widget_name}")
+        except Exception as e:
+            print(f"Dock widget method failed: {e}")
+        
+        # Method 2: Try specific panel names
+        try:
+            panel_names = ['ModulePanelDockWidget', 'PanelDockWidget']
+            for panel_name in panel_names:
+                panels = main_window.findChildren(qt.QWidget, panel_name)
+                for panel in panels:
+                    panel.hide()
+                    success = True
+                    print(f"✅ Collapsed panel: {panel_name}")
+        except Exception as e:
+            print(f"Panel name method failed: {e}")
+        
+        if success:
+            print("✅ Left module panel collapsed")
+        else:
+            print("⚠️ Could not find any panels to collapse")
+        return success
+        
+    except Exception as e:
+        print(f"⚠️ Could not collapse left module panel: {e}")
+        return False
+
+def expand_left_module_panel():
+    """
+    Expand the left module panel when needed (e.g., for Extract Centerline step).
+    """
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            return False
+        
+        success = False
+        
+        # Method 1: Find and show dock widgets
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            for widget in dock_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
+                    widget.show()
+                    success = True
+                    print(f"✅ Expanded dock widget: {widget_name}")
+        except Exception as e:
+            print(f"Dock widget expand failed: {e}")
+        
+        # Method 2: Try specific panel names
+        try:
+            panel_names = ['ModulePanelDockWidget', 'PanelDockWidget']
+            for panel_name in panel_names:
+                panels = main_window.findChildren(qt.QWidget, panel_name)
+                for panel in panels:
+                    panel.show()
+                    success = True
+                    print(f"✅ Expanded panel: {panel_name}")
+        except Exception as e:
+            print(f"Panel expand failed: {e}")
+        
+        if success:
+            print("✅ Left module panel expanded")
+        else:
+            print("⚠️ Could not find any panels to expand")
+        return success
+        
+    except Exception as e:
+        print(f"⚠️ Could not expand left module panel: {e}")
+        return False
 
 def get_volume_slice_thickness(volume_node):
     """
@@ -1841,6 +2103,10 @@ def open_centerline_module():
         
         if workflow_segmentation:
             prepare_surface_for_centerline(workflow_segmentation)
+        
+        # Expand the left module panel for ExtractCenterline step
+        expand_left_module_panel()
+        
         slicer.util.selectModule("ExtractCenterline")
         pass
         slicer.app.processEvents()
@@ -5627,6 +5893,9 @@ def start_with_volume_crop():
     """
     Start the workflow using the custom crop interface instead of the standard crop module.
     """
+    # Collapse the left module panel at workflow start to maximize view space
+    collapse_left_module_panel()
+    
     # Set 3D view background to black at the start of workflow
     set_3d_view_background_black()
     
@@ -5640,7 +5909,7 @@ def start_with_volume_crop():
     
     # Use custom crop interface instead of standard module
     create_initial_custom_crop_interface()
-    print("✅ Initial custom crop interface ready")
+    print("✅ Initial custom crop interface ready (left panel collapsed)")
     print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
     return
     
@@ -9508,6 +9777,9 @@ def restart_cropping_workflow_safely():
         print("🚀 Starting cropping workflow...")
         slicer.app.processEvents()
         
+        # Collapse the left module panel for recropping to maximize view space
+        collapse_left_module_panel()
+        
         # Restore centerline visibility first
         restore_centerline_visibility()
         slicer.app.processEvents()
@@ -9743,6 +10015,9 @@ def create_additional_centerline_setup():
     Create new centerline model and curve nodes and set up Extract Centerline module for additional centerlines
     """
     try:
+        # Expand the left module panel for additional centerline extraction
+        expand_left_module_panel()
+        
         # Ensure we're in the Extract Centerline module
         slicer.util.selectModule("ExtractCenterline")
         slicer.app.processEvents()
@@ -11923,6 +12198,9 @@ def setup_minimal_extract_centerline_ui():
     Set up the Extract Centerline module with minimal UI (only the inputs section)
     """
     try:
+        # Expand the left module panel for ExtractCenterline setup
+        expand_left_module_panel()
+        
         # First ensure we're in the Extract Centerline module
         slicer.util.selectModule("ExtractCenterline")
         slicer.app.processEvents()
