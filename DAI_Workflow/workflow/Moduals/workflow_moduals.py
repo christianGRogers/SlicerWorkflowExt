@@ -1561,64 +1561,11 @@ def create_floating_continue_button():
 
 def add_continue_button_to_crop_module(crop_widget, continue_container):
     """
-    Add the continue button container to the Crop Volume module GUI
+    DISABLED: Do not add any buttons to the Crop Volume module GUI.
+    All functionality is handled by the custom crop interface.
     """
-    try:
-        # Try to get the crop module
-        crop_module = None
-        if hasattr(crop_widget, 'self'):
-            try:
-                crop_module = crop_widget.self()
-            except Exception:
-                pass
-        
-        if not crop_module:
-            crop_module = crop_widget
-        
-        # Find the main UI container in the crop module
-        main_ui_widget = None
-        
-        # Strategy 1: Look for the main widget container
-        if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
-            main_ui_widget = crop_module.ui.widget
-        elif hasattr(crop_module, 'widget'):
-            main_ui_widget = crop_module.widget
-        elif hasattr(crop_widget, 'widget'):
-            main_ui_widget = crop_widget.widget
-        
-        # Strategy 2: Get the module widget representation directly
-        if not main_ui_widget:
-            main_ui_widget = crop_widget
-        
-        # Try to add to the GUI layout
-        if main_ui_widget and hasattr(main_ui_widget, 'layout'):
-            layout = main_ui_widget.layout()
-            if layout:
-                # Add after the scissors buttons (towards bottom)
-                layout.addWidget(continue_container)
-                pass
-                return True
-            else:
-                # Try to create a new layout
-                new_layout = qt.QVBoxLayout(main_ui_widget)
-                new_layout.addWidget(continue_container)
-                pass
-                return True
-        else:
-            # Fallback: try to find a suitable container widget
-            container_widgets = crop_widget.findChildren(qt.QWidget)
-            for widget in container_widgets:
-                if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
-                    widget.layout().addWidget(continue_container)
-                    pass
-                    return True
-        
-        pass
-        return False
-        
-    except Exception as e:
-        pass
-        return False
+    # Return immediately - no buttons should be added to crop module
+    return False
 
 def on_continue_from_scissors():
     """
@@ -2636,221 +2583,11 @@ def remove_segment_from_all_segmentations(segment_name):
 
 def add_large_crop_apply_button():
     """
-    Add a large green Apply button directly to the Crop Volume module GUI
-    Only creates the button if scissors workflow is not active
+    DISABLED: Do not add any buttons to the Crop Volume module GUI.
+    All cropping functionality is handled by the custom crop interface.
     """
-    try:
-        # Check if scissors workflow is active - if so, don't create the apply button
-        if hasattr(slicer.modules, 'WorkflowScissorsButton') or hasattr(slicer.modules, 'WorkflowFinishButton'):
-            return True
-        
-        if hasattr(slicer.modules, 'CropLargeApplyButton'):
-            existing_button = slicer.modules.CropLargeApplyButton
-            if existing_button and existing_button.parent():
-                return True
-        
-        def create_large_button():
-            try:
-                if hasattr(slicer.modules, 'CropLargeApplyButton'):
-                    existing_button = slicer.modules.CropLargeApplyButton
-                    if existing_button and existing_button.parent():
-                        return True
-                
-                crop_widget = slicer.modules.cropvolume.widgetRepresentation()
-
-                if crop_widget:
-                    crop_module = None
-                    
-                    if hasattr(crop_widget, 'self'):
-                        try:
-                            crop_module = crop_widget.self()
-                            pass
-                        except Exception as e:
-                            pass
-                    
-                    if not crop_module:
-                        try:
-                            crop_module = crop_widget
-                            pass
-                        except Exception as e:
-                            pass
-
-                    if not crop_module:
-                        try:
-                            crop_module = slicer.modules.cropvolume.createNewWidgetRepresentation()
-                            pass
-                        except Exception as e:
-                            pass
-                    
-                    if crop_module:
-                        pass
-                        
-                        original_apply_button = None
-                        pass
-                        
-                        apply_button_attrs = ['applyButton', 'ApplyButton', 'applyCropButton', 'cropApplyButton']
-                        
-                        if hasattr(crop_module, 'ui'):
-                            pass
-                            for attr_name in apply_button_attrs:
-                                if hasattr(crop_module.ui, attr_name):
-                                    original_apply_button = getattr(crop_module.ui, attr_name)
-                                    pass
-                                    break
-                        else:
-                            pass
-                            for attr_name in apply_button_attrs:
-                                if hasattr(crop_module, attr_name):
-                                    original_apply_button = getattr(crop_module, attr_name)
-                                    pass
-                                    break
-
-                        if not original_apply_button:
-                            pass
-                            all_buttons = crop_widget.findChildren(qt.QPushButton)
-                            pass
-                            for i, button in enumerate(all_buttons):
-                                button_text = button.text if hasattr(button, 'text') else ""
-                                pass
-                                if button_text and 'apply' in button_text.lower():
-                                    original_apply_button = button
-                                    pass
-                                    break
-                    
-                    if original_apply_button:
-                        # Create a new large green button
-                        large_apply_button = qt.QPushButton("APPLY CROP")
-                        large_apply_button.setStyleSheet("""
-                            QPushButton { 
-                                background-color: #28a745; 
-                                color: white; 
-                                border: 2px solid #1e7e34; 
-                                padding: 20px; 
-                                font-weight: bold;
-                                border-radius: 10px;
-                                margin: 10px;
-                                font-size: 18px;
-                                min-height: 70px;
-                                min-width: 200px;
-                            }
-                            QPushButton:hover { 
-                                background-color: #218838; 
-                                border: 2px solid #155724;
-                                transform: scale(1.05);
-                            }
-                            QPushButton:pressed { 
-                                background-color: #1e7e34; 
-                                border: 2px solid #0f4c2c;
-                            }
-                        """)
-                        
-                        # Connect the new button to trigger the original Apply button's click
-                        large_apply_button.connect('clicked()', lambda: original_apply_button.click())
-                        
-                    else:
-                        pass
-                        # Create button anyway and try to trigger apply through the module
-                        large_apply_button = qt.QPushButton("APPLY CROP")
-                        large_apply_button.setStyleSheet("""
-                            QPushButton { 
-                                background-color: #28a745; 
-                                color: white; 
-                                border: 2px solid #1e7e34; 
-                                padding: 20px; 
-                                font-weight: bold;
-                                border-radius: 10px;
-                                margin: 10px;
-                                font-size: 18px;
-                                min-height: 70px;
-                                min-width: 200px;
-                            }
-                            QPushButton:hover { 
-                                background-color: #218838; 
-                                border: 2px solid #155724;
-                                transform: scale(1.05);
-                            }
-                            QPushButton:pressed { 
-                                background-color: #1e7e34; 
-                                border: 2px solid #0f4c2c;
-                            }
-                        """)
-                        
-                        # Try to connect to crop logic directly
-                        def trigger_crop_apply():
-                            try:
-                                if hasattr(crop_module, 'onApplyButton'):
-                                    crop_module.onApplyButton()
-                                    pass
-                                elif hasattr(crop_module, 'apply'):
-                                    crop_module.apply()
-                                    pass
-                                else:
-                                    pass
-                            except Exception as e:
-                                pass
-                        
-                        large_apply_button.connect('clicked()', trigger_crop_apply)
-                        pass
-                    
-                    # Add the button to the GUI (common for both cases)
-                    # Try to find the main UI container in the crop module
-                    main_ui_widget = None
-                    
-                    # Strategy 1: Look for the main widget container
-                    if hasattr(crop_module, 'ui') and hasattr(crop_module.ui, 'widget'):
-                        main_ui_widget = crop_module.ui.widget
-                    elif hasattr(crop_module, 'widget'):
-                        main_ui_widget = crop_module.widget
-                    elif hasattr(crop_widget, 'widget'):
-                        main_ui_widget = crop_widget.widget
-                    
-                    # Strategy 2: Get the module widget representation directly
-                    if not main_ui_widget:
-                        main_ui_widget = crop_widget
-                    
-                    if main_ui_widget and hasattr(main_ui_widget, 'layout'):
-                        layout = main_ui_widget.layout()
-                        if layout:
-                            layout.insertWidget(0, large_apply_button)
-                        else:
-                            new_layout = qt.QVBoxLayout(main_ui_widget)
-                            new_layout.insertWidget(0, large_apply_button)
-                            pass
-                    else:
-                        container_widgets = crop_widget.findChildren(qt.QWidget)
-                        for widget in container_widgets:
-                            if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
-                                widget.layout().insertWidget(0, large_apply_button)
-                                pass
-                                break
-                        else:
-                            pass
-                            return False
-                    
-                    slicer.modules.CropLargeApplyButton = large_apply_button
-                    return True
-                else:
-                    if crop_widget:
-                        try:
-                            attrs = [attr for attr in dir(crop_widget) if not attr.startswith('_')]
-                            pass
-                        except:
-                            pass
-                    return False
-                        
-            except Exception as e:
-                return False
-        
-        success = create_large_button()
-        
-        # If that didn't work, try again after delays
-        if not success:
-            qt.QTimer.singleShot(1000, create_large_button)
-            qt.QTimer.singleShot(3000, create_large_button)
-            pass
-            
-    except Exception as e:
-        pass
+    # Return immediately - no buttons should be added to crop module
+    return True
 
 def add_large_cpr_apply_button():
     """
@@ -9895,10 +9632,15 @@ def restart_cropping_workflow_safely():
             slicer.util.selectModule("CropVolume")
             slicer.app.processEvents()
             
-            # Create custom crop interface as overlay (still keeps the module visible)
-            success = create_custom_crop_interface()
+            # Hide ALL UI elements from the crop module
+            hide_crop_volume_ui_elements()
+            qt.QTimer.singleShot(500, hide_crop_volume_ui_elements)
+            qt.QTimer.singleShot(1500, hide_crop_volume_ui_elements)
+            
+            # Create initial custom crop interface (without scissors tools) to match first crop
+            success = create_initial_custom_crop_interface()
             if success:
-                print("✅ Crop module displayed with custom interface overlay")
+                print("✅ Crop module displayed (UI hidden) with initial crop interface overlay")
                 print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
                 # Don't proceed automatically - wait for user to crop
                 return
@@ -12236,94 +11978,82 @@ def create_analysis_masks_manually(volume_name=None):
                     break
         
         if not target_volume:
-            pass
             return None
         
-        # Create masks using the create_analysis_masks function
         segmentation_node = create_analysis_masks([target_volume])
-        
-        # Return the created segmentation node
+
         return segmentation_node
             
     except Exception as e:
-        pass
         return None
 
 def hide_crop_volume_ui_elements():
     """
-    Hide all UI elements in the Crop Volume module except the green Apply button
+    Hide ALL UI elements in the Crop Volume module - remove everything from the interface
     """
     try:
         crop_widget = slicer.modules.cropvolume.widgetRepresentation()
         if not crop_widget:
-            pass
             return False
         
-        # Names of the collapsible buttons to hide based on the XML structure
-        collapsible_buttons_to_hide = [
-            "ParameterSetCollapsibleButton",
-            "InputOutputCollapsibleButton", 
-            "InterpolationOptionsCollapsibleButton",
-            "VolumeInformationCollapsibleButton"
-        ]
-        
-        # Hide error message elements
-        error_elements_to_hide = [
-            "InputErrorLabel",
-            "InputErrorFixButton"
-        ]
-        
         elements_hidden = 0
-        
-        # Hide collapsible button sections
-        for button_name in collapsible_buttons_to_hide:
-            try:
-                # Find the collapsible button by object name
-                collapsible_buttons = crop_widget.findChildren(qt.QWidget, button_name)
-                for button in collapsible_buttons:
-                    button.setVisible(False)
-                    elements_hidden += 1
-                    pass
-            except Exception as e:
-                pass
-        
-        # Hide error message elements 
-        for element_name in error_elements_to_hide:
-            try:
-                elements = crop_widget.findChildren(qt.QWidget, element_name)
-                for element in elements:
-                    element.setVisible(False)
-                    elements_hidden += 1
-                    pass
-            except Exception as e:
-                pass
-        
-        # Also hide by finding ctkCollapsibleButton widgets directly
+
         try:
             collapsible_buttons = crop_widget.findChildren("ctkCollapsibleButton")
             for button in collapsible_buttons:
                 button.setVisible(False)
                 elements_hidden += 1
-                pass
-        except Exception as e:
+        except Exception:
             pass
-        
-        # Hide the horizontal layout containing error elements
         try:
-            horizontal_layouts = crop_widget.findChildren(qt.QHBoxLayout)
-            for layout in horizontal_layouts:
-                if layout.objectName() == "horizontalLayout":
-                    # Hide the parent widget of this layout
-                    parent_widget = layout.parent()
-                    if parent_widget:
-                        parent_widget.setVisible(False)
-                        elements_hidden += 1
-                        pass
-        except Exception as e:
+            push_buttons = crop_widget.findChildren(qt.QPushButton)
+            for button in push_buttons:
+                button.setVisible(False)
+                elements_hidden += 1
+        except Exception:
+            pass
+        try:
+            labels = crop_widget.findChildren(qt.QLabel)
+            for label in labels:
+                label.setVisible(False)
+                elements_hidden += 1
+        except Exception:
+            pass
+
+        try:
+            input_widgets = crop_widget.findChildren(qt.QLineEdit)
+            input_widgets.extend(crop_widget.findChildren(qt.QSpinBox))
+            input_widgets.extend(crop_widget.findChildren(qt.QDoubleSpinBox))
+            input_widgets.extend(crop_widget.findChildren(qt.QComboBox))
+            input_widgets.extend(crop_widget.findChildren(qt.QCheckBox))
+            for widget in input_widgets:
+                widget.setVisible(False)
+                elements_hidden += 1
+        except Exception:
+            pass
+
+        try:
+            layouts = crop_widget.findChildren(qt.QHBoxLayout)
+            layouts.extend(crop_widget.findChildren(qt.QVBoxLayout))
+            layouts.extend(crop_widget.findChildren(qt.QGridLayout))
+            for layout in layouts:
+                parent_widget = layout.parent()
+                if parent_widget and parent_widget != crop_widget:
+                    parent_widget.setVisible(False)
+                    elements_hidden += 1
+        except Exception:
+            pass
+
+        try:
+            all_children = crop_widget.findChildren(qt.QWidget)
+            for child in all_children:
+                if child.isVisible() and child != crop_widget:
+                    child.setVisible(False)
+                    elements_hidden += 1
+        except Exception:
             pass
         
-        pass
-        pass
+        print(f"✅ Hidden {elements_hidden} UI elements from Crop Volume module")
         return True
         
     except Exception as e:
@@ -12343,8 +12073,7 @@ def setup_minimal_crop_volume_ui():
         hide_success = hide_crop_volume_ui_elements()
         
         if hide_success:
-            # Add the large green Apply button
-            add_large_crop_apply_button()
+            # All UI elements hidden - no buttons added to crop module
             pass
             return True
         else:
@@ -14074,6 +13803,11 @@ def reset_crop_module_to_default():
         slicer.util.selectModule("CropVolume")
         slicer.app.processEvents()
         
+        # Hide ALL UI elements from the crop module
+        hide_crop_volume_ui_elements()
+        qt.QTimer.singleShot(500, hide_crop_volume_ui_elements)
+        qt.QTimer.singleShot(1500, hide_crop_volume_ui_elements)
+        
         # Method 2: Reset module widget if available
         crop_widget = slicer.modules.cropvolume.widgetRepresentation()
         if crop_widget and hasattr(crop_widget, 'self'):
@@ -15416,73 +15150,94 @@ def reset_crop_button(button, original_text):
 
 def toggle_scissors_tool(activated=None):
     """
-    Toggle the scissors tool on/off
+    Toggle the scissors tool on/off with proper state tracking
     Args:
         activated (bool, optional): True to activate, False to deactivate, None to toggle
     """
     try:
-        # If activated parameter is provided, use it directly
+        # Initialize scissors state if not exists
+        if not hasattr(slicer.modules, 'ScissorsToolActive'):
+            slicer.modules.ScissorsToolActive = False
+        
+        current_state = slicer.modules.ScissorsToolActive
+        
+        # Determine target state
         if activated is not None:
-            if activated:
-                # Try to activate scissors tool programmatically
+            target_state = activated
+        else:
+            # Toggle current state
+            target_state = not current_state
+        
+        # Only act if state is changing
+        if target_state != current_state:
+            if target_state:
+                # Activate scissors tool
                 success = select_scissors_tool()
                 
                 if success:
+                    slicer.modules.ScissorsToolActive = True
                     print("✅ Scissors tool activated")
                     
-                    # Update button feedback
+                    # Update button to show active state
                     if hasattr(slicer.modules, 'CustomScissorsButton'):
                         button = slicer.modules.CustomScissorsButton
-                        button.setText("✅ Scissors Active")
+                        button.setText("🔴 Scissors ON")
                         button.setStyleSheet("""
                             QPushButton { 
                                 background-color: #27ae60; 
                                 color: white; 
-                                border: none; 
-                                padding: 12px; 
+                                border: 2px solid #1e7e34;
+                                padding: 10px; 
                                 font-weight: bold;
                                 border-radius: 6px;
                                 font-size: 12px;
+                                min-height: 40px;
+                                margin: 5px;
+                            }
+                            QPushButton:hover { 
+                                background-color: #218838; 
+                            }
+                            QPushButton:pressed { 
+                                background-color: #1e7e34; 
                             }
                         """)
-                        
-                        # Reset button after 2 seconds
-                        qt.QTimer.singleShot(2000, lambda: reset_scissors_button(button))
                 else:
-                    print("⚠️ Could not activate scissors tool - may need manual activation")
+                    print("⚠️ Could not activate scissors tool")
             else:
                 # Deactivate scissors tool
-                print("🔄 Deactivating scissors tool")
-                # Reset button appearance if needed
-                if hasattr(slicer.modules, 'CustomScissorsButton'):
-                    reset_scissors_button(slicer.modules.CustomScissorsButton)
-        else:
-            # Legacy behavior - just try to activate
-            success = select_scissors_tool()
-            
-            if success:
-                print("✅ Scissors tool activated")
+                slicer.modules.ScissorsToolActive = False
+                print("🔄 Scissors tool deactivated")
                 
-                # Update button feedback
+                # Switch back to default interaction mode
+                interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                if interactionNode:
+                    interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
+                
+                # Update button to show inactive state
                 if hasattr(slicer.modules, 'CustomScissorsButton'):
                     button = slicer.modules.CustomScissorsButton
-                    button.setText("✅ Scissors Active")
+                    button.setText("Toggle Scissors Tool")
                     button.setStyleSheet("""
                         QPushButton { 
-                            background-color: #27ae60; 
+                            background-color: #e74c3c; 
                             color: white; 
                             border: none; 
-                            padding: 12px; 
+                            padding: 10px; 
                             font-weight: bold;
                             border-radius: 6px;
                             font-size: 12px;
+                            min-height: 40px;
+                            margin: 5px;
+                        }
+                        QPushButton:hover { 
+                            background-color: #c0392b; 
+                        }
+                        QPushButton:pressed { 
+                            background-color: #a93226; 
                         }
                     """)
-                    
-                    # Reset button after 2 seconds
-                    qt.QTimer.singleShot(2000, lambda: reset_scissors_button(button))
-            else:
-                print("⚠️ Could not activate scissors tool - may need manual activation")
+        else:
+            print(f"🔄 Scissors tool already {'active' if current_state else 'inactive'}")
             
     except Exception as e:
         print(f"❌ Error toggling scissors tool: {e}")
