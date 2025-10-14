@@ -9865,11 +9865,11 @@ def reset_crop_module_safely():
         cleanup_crop_module_custom_elements()
         slicer.app.processEvents()
         
-        # Switch modules to trigger reset
-        slicer.util.selectModule("Welcome")
+        # Switch to crop module for recropping (avoid Welcome module)
+        slicer.util.selectModule("CropVolume")
         slicer.app.processEvents()
         
-        print("✅ Crop module reset complete")
+        print("✅ Crop module ready for recropping")
         
     except Exception as e:
         print(f"⚠️  Warning during crop module reset: {e}")
@@ -9888,20 +9888,26 @@ def restart_cropping_workflow_safely():
         restore_centerline_visibility()
         slicer.app.processEvents()
         
-        # Create custom crop interface for recropping
+        # Show the crop module for recropping instead of custom interface
         try:
+            # Open the crop module so user can see it in the left panel
+            slicer.util.selectModule("CropVolume")
+            slicer.app.processEvents()
+            
+            # Create custom crop interface as overlay (still keeps the module visible)
             success = create_custom_crop_interface()
             if success:
-                print("✅ Custom cropping interface ready for recropping")
+                print("✅ Crop module displayed with custom interface overlay")
                 print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
                 # Don't proceed automatically - wait for user to crop
                 return
             else:
-                print("⚠️ Custom interface failed, falling back to standard module...")
-                start_with_volume_crop()
+                print("⚠️ Custom interface failed, using standard module...")
+                # Just use the crop module that's already open
+                print("📋 Use the crop module to adjust ROI and apply cropping")
         except Exception as e:
-            print(f"⚠️ Error with custom interface: {e}")
-            # Fallback to standard crop module
+            print(f"⚠️ Error showing crop module: {e}")
+            # Fallback to standard crop workflow
             start_with_volume_crop()
         
         slicer.app.processEvents()
@@ -14060,14 +14066,10 @@ def reset_crop_module_to_default():
         # Method 1: Force module reload by switching modules
         current_module = slicer.util.moduleSelector().selectedModule
         
-        # Switch to a different module first
-        slicer.util.selectModule("Welcome")
-        slicer.app.processEvents()
-        
         # Clear any stored custom widgets/buttons from the module
         cleanup_crop_module_custom_elements()
         
-        # Switch back to Crop Volume to trigger reload
+        # Switch to Crop Volume module for recropping (avoid Welcome module)
         slicer.util.selectModule("CropVolume")
         slicer.app.processEvents()
         
