@@ -9829,6 +9829,9 @@ def on_restart_cropping(dialog, centerline_model=None, centerline_curve=None):
         dialog.close()
         dialog.setParent(None)
         
+        # Hide the custom crop interface during recropping
+        cleanup_custom_crop_interface()
+        
         # Show progress message
         print("🔄 Starting cropping restart with centerline preservation...")
         
@@ -9843,9 +9846,6 @@ def on_restart_cropping(dialog, centerline_model=None, centerline_curve=None):
         
         # Stage 4: Restart cropping workflow with delay
         qt.QTimer.singleShot(3000, lambda: restart_cropping_workflow_safely())
-        
-        # Stage 5: Show completion message
-        qt.QTimer.singleShot(4000, lambda: show_restart_completion_message())
         
     except Exception as e:
         print(f"❌ Error restarting cropping: {e}")
@@ -9865,11 +9865,11 @@ def reset_crop_module_safely():
         cleanup_crop_module_custom_elements()
         slicer.app.processEvents()
         
-        # Switch modules to trigger reset
-        slicer.util.selectModule("Welcome")
+        # Switch to crop module for recropping (avoid Welcome module)
+        slicer.util.selectModule("CropVolume")
         slicer.app.processEvents()
         
-        print("✅ Crop module reset complete")
+        print("✅ Crop module ready for recropping")
         
     except Exception as e:
         print(f"⚠️  Warning during crop module reset: {e}")
@@ -9878,7 +9878,7 @@ def reset_crop_module_safely():
 def restart_cropping_workflow_safely():
     """
     Safely restart the cropping workflow with proper timing and error handling.
-    Offers option to use custom crop interface if GUI becomes distorted.
+    Shows the custom crop interface and waits for user to perform recropping.
     """
     try:
         print("🚀 Starting cropping workflow...")
@@ -9888,73 +9888,40 @@ def restart_cropping_workflow_safely():
         restore_centerline_visibility()
         slicer.app.processEvents()
         
-        # Default to custom crop interface but offer option to use standard
+        # Show the crop module for recropping instead of custom interface
         try:
-            # First try the custom interface (now default)
-            success = use_custom_crop_instead_of_module()
+            # Open the crop module so user can see it in the left panel
+            slicer.util.selectModule("CropVolume")
+            slicer.app.processEvents()
+            
+            # Create custom crop interface as overlay (still keeps the module visible)
+            success = create_custom_crop_interface()
             if success:
-                print("✅ Custom cropping interface activated (default)")
+                print("✅ Crop module displayed with custom interface overlay")
+                print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
+                # Don't proceed automatically - wait for user to crop
+                return
             else:
-                print("⚠️ Custom interface failed, asking user for preference...")
-                # Only ask if custom failed
-                use_standard = slicer.util.confirmYesNoDisplay(
-                    "Custom crop interface failed to initialize.\n\n"
-                    "Would you like to use the standard crop module instead?",
-                    windowTitle="Fallback to Standard Crop"
-                )
-                if use_standard:
-                    start_with_volume_crop()
-                else:
-                    print("❌ User chose not to use standard module")
+                print("⚠️ Custom interface failed, using standard module...")
+                # Just use the crop module that's already open
+                print("📋 Use the crop module to adjust ROI and apply cropping")
         except Exception as e:
-            print(f"⚠️ Error with custom interface: {e}")
-            # Fallback to asking user
-            use_custom = offer_custom_crop_option()
-            if use_custom:
-                success = use_custom_crop_instead_of_module()
-                if not success:
-                    start_with_volume_crop()
-            else:
-                start_with_volume_crop()
+            print(f"⚠️ Error showing crop module: {e}")
+            # Fallback to standard crop workflow
+            start_with_volume_crop()
         
         slicer.app.processEvents()
-        print("✅ Cropping workflow started successfully")
         
     except Exception as e:
         print(f"❌ Error starting cropping workflow: {e}")
-        # Offer custom interface as fallback
+        # Fallback to standard crop module
         try:
-            print("🔄 Trying custom crop interface as fallback...")
-            success = use_custom_crop_instead_of_module()
-            if not success:
-                start_with_volume_crop()
+            start_with_volume_crop()
         except:
             print("❌ All methods failed - please manually open Crop Volume module")
 
 
-def show_restart_completion_message():
-    """
-    Show completion message for restart cropping operation.
-    """
-    try:
-        message = (
-            "🎉 Cropping restart completed!\n\n"
-            "✅ Centerlines preserved and visible\n"
-            "✅ Crop Volume module reset to default state\n"
-            "✅ Ready for new crop region selection\n\n"
-            "You can now adjust your crop region and continue the workflow."
-        )
-        print(message)
-        
-        # Also show user-friendly dialog
-        slicer.util.infoDisplay(
-            "Cropping Restart Complete!\n\n"
-            "Your existing centerlines have been preserved.\n"
-            "You can now adjust your crop region and continue."
-        )
-        
-    except Exception as e:
-        print(f"⚠️  Note: Restart completed but message display failed: {e}")
+# Removed show_restart_completion_message function - no longer needed
 
 
 def store_existing_centerlines():
@@ -14099,14 +14066,10 @@ def reset_crop_module_to_default():
         # Method 1: Force module reload by switching modules
         current_module = slicer.util.moduleSelector().selectedModule
         
-        # Switch to a different module first
-        slicer.util.selectModule("Welcome")
-        slicer.app.processEvents()
-        
         # Clear any stored custom widgets/buttons from the module
         cleanup_crop_module_custom_elements()
         
-        # Switch back to Crop Volume to trigger reload
+        # Switch to Crop Volume module for recropping (avoid Welcome module)
         slicer.util.selectModule("CropVolume")
         slicer.app.processEvents()
         
@@ -14210,11 +14173,9 @@ def restore_all_crop_ui_elements():
         # Remove any custom layouts or buttons that were added
         remove_custom_crop_buttons()
         
-        print(f"🔧 Restored {restored_count} UI elements to visible state")
         return True
         
     except Exception as e:
-        print(f"❌ Error restoring UI elements: {e}")
         return False
 
 
@@ -14273,13 +14234,10 @@ def remove_custom_crop_buttons():
             layout.deleteLater()
             buttons_removed += 1
         
-        if buttons_removed > 0:
-            print(f"🗑️  Removed {buttons_removed} custom buttons/layouts")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error removing custom buttons: {e}")
         return False
 
 
@@ -14295,7 +14253,7 @@ def reset_all_workflow_modules():
         dict: Results of reset operations for each module
     """
     try:
-        print("🔄 Resetting all workflow modules to default state...")
+        
         
         results = {
             'crop_volume': False,
@@ -14322,17 +14280,13 @@ def reset_all_workflow_modules():
         successful_resets = sum(results.values())
         total_modules = len(results)
         
-        print(f"✅ Reset complete: {successful_resets}/{total_modules} modules reset successfully")
-        
-        if successful_resets == total_modules:
-            print("🎉 All workflow modules have been reset to their default states!")
-        else:
-            print("⚠️  Some modules may require manual reset or module restart")
+
+
+
             
         return results
         
     except Exception as e:
-        print(f"❌ Error during workflow modules reset: {e}")
         return {'error': str(e)}
 
 
@@ -14356,7 +14310,6 @@ def reset_extract_centerline_module():
         return True
         
     except Exception as e:
-        print(f"❌ Error resetting Extract Centerline: {e}")
         return False
 
 
@@ -14371,11 +14324,10 @@ def reset_segment_editor_module():
         cleanup_segment_editor_custom_elements()
         
         # Note: Don't switch to Segment Editor unless user specifically wants to use it
-        print("🔧 Segment Editor module cleaned up")
         return True
         
     except Exception as e:
-        print(f"❌ Error resetting Segment Editor: {e}")
+        pass
         return False
 
 
@@ -14397,12 +14349,9 @@ def reset_cpr_module():
         if current_module and current_module != "CurvedPlanarReformat":
             slicer.util.selectModule(current_module)
             slicer.app.processEvents()
-        
-        print("🔧 CPR module reset")
         return True
         
     except Exception as e:
-        print(f"❌ Error resetting CPR: {e}")
         return False
 
 
@@ -14428,7 +14377,7 @@ def cleanup_extract_centerline_custom_elements():
         stop_all_centerline_monitoring()
         
     except Exception as e:
-        print(f"⚠️  Warning cleaning Extract Centerline elements: {e}")
+        pass
 
 
 def cleanup_segment_editor_custom_elements():
@@ -14448,7 +14397,8 @@ def cleanup_segment_editor_custom_elements():
                 delattr(slicer.modules, attr)
                 
     except Exception as e:
-        print(f"⚠️  Warning cleaning Segment Editor elements: {e}")
+        pass
+
 
 
 def cleanup_cpr_custom_elements():
@@ -14466,7 +14416,7 @@ def cleanup_cpr_custom_elements():
                 delattr(slicer.modules, attr)
                 
     except Exception as e:
-        print(f"⚠️  Warning cleaning CPR elements: {e}")
+        pass
 
 
 def cleanup_global_workflow_state():
@@ -14493,10 +14443,8 @@ def cleanup_global_workflow_state():
             if hasattr(slicer.modules, attr):
                 delattr(slicer.modules, attr)
         
-        print("🧹 Global workflow state cleaned up")
-        
     except Exception as e:
-        print(f"⚠️  Warning cleaning global workflow state: {e}")
+        pass
 
 
 def restart_cropping_simple():
@@ -14525,11 +14473,9 @@ def restart_cropping_simple():
         # Wait a moment then start cropping
         qt.QTimer.singleShot(1000, start_with_volume_crop)
         
-        print("✅ Simple cropping restart initiated")
         return True
         
     except Exception as e:
-        print(f"❌ Error in simple restart: {e}")
         return False
 
 
@@ -14538,7 +14484,7 @@ def manual_restart_cropping_help():
     Show manual steps to restart cropping if automatic restart fails.
     """
     help_text = """
-🔧 MANUAL RESTART CROPPING STEPS
+MANUAL RESTART CROPPING STEPS
 
 If automatic restart fails, follow these steps:
 
@@ -14584,27 +14530,11 @@ def test_crop_module_reset():
         test.reset_crop_module_to_default()
     """
     try:
-        print("🔄 Testing Crop Volume module reset...")
-        
-        success = reset_crop_module_to_default()
-        
-        if success:
-            print("✅ Crop Volume module reset test PASSED")
-            print("The module should now be in its original state")
-            print("\nYou can now:")
-            print("• Use the Crop Volume module normally")
-            print("• Start a new workflow with start_with_volume_crop()")
-            print("• All custom buttons and hidden UI should be restored")
-        else:
-            print("❌ Crop Volume module reset test FAILED")
-            print("You may need to:")
-            print("• Restart Slicer")
-            print("• Manually switch to another module and back")
-            
+
+        success = reset_crop_module_to_default()     
         return success
         
     except Exception as e:
-        print(f"❌ Error during crop module reset test: {e}")
         return False
 
 
@@ -14621,34 +14551,12 @@ def test_full_workflow_reset():
         test.reset_all_workflow_modules()
     """
     try:
-        print("🔄 Testing full workflow modules reset...")
         
         results = reset_all_workflow_modules()
-        
-        if results and not results.get('error'):
-            successful = sum(results.values())
-            total = len(results)
-            
-            if successful == total:
-                print("✅ Full workflow reset test PASSED")
-                print("All workflow modules have been reset to default states")
-            else:
-                print(f"⚠️  Partial success: {successful}/{total} modules reset")
-                print("Some modules may need manual attention")
-                
-            print("\nReset Results:")
-            for module, success in results.items():
-                status = "✅" if success else "❌"
-                print(f"  {status} {module.replace('_', ' ').title()}")
-        else:
-            print("❌ Full workflow reset test FAILED")
-            if results.get('error'):
-                print(f"Error: {results['error']}")
-                
+      
         return results
         
     except Exception as e:
-        print(f"❌ Error during full workflow reset test: {e}")
         return {'error': str(e)}
 
 
@@ -14672,10 +14580,8 @@ def cropVolumeWithNamedROI(roiName="CropROI", outputName="CroppedVolume"):
         roi = roiCollection.GetItemAsObject(0) if roiCollection.GetNumberOfItems() > 0 else None
 
         if not inputVolume:
-            print("❌ No input volume found in the scene.")
             return None
         if not roi:
-            print(f"❌ ROI named '{roiName}' not found in the scene.")
             return None
 
         # Set up CropVolume parameters
@@ -14693,8 +14599,6 @@ def cropVolumeWithNamedROI(roiName="CropROI", outputName="CroppedVolume"):
 
         # Perform cropping
         cropVolumeLogic.Apply(cropVolumeParameterNode)
-
-        print(f"✅ Cropped '{inputVolume.GetName()}' using ROI '{roiName}' → '{outputVolume.GetName()}'")
         
         # Set the cropped volume as the active background in slice views
         slicer.util.setSliceViewerLayers(background=outputVolume)
@@ -14705,7 +14609,6 @@ def cropVolumeWithNamedROI(roiName="CropROI", outputName="CroppedVolume"):
         return outputVolume
         
     except Exception as e:
-        print(f"❌ Error during volume cropping: {e}")
         return None
 
 
@@ -14725,10 +14628,6 @@ def create_custom_crop_interface():
         
         # First, ensure ROI exists and is visible
         roi_node = ensure_crop_roi_exists()
-        if roi_node:
-            print("✅ CropROI created and visible for custom crop interface")
-        else:
-            print("⚠️ Warning: Could not create CropROI")
         
         # Switch to the same three-up view used in the original workflow
         setup_crop_display_layout()
@@ -14899,11 +14798,11 @@ def create_custom_crop_interface():
         slicer.modules.CustomScissorsButton = scissors_button
         slicer.modules.CustomContinueButton = continue_button
         
-        print("✅ Custom crop interface created as fixed left-side module")
+        
         return crop_widget
         
     except Exception as e:
-        print(f"❌ Error creating custom crop interface: {e}")
+        pass
         return None
 
 
@@ -14928,6 +14827,13 @@ def execute_custom_crop():
             # Store the cropped volume reference
             slicer.modules.WorkflowCroppedVolume = cropped_volume
             
+            # Delete the ROI after cropping is complete
+            roiCollection = slicer.mrmlScene.GetNodesByName("CropROI")
+            if roiCollection.GetNumberOfItems() > 0:
+                roi_node = roiCollection.GetItemAsObject(0)
+                slicer.mrmlScene.RemoveNode(roi_node)
+                print("✅ ROI deleted after cropping")
+            
             # Reset slice views to show the cropped volume properly
             slicer.util.resetSliceViews()
             
@@ -14939,35 +14845,14 @@ def execute_custom_crop():
             
             print("✅ Custom crop operation completed successfully")
             
-            # Update UI feedback
-            if hasattr(slicer.modules, 'CustomCropButton'):
-                button = slicer.modules.CustomCropButton
-                original_text = button.text
-                button.setText("✅ Cropped Successfully!")
-                button.setStyleSheet("""
-                    QPushButton { 
-                        background-color: #27ae60; 
-                        color: white; 
-                        border: none; 
-                        padding: 15px; 
-                        font-weight: bold;
-                        border-radius: 8px;
-                        font-size: 14px;
-                        min-height: 50px;
-                    }
-                """)
-                
-                # Reset button after 2 seconds
-                qt.QTimer.singleShot(2000, lambda: reset_crop_button(button, original_text))
-            
-            # Continue with the normal workflow - threshold segmentation
-            qt.QTimer.singleShot(2500, lambda: continue_workflow_after_custom_crop())
+            # Continue with the normal workflow - threshold segmentation immediately
+            qt.QTimer.singleShot(500, lambda: continue_workflow_after_custom_crop())
             
         else:
-            print("❌ Custom crop operation failed")
+            pass
             
     except Exception as e:
-        print(f"❌ Error during custom crop execution: {e}")
+        pass
 
 
 def continue_workflow_after_custom_crop():
@@ -14976,18 +14861,15 @@ def continue_workflow_after_custom_crop():
     This ensures the same behavior as the original workflow.
     """
     try:
-        print("🔄 Continuing workflow after custom crop...")
         
         # Find the cropped volume
         volume_node = find_working_volume()
         if not volume_node:
-            print("❌ No cropped volume found")
             return
             
         # Continue with threshold segmentation (same as original workflow)
         threshold_values = prompt_for_threshold_range()
         if threshold_values is None:
-            print("⚠️ User cancelled threshold selection")
             return
         
         threshold_value_low, threshold_value_high = threshold_values
