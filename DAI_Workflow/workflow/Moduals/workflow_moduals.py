@@ -5970,7 +5970,7 @@ def stop_volume_addition_monitoring():
 
 def start_with_volume_crop():
     """
-    Start the workflow by opening the Volume Crop module and creating an ROI that fits the entire volume.
+    Start the workflow using the custom crop interface instead of the standard crop module.
     """
     # Set 3D view background to black at the start of workflow
     set_3d_view_background_black()
@@ -5982,11 +5982,12 @@ def start_with_volume_crop():
     if not volume_node:
         slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
         return
-    slicer.util.selectModule("CropVolume")
-    slicer.app.processEvents()
-    hide_crop_volume_ui_elements()
-    qt.QTimer.singleShot(1000, hide_crop_volume_ui_elements)
-    qt.QTimer.singleShot(3000, hide_crop_volume_ui_elements)
+    
+    # Use custom crop interface instead of standard module
+    create_initial_custom_crop_interface()
+    print("✅ Initial custom crop interface ready")
+    print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
+    return
     
     roi_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode", "CropROI")
     
@@ -14612,6 +14613,286 @@ def cropVolumeWithNamedROI(roiName="CropROI", outputName="CroppedVolume"):
         return None
 
 
+def create_initial_custom_crop_interface():
+    """
+    Create the initial custom crop interface for the first crop operation.
+    Uses dark color scheme and hides scissors tools until after cropping.
+    """
+    try:
+        # Clean up any existing custom crop interface
+        if hasattr(slicer.modules, 'CustomCropWidget'):
+            existing_widget = slicer.modules.CustomCropWidget
+            if existing_widget:
+                existing_widget.close()
+                existing_widget.deleteLater()
+        
+        # First, ensure ROI exists and is visible
+        roi_node = ensure_crop_roi_exists()
+        if roi_node:
+            print("✅ CropROI created and visible for initial custom crop interface")
+        else:
+            print("⚠️ Warning: Could not create CropROI")
+        
+        # Switch to the same three-up view used in the workflow
+        setup_crop_display_layout()
+        
+        # Create the custom crop widget as a fixed left-side module with dark theme
+        crop_widget = qt.QWidget()
+        crop_widget.setWindowTitle("Crop Tools")
+        
+        # Set up as a dockable widget on the left side with dark theme
+        crop_widget.setWindowFlags(qt.Qt.Widget)
+        crop_widget.setFixedWidth(280)
+        crop_widget.setStyleSheet("""
+            QWidget {
+                background-color: #2b2b2b;
+                border: 2px solid #555555;
+                border-radius: 8px;
+                color: #ffffff;
+            }
+        """)
+        
+        # Position on the left side of the screen
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            screen_geometry = qt.QApplication.desktop().availableGeometry()
+            crop_widget.setGeometry(10, 100, 280, 300)
+            crop_widget.setWindowFlags(qt.Qt.WindowStaysOnTopHint | qt.Qt.FramelessWindowHint)
+        
+        # Set up layout
+        layout = qt.QVBoxLayout()
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(15)
+        
+        # Header with title and close button - dark theme
+        header_layout = qt.QHBoxLayout()
+        
+        # Title
+        title_label = qt.QLabel("Crop Tools")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        header_layout.addWidget(title_label)
+        
+        # Close button - dark theme
+        close_button = qt.QPushButton("×")
+        close_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                border: none; 
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: bold;
+                min-width: 24px;
+                max-width: 24px;
+                min-height: 24px;
+                max-height: 24px;
+            }
+            QPushButton:hover { 
+                background-color: #c0392b; 
+            }
+        """)
+        close_button.connect('clicked()', lambda: cleanup_custom_crop_interface())
+        header_layout.addWidget(close_button)
+        
+        # Add header to main layout
+        header_widget = qt.QWidget()
+        header_widget.setLayout(header_layout)
+        header_widget.setStyleSheet("padding: 10px; background-color: #3a3a3a; border-radius: 6px; margin-bottom: 10px;")
+        layout.addWidget(header_widget)
+
+        # Crop button - dark theme
+        crop_button = qt.QPushButton("CROP VOLUME")
+        crop_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #3498db; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 13px;
+                min-height: 45px;
+                margin: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #2980b9; 
+            }
+            QPushButton:pressed { 
+                background-color: #21618c; 
+            }
+        """)
+        
+        # Connect crop button
+        crop_button.connect('clicked()', lambda: execute_initial_custom_crop())
+        layout.addWidget(crop_button)
+        
+        # Add stretch to push everything to the top
+        layout.addStretch()
+        
+        # Set layout and show
+        crop_widget.setLayout(layout)
+        
+        # Show the fixed left-side module
+        crop_widget.show()
+        crop_widget.raise_()
+        crop_widget.activateWindow()
+        
+        # Store references
+        slicer.modules.CustomCropWidget = crop_widget
+        slicer.modules.CustomCropButton = crop_button
+        
+        print("✅ Initial custom crop interface created with dark theme (scissors tools hidden)")
+        return crop_widget
+        
+    except Exception as e:
+        print(f"❌ Error creating initial custom crop interface: {e}")
+        return None
+
+
+def execute_initial_custom_crop():
+    """
+    Execute the initial custom crop operation and add scissors tools after cropping.
+    """
+    try:
+        print("🔄 Executing initial custom crop operation...")
+        
+        # Check if ROI exists, create if needed
+        ensure_crop_roi_exists()
+        
+        # Perform the crop with timestamp to avoid naming conflicts
+        import time
+        timestamp = int(time.time())
+        cropped_volume = cropVolumeWithNamedROI("CropROI", f"CroppedVolume_{timestamp}")
+        
+        if cropped_volume:
+            # Store the cropped volume reference
+            slicer.modules.WorkflowCroppedVolume = cropped_volume
+            
+            # Delete the ROI after cropping is complete
+            roiCollection = slicer.mrmlScene.GetNodesByName("CropROI")
+            if roiCollection.GetNumberOfItems() > 0:
+                roi_node = roiCollection.GetItemAsObject(0)
+                slicer.mrmlScene.RemoveNode(roi_node)
+                print("✅ ROI deleted after initial cropping")
+            
+            # Reset slice views to show the cropped volume properly
+            slicer.util.resetSliceViews()
+            
+            # Switch to 3D view to show results
+            set_3d_only_view()
+            
+            # Set dark background
+            set_3d_view_background_black()
+            
+            print("✅ Initial custom crop operation completed successfully")
+            
+            # Add scissors tools and continue button to the interface after cropping
+            add_scissors_tools_to_initial_interface()
+            
+            # Continue with the normal workflow - threshold segmentation
+            qt.QTimer.singleShot(500, lambda: continue_workflow_after_custom_crop())
+            
+        else:
+            print("❌ Initial crop operation failed")
+            
+    except Exception as e:
+        print(f"❌ Error during initial custom crop execution: {e}")
+
+
+def add_scissors_tools_to_initial_interface():
+    """
+    Add scissors tools and continue button to the initial crop interface after cropping is complete.
+    """
+    try:
+        if not hasattr(slicer.modules, 'CustomCropWidget'):
+            return
+            
+        crop_widget = slicer.modules.CustomCropWidget
+        if not crop_widget:
+            return
+            
+        # Get the current layout
+        layout = crop_widget.layout()
+        if not layout:
+            return
+        
+        # Remove the stretch at the end to add new buttons
+        stretch_item = layout.takeAt(layout.count() - 1)
+        
+        # Add spacing
+        layout.addSpacing(10)
+        
+        # Add scissors toggle button - dark theme
+        scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                border: none; 
+                padding: 10px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 12px;
+                min-height: 40px;
+                margin: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #c0392b; 
+            }
+            QPushButton:pressed { 
+                background-color: #a93226; 
+            }
+        """)
+        
+        # Connect scissors button
+        scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
+        layout.addWidget(scissors_button)
+        
+        # Add spacing
+        layout.addSpacing(15)
+        
+        # Add continue workflow button - dark theme
+        continue_button = qt.QPushButton("FINISH & CONTINUE")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #27ae60; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 13px;
+                min-height: 45px;
+                margin: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #229954; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e8449; 
+            }
+        """)
+        
+        # Connect continue button
+        continue_button.connect('clicked()', lambda: finish_custom_crop_workflow())
+        layout.addWidget(continue_button)
+        
+        # Re-add stretch to push everything to the top
+        layout.addStretch()
+        
+        # Store references
+        slicer.modules.CustomScissorsButton = scissors_button
+        slicer.modules.CustomContinueButton = continue_button
+        
+        # Resize the widget to accommodate new buttons
+        crop_widget.setFixedHeight(400)
+        
+        print("✅ Scissors tools added to initial crop interface")
+        
+    except Exception as e:
+        print(f"❌ Error adding scissors tools to initial interface: {e}")
+
+
 def create_custom_crop_interface():
     """
     Create a clean custom interface for cropping when the crop module GUI becomes distorted.
@@ -14641,9 +14922,10 @@ def create_custom_crop_interface():
         crop_widget.setFixedWidth(280)
         crop_widget.setStyleSheet("""
             QWidget {
-                background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
+                background-color: #2b2b2b;
+                border: 2px solid #555555;
                 border-radius: 8px;
+                color: #ffffff;
             }
         """)
         
@@ -14664,7 +14946,7 @@ def create_custom_crop_interface():
         
         # Title
         title_label = qt.QLabel("Crop Tools")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
         header_layout.addWidget(title_label)
         
         # Close button
