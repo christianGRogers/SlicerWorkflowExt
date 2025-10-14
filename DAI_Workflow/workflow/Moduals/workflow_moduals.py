@@ -36,48 +36,127 @@ UPDATE: Programmatic Segment Editor Integration
 - Scissors tool can be activated/deactivated as needed by user
 """
 
-def hide_status_bar():
-    """
-    Hide the status bar at the bottom of the Slicer main window.
-    Can be called from console to manually hide the status bar.
-    """
+# Initialize workflow by collapsing left panel on module load
+def initialize_workflow_ui():
+    """Initialize the workflow UI state - collapse left panel on startup"""
     try:
-        # Access the main window and hide its status bar
-        mainWindow = slicer.util.mainWindow()
-        if mainWindow:
-            statusBar = mainWindow.statusBar()
-            if statusBar:
-                statusBar.hide()
-                return True
-        return False
-    except Exception as e:
-        print(f"Warning: Could not hide status bar: {str(e)}")
-        return False
+        # Use QTimer to ensure this runs after the UI is fully loaded
+        qt.QTimer.singleShot(1000, force_collapse_left_panel_on_startup)
+    except:
+        pass
 
-def show_status_bar():
-    """
-    Show the status bar at the bottom of the Slicer main window.
-    Can be called from console to manually show the status bar.
-    """
+# Call initialization when module is imported
+try:
+    initialize_workflow_ui()
+except:
+    pass
+
+# Console testing functions
+def test_panel_collapse():
+    """Console function to test panel collapse"""
+    print("Testing left panel collapse...")
+    result = collapse_left_module_panel()
+    if result:
+        print("✅ Panel collapse test PASSED")
+    else:
+        print("❌ Panel collapse test FAILED")
+    return result
+
+def test_panel_expand():
+    """Console function to test panel expand"""
+    print("Testing left panel expand...")
+    result = expand_left_module_panel()
+    if result:
+        print("✅ Panel expand test PASSED")
+    else:
+        print("❌ Panel expand test FAILED")
+    return result
+
+def debug_panel_widgets():
+    """Console function to debug what panel widgets exist"""
     try:
-        # Access the main window and show its status bar
-        mainWindow = slicer.util.mainWindow()
-        if mainWindow:
-            statusBar = mainWindow.statusBar()
-            if statusBar:
-                statusBar.show()
-                return True
-        return False
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            print("❌ No main window found")
+            return
+            
+        print("🔍 Searching for panel widgets...")
+        
+        # Find all dock widgets
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            print(f"Found {len(dock_widgets)} dock widgets:")
+            for i, widget in enumerate(dock_widgets):
+                name = widget.objectName()
+                visible = widget.isVisible()
+                print(f"  {i+1}. '{name}' (visible: {visible})")
+        except Exception as e:
+            print(f"Could not get dock widgets: {e}")
+        
+        # Find all widgets with 'panel' or 'module' in name
+        try:
+            all_widgets = main_window.findChildren(qt.QWidget)
+            panel_widgets = []
+            for w in all_widgets:
+                widget_name = w.objectName()
+                if widget_name and ('panel' in widget_name.lower() or 'module' in widget_name.lower()):
+                    panel_widgets.append(w)
+                    
+            print(f"\nFound {len(panel_widgets)} panel-related widgets:")
+            for i, widget in enumerate(panel_widgets):
+                name = widget.objectName()
+                visible = widget.isVisible()
+                print(f"  {i+1}. '{name}' (visible: {visible})")
+        except Exception as e:
+            print(f"Could not get panel widgets: {e}")
+            
     except Exception as e:
-        print(f"Warning: Could not show status bar: {str(e)}")
-        return False
+        print(f"❌ Debug failed: {e}")
 
-def set_dark_background():
-    """
-    Convenience function to set 3D view background to dark.
-    Can be called from console or other parts of the workflow.
-    """
-    return set_3d_view_background_black()
+# Console helper for users to test
+def collapse_panel():
+    """Quick console command to collapse panel"""
+    print("🔄 Attempting to collapse left module panel...")
+    result = collapse_left_module_panel()
+    if not result:
+        print("🔍 Let's see what widgets are available:")
+        debug_panel_widgets()
+    return result
+
+def expand_panel():
+    """Quick console command to expand panel"""  
+    print("🔄 Attempting to expand left module panel...")
+    result = expand_left_module_panel()
+    if not result:
+        print("🔍 Let's see what widgets are available:")
+        debug_panel_widgets()
+    return result
+
+def test_panel_management():
+    """Complete test of panel management"""
+    print("🧪 Testing Panel Management System")
+    print("=" * 40)
+    
+    print("\n1. Debugging available widgets:")
+    debug_panel_widgets()
+    
+    print("\n2. Testing collapse:")
+    collapse_result = test_panel_collapse()
+    
+    print("\n3. Testing expand:")
+    expand_result = test_panel_expand()
+    
+    print(f"\n📊 Results:")
+    print(f"   Collapse: {'✅ PASS' if collapse_result else '❌ FAIL'}")
+    print(f"   Expand:   {'✅ PASS' if expand_result else '❌ FAIL'}")
+    
+    return collapse_result and expand_result
+
+
+
+
+
+
 
 def find_working_volume():
     """
@@ -138,6 +217,152 @@ def find_working_volume():
         
     except Exception as e:
         return slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+
+def force_collapse_left_panel_on_startup():
+    """Force collapse of left panel on startup - more aggressive approach"""
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            return False
+            
+        success = False
+        
+        # Method 1: Try to find and hide the module panel dock widget
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            for widget in dock_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
+                    widget.hide()
+                    success = True
+                    print(f"✅ Hidden dock widget: {widget_name}")
+        except Exception as e:
+            print(f"Method 1 failed: {e}")
+        
+        # Method 2: Try specific known panel names
+        try:
+            known_panel_names = ['PanelDockWidget', 'ModulePanelDockWidget']
+            for panel_name in known_panel_names:
+                panels = main_window.findChildren(qt.QWidget, panel_name)
+                for panel in panels:
+                    panel.hide()
+                    success = True
+                    print(f"✅ Hidden panel: {panel_name}")
+        except Exception as e:
+            print(f"Method 2 failed: {e}")
+        
+        # Method 3: Try to find all QWidget children and hide panel-related ones
+        try:
+            all_widgets = main_window.findChildren(qt.QWidget)
+            for widget in all_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ("PanelDockWidget" in widget_name or "ModulePanel" in widget_name):
+                    widget.hide()
+                    success = True
+                    print(f"✅ Hidden widget: {widget_name}")
+        except Exception as e:
+            print(f"Method 3 failed: {e}")
+        
+        if success:
+            print("✅ Left module panel collapsed on startup")
+        else:
+            print("⚠️ No panel widgets found to hide")
+            
+        return success
+        
+    except Exception as e:
+        print(f"⚠️ Could not force collapse left module panel: {e}")
+        return False
+
+def collapse_left_module_panel():
+    """
+    Collapse the left module panel to maximize view space during workflow.
+    """
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            return False
+        
+        success = False
+        
+        # Method 1: Find and collapse/hide dock widgets
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            for widget in dock_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
+                    widget.hide()
+                    success = True
+                    print(f"✅ Collapsed dock widget: {widget_name}")
+        except Exception as e:
+            print(f"Dock widget method failed: {e}")
+        
+        # Method 2: Try specific panel names
+        try:
+            panel_names = ['ModulePanelDockWidget', 'PanelDockWidget']
+            for panel_name in panel_names:
+                panels = main_window.findChildren(qt.QWidget, panel_name)
+                for panel in panels:
+                    panel.hide()
+                    success = True
+                    print(f"✅ Collapsed panel: {panel_name}")
+        except Exception as e:
+            print(f"Panel name method failed: {e}")
+        
+        if success:
+            print("✅ Left module panel collapsed")
+        else:
+            print("⚠️ Could not find any panels to collapse")
+        return success
+        
+    except Exception as e:
+        print(f"⚠️ Could not collapse left module panel: {e}")
+        return False
+
+def expand_left_module_panel():
+    """
+    Expand the left module panel when needed (e.g., for Extract Centerline step).
+    """
+    try:
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            return False
+        
+        success = False
+        
+        # Method 1: Find and show dock widgets
+        try:
+            dock_widgets = main_window.findChildren(qt.QDockWidget)
+            for widget in dock_widgets:
+                widget_name = widget.objectName()
+                if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
+                    widget.show()
+                    success = True
+                    print(f"✅ Expanded dock widget: {widget_name}")
+        except Exception as e:
+            print(f"Dock widget expand failed: {e}")
+        
+        # Method 2: Try specific panel names
+        try:
+            panel_names = ['ModulePanelDockWidget', 'PanelDockWidget']
+            for panel_name in panel_names:
+                panels = main_window.findChildren(qt.QWidget, panel_name)
+                for panel in panels:
+                    panel.show()
+                    success = True
+                    print(f"✅ Expanded panel: {panel_name}")
+        except Exception as e:
+            print(f"Panel expand failed: {e}")
+        
+        if success:
+            print("✅ Left module panel expanded")
+        else:
+            print("⚠️ Could not find any panels to expand")
+        return success
+        
+    except Exception as e:
+        print(f"⚠️ Could not expand left module panel: {e}")
+        return False
 
 def get_volume_slice_thickness(volume_node):
     """
@@ -706,21 +931,7 @@ def set_three_up_view():
         print(f"Error setting three-up view: {e}")
         return False
 
-def reset_slice_views_field_of_view():
-    """
-    Reset the field of view for all slice views to center the images properly.
-    Uses Slicer's built-in resetSliceViews functionality.
-    """
-    try:
-        # Use Slicer's built-in reset field of view functionality
-        slicer.util.resetSliceViews()
-        
-        slicer.app.processEvents()
-        print("Reset field of view for all slice views using built-in resetSliceViews - images centered")
-        return True
-    except Exception as e:
-        print(f"Error resetting slice views field of view: {e}")
-        return False
+
 
 def set_3d_only_view():
     """
@@ -1055,37 +1266,6 @@ def set_3d_view_background_black():
             viewNode.SetBackgroundColor2(r, g, b)  # Also set gradient background
     except Exception as e:
         pass
-
-def create_basic_segmentation_for_markup(volume_node):
-    """
-    Create a basic segmentation node that can be used with markup workflow for statistics
-    """
-    try:
-        # Create a new segmentation node
-        segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
-        segmentation_node.SetName("Markup_Segmentation")
-        segmentation_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
-        
-        # Create a default segment (user can modify as needed)
-        segmentation = segmentation_node.GetSegmentation()
-        segment_id = segmentation.AddEmptySegment("Markup_Region")
-        
-        # Set segment color to white
-        segment = segmentation.GetSegment(segment_id)
-        if segment:
-            segment.SetColor(1.0, 1.0, 1.0)
-        
-        # Set up display
-        display_node = segmentation_node.GetDisplayNode()
-        if display_node:
-            display_node.SetAllSegmentsVisibility(True)
-            display_node.SetVisibility2DOutline(True)
-            display_node.SetVisibility2DFill(True)
-        
-        return segmentation_node
-        
-    except Exception as e:
-        return None
 
 def create_threshold_segment():
     """
@@ -1923,6 +2103,10 @@ def open_centerline_module():
         
         if workflow_segmentation:
             prepare_surface_for_centerline(workflow_segmentation)
+        
+        # Expand the left module panel for ExtractCenterline step
+        expand_left_module_panel()
+        
         slicer.util.selectModule("ExtractCenterline")
         pass
         slicer.app.processEvents()
@@ -5709,6 +5893,9 @@ def start_with_volume_crop():
     """
     Start the workflow using the custom crop interface instead of the standard crop module.
     """
+    # Collapse the left module panel at workflow start to maximize view space
+    collapse_left_module_panel()
+    
     # Set 3D view background to black at the start of workflow
     set_3d_view_background_black()
     
@@ -5722,7 +5909,7 @@ def start_with_volume_crop():
     
     # Use custom crop interface instead of standard module
     create_initial_custom_crop_interface()
-    print("✅ Initial custom crop interface ready")
+    print("✅ Initial custom crop interface ready (left panel collapsed)")
     print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
     return
     
@@ -9101,38 +9288,6 @@ def check_second_line_completion_carefully(second_line_node):
 
 
 
-def on_continue_stenosis_measurements(dialog):
-    """
-    Continue with another stenosis measurement pair
-    """
-    try:
-        dialog.close()
-        dialog.setParent(None)
-        
-        pass
-        pass
-        
-        # Create another pair of stenosis measurements
-        create_stenosis_ratio_measurement()
-        
-    except Exception as e:
-        pass
-
-def on_stop_stenosis_measurements(dialog):
-    """
-    Stop stenosis measurements and close the measurement tool
-    """
-    try:
-        dialog.close()
-        dialog.setParent(None)
-        
-        pass
-        stop_stenosis_measurement_tool()
-        show_stenosis_measurements_summary()
-        
-    except Exception as e:
-        pass
-
 def stop_stenosis_measurement_tool():
     """
     Stop the stenosis measurement tool and return to normal interaction mode
@@ -9622,6 +9777,9 @@ def restart_cropping_workflow_safely():
         print("🚀 Starting cropping workflow...")
         slicer.app.processEvents()
         
+        # Collapse the left module panel for recropping to maximize view space
+        collapse_left_module_panel()
+        
         # Restore centerline visibility first
         restore_centerline_visibility()
         slicer.app.processEvents()
@@ -9857,6 +10015,9 @@ def create_additional_centerline_setup():
     Create new centerline model and curve nodes and set up Extract Centerline module for additional centerlines
     """
     try:
+        # Expand the left module panel for additional centerline extraction
+        expand_left_module_panel()
+        
         # Ensure we're in the Extract Centerline module
         slicer.util.selectModule("ExtractCenterline")
         slicer.app.processEvents()
@@ -10252,38 +10413,6 @@ def stop_all_centerline_monitoring():
     except Exception as e:
         pass
 
-def start_centerline_monitoring_for_additional():
-    """
-    Manual function to start centerline monitoring for additional centerlines
-    """
-    try:
-        setup_centerline_completion_monitor()
-        pass
-        pass
-        
-        # Update button to indicate monitoring is active
-        if hasattr(slicer.modules, 'CenterlineMonitoringButton'):
-            button = slicer.modules.CenterlineMonitoringButton
-            if button:
-                button.setText("Monitoring Active...")
-                button.setEnabled(False)
-                button.setStyleSheet("""
-                    QPushButton { 
-                        background-color: #28a745; 
-                        color: white; 
-                        border: none; 
-                        padding: 10px 15px; 
-                        font-weight: bold;
-                        border-radius: 6px;
-                        margin: 5px;
-                        font-size: 12px;
-                        min-width: 150px;
-                    }
-                """)
-        
-    except Exception as e:
-        pass
-
 def cleanup_centerline_monitoring_button():
     """
     Clean up the centerline monitoring button
@@ -10299,45 +10428,6 @@ def cleanup_centerline_monitoring_button():
         
     except Exception as e:
         pass
-
-def stop_volume_monitoring():
-    """Console helper to manually stop volume addition monitoring"""
-    try:
-        pass
-        stop_volume_addition_monitoring()
-        return True
-    except Exception as e:
-        pass
-        return False
-
-def skip_to_volume_crop():
-    """Console helper to skip DICOM loading and go directly to volume crop"""
-    try:
-        pass
-        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-        if not volume_nodes:
-            pass
-            return False
-        
-        # Stop any existing monitoring
-        stop_volume_addition_monitoring()
-        
-        # Continue with volume crop
-        start_with_volume_crop()
-        return True
-    except Exception as e:
-        pass
-        return False
-
-def cleanup_status_widget():
-    """Console helper to clean up the status widget"""
-    try:
-        cleanup_volume_waiting_status_widget()
-        pass
-        return True
-    except Exception as e:
-        pass
-        return False
 
 def clear_existing_centerlines():
     """
@@ -10375,38 +10465,6 @@ def clear_existing_centerlines():
             
     except Exception as e:
         pass
-
-def get_centerline_summary():
-    """
-    Get a summary of all existing centerlines in the scene
-    """
-    try:
-        all_models = find_all_centerline_models()
-        all_curves = find_all_centerline_curves()
-        
-        summary = f"Centerlines in scene:\n"
-        summary += f"• Models: {len(all_models)}\n"
-        summary += f"• Curves: {len(all_curves)}\n"
-        
-        if all_models:
-            summary += "\nCenterline Models:\n"
-            for i, model in enumerate(all_models, 1):
-                polydata = model.GetPolyData()
-                point_count = polydata.GetNumberOfPoints() if polydata else 0
-                summary += f"  {i}. {model.GetName()} ({point_count} points)\n"
-                
-        if all_curves:
-            summary += "\nCenterline Curves:\n"
-            for i, curve in enumerate(all_curves, 1):
-                point_count = curve.GetNumberOfControlPoints()
-                summary += f"  {i}. {curve.GetName()} ({point_count} control points)\n"
-        
-        return summary
-        
-    except Exception as e:
-        pass
-        return "Error retrieving centerline information"
-
 
 def remove_transforms_from_point_lists():
     """
@@ -10646,52 +10704,6 @@ def force_remove_all_transforms():
     except Exception as e:
         pass
         return False
-
-def set_straightened_volume_visible():
-    """
-    Set the straightened volume as visible in all slice views
-    """
-    try:
-        if hasattr(slicer.modules, 'WorkflowStraightenedVolume'):
-            straightened_volume = slicer.modules.WorkflowStraightenedVolume
-        else:
-            volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-            straightened_volume = None
-            for volume in volume_nodes:
-                if 'straightened' in volume.GetName().lower():
-                    straightened_volume = volume
-                    break
-        
-        if straightened_volume:
-            layout_manager = slicer.app.layoutManager()
-            slice_view_names = ['Red', 'Yellow', 'Green']
-            
-            for slice_view_name in slice_view_names:
-                slice_widget = layout_manager.sliceWidget(slice_view_name)
-                if slice_widget:
-                    slice_logic = slice_widget.sliceLogic()
-                    if slice_logic:
-                        slice_logic.GetSliceCompositeNode().SetBackgroundVolumeID(straightened_volume.GetID())
-                        pass
-            
-            for slice_view_name in slice_view_names:
-                slice_widget = layout_manager.sliceWidget(slice_view_name)
-                if slice_widget:
-                    slice_view = slice_widget.sliceView()
-                    if slice_view:
-                        slice_view.fitToWindow()
-            
-            selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
-            if selection_node:
-                selection_node.SetActiveVolumeID(straightened_volume.GetID())
-            
-            pass
-            
-        else:
-            pass
-            
-    except Exception as e:
-        pass
 
 def draw_circles_on_centerline():
     """
@@ -10955,30 +10967,6 @@ def create_perpendicular_circle(circle_node, center_point, radius, direction_vec
         pass
         # Fallback to axial circle
         return create_closed_curve_circle(circle_node, center_point, radius)
-
-def create_axial_circle_points(circle_node, center_point, radius):
-    """
-    Create circle points in the axial plane (XY plane) for a single circle
-    """
-    try:
-        import math
-        num_points = 24
-        for i in range(num_points):
-            angle = 2 * math.pi * i / num_points
-            x = center_point[0] + radius * math.cos(angle)
-            y = center_point[1] + radius * math.sin(angle)
-            z = center_point[2] 
-            
-            circle_node.AddControlPoint([x, y, z])
-        
-        if hasattr(circle_node, 'SetCurveClosed'):
-            circle_node.SetCurveClosed(True)
-        
-        return True
-        
-    except Exception as e:
-        pass
-        return False
 
 def clear_branch_circles():
     """
@@ -11491,36 +11479,6 @@ def draw_circle_for_post_branch_point(post_branch_node, point_index):
         pass  # Error creating post branch circle: {str(e)}
         return False
 
-def apply_transform_to_node(node, node_description="node"):
-    """
-    Apply the straightening transform to any node
-    """
-    try:
-        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
-        
-        if len(transform_nodes) == 0:
-            pass
-            return False
-        
-        straightening_transform = None
-        for transform_node in transform_nodes:
-            if transform_node.GetName() == "Straightening transform":
-                straightening_transform = transform_node
-                break
-        
-        if straightening_transform:
-            node.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            pass
-            return True
-        else:
-            transform_names = [node.GetName() for node in transform_nodes]
-            pass
-            return False
-            
-    except Exception as e:
-        pass
-        return False
-
 # ===============================================================================
 # WORKFLOW2 FUNCTIONS - Centerline and Tube Mask Creation
 # ===============================================================================
@@ -11743,14 +11701,6 @@ def create_segmentation_from_tube(tube_model, pair_number=1):
         pass
         return None
 
-def set_tube_radius(radius):
-    """
-    Helper function to set a custom tube radius.
-    """
-    global tube_radius
-    tube_radius = radius
-    pass
-
 def add_cropped_volume_to_3d_scene():
     """
     Add the cropped volume to the 3D scene for visualization.
@@ -11904,89 +11854,6 @@ def show_segment_statistics(stenosis_segmentation):
             pass
             pass
 
-def create_bone_mask(volume_name=None):
-    """
-    Helper function to create a bone density mask.
-    
-    Args:
-        volume_name (str, optional): Name of the volume to use
-    """
-    return create_mask_segmentation(
-        mask_name="BoneMask",
-        threshold_low=200,
-        rgb_color=(1.0, 1.0, 1.0),  # Bright white
-        volume_name=volume_name
-    )
-
-def create_soft_tissue_mask(volume_name=None):
-    """
-    Helper function to create a soft tissue density mask.
-    
-    Args:
-        volume_name (str, optional): Name of the volume to use
-    """
-    return create_mask_segmentation(
-        mask_name="SoftTissueMask",
-        threshold_low=-100,
-        threshold_high=100,
-        rgb_color=(0.0, 1.0, 0.0),  # Green
-        volume_name=volume_name
-    )
-
-def create_contrast_mask(volume_name=None):
-    """
-    Helper function to create a contrast-enhanced tissue mask.
-    
-    Args:
-        volume_name (str, optional): Name of the volume to use
-    """
-    return create_mask_segmentation(
-        mask_name="ContrastMask",
-        threshold_low=100,
-        threshold_high=400,
-        rgb_color=(0.0, 0.0, 1.0),  # Blue
-        volume_name=volume_name
-    )
-
-def create_analysis_masks_manually(volume_name=None):
-    """
-    Helper function to manually create analysis masks (LAP, NCP, STENOSIS).
-    Can be called from console to create masks on any volume.
-    All masks are created as segments within a single segmentation node.
-    
-    Args:
-        volume_name (str, optional): Name of the volume to use. If None, will try to find straightened volume
-    
-    Returns:
-        vtkMRMLSegmentationNode: The created segmentation node containing all analysis segments, or None if failed
-    """
-    try:
-        # If no volume name specified, try to find straightened volume
-        target_volume = None
-        if volume_name:
-            volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-            for volume in volume_nodes:
-                if volume.GetName() == volume_name or volume_name.lower() in volume.GetName().lower():
-                    target_volume = volume
-                    break
-        else:
-            # Look for straightened volume
-            volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-            for volume in volume_nodes:
-                if 'straightened' in volume.GetName().lower():
-                    target_volume = volume
-                    break
-        
-        if not target_volume:
-            return None
-        
-        segmentation_node = create_analysis_masks([target_volume])
-
-        return segmentation_node
-            
-    except Exception as e:
-        return None
-
 def hide_crop_volume_ui_elements():
     """
     Hide ALL UI elements in the Crop Volume module - remove everything from the interface
@@ -12060,40 +11927,6 @@ def hide_crop_volume_ui_elements():
         pass
         return False
 
-def setup_minimal_crop_volume_ui():
-    """
-    Set up the Crop Volume module with minimal UI (only the green Apply button)
-    """
-    try:
-        # First ensure we're in the Crop Volume module
-        slicer.util.selectModule("CropVolume")
-        slicer.app.processEvents()
-        
-        # Hide all UI elements except the Apply button
-        hide_success = hide_crop_volume_ui_elements()
-        
-        if hide_success:
-            # All UI elements hidden - no buttons added to crop module
-            pass
-            return True
-        else:
-            pass
-            return False
-            
-    except Exception as e:
-        pass
-        return False
-
-
-def cleanup_all_workflow_scissors_ui():
-    """Console helper to clean up all scissors workflow UI"""
-    try:
-        cleanup_continue_ui()
-        pass
-        return True
-    except Exception as e:
-        pass
-        return False
 
 def restore_crop_ui():
     """Console helper to restore all hidden Crop Volume UI elements"""
@@ -12365,6 +12198,9 @@ def setup_minimal_extract_centerline_ui():
     Set up the Extract Centerline module with minimal UI (only the inputs section)
     """
     try:
+        # Expand the left module panel for ExtractCenterline setup
+        expand_left_module_panel()
+        
         # First ensure we're in the Extract Centerline module
         slicer.util.selectModule("ExtractCenterline")
         slicer.app.processEvents()
@@ -12481,68 +12317,7 @@ def start_with_segment_editor_scissors():
         
         # Create scissors tool button in the workflow UI
         create_scissors_tool_button()
-        
-        pass
-        pass
-        
-        return True
-        
-    except Exception as e:
-        pass
-        return False
 
-def setup_minimal_segment_editor_ui():
-    """
-    Set up the Segment Editor module with minimal UI (only the scissors tool)
-    """
-    try:
-        # First ensure we're in the Segment Editor module
-        slicer.util.selectModule("SegmentEditor")
-        slicer.app.processEvents()
-        
-        # Get the segment editor widget
-        segment_editor_widget = slicer.modules.segmenteditor.widgetRepresentation()
-        if not segment_editor_widget:
-            pass
-            return False
-        
-        # Hide all effect buttons except scissors
-        try:
-            # Find all effect buttons and hide them except scissors
-            all_buttons = segment_editor_widget.findChildren("QPushButton")
-            hidden_count = 0
-            
-            for button in all_buttons:
-                button_text = button.text if hasattr(button, 'text') else ""
-                button_name = button.objectName if hasattr(button, 'objectName') else ""
-                
-                # Keep only scissors tool button visible
-                if not any(keyword in button_text.lower() or keyword in button_name.lower() 
-                          for keyword in ['scissor', 'cut', 'clip']):
-                    if button_text and 'apply' not in button_text.lower():
-                        button.hide()
-                        hidden_count += 1
-            
-            pass
-            
-        except Exception as e:
-            pass
-        
-        # Hide other UI sections we don't need
-        try:
-            # Hide segments section (we'll manage segments programmatically)
-            collapsible_buttons = segment_editor_widget.findChildren("ctkCollapsibleButton")
-            for button in collapsible_buttons:
-                button_text = button.text if hasattr(button, 'text') else ""
-                if 'segment' in button_text.lower() and 'editor' not in button_text.lower():
-                    button.collapsed = True
-                    button.hide()
-            
-            pass
-            
-        except Exception as e:
-            pass
-        
         return True
         
     except Exception as e:
@@ -13018,43 +12793,6 @@ def restore_original_crop_apply_button():
     except Exception as e:
         pass
 
-def setup_extract_centerline_with_verification():
-    """
-    Set up the Extract Centerline module and verify proper auto-selection functionality
-    """
-    try:
-        setup_centerline_module()
-        
-        slicer.app.processEvents()
-    except Exception as e:
-        return False
-
-# Duplicate function removed - using the more comprehensive version at line 2431
-
-
-
-def fix_centerline_issues():
-    """
-    Comprehensive function to fix various Extract Centerline module issues
-    """
-    try:
-        
-        # Ensure we're in the right module
-        slicer.util.selectModule("ExtractCenterline")
-        slicer.app.processEvents()
-        
-        # Run the setup fixes
-        fix_extract_centerline_setup_issues()
-        
-
-        setup_centerline_module()
-
-        results = verify_extract_centerline_point_list_autoselection()
-        
-        return results['success']
-        
-    except Exception as e:
-        return False
 
 # ===============================================================================
 # DICOM DEBUGGING AND TESTING FUNCTIONS
@@ -13659,29 +13397,6 @@ def force_dicom_reimport():
     except Exception as e:
         print(f"Error in force_dicom_reimport: {e}")
         return False
-
-def list_files_in_source_directory():
-    """
-    List all files in the directory specified in source_slicer.txt
-    """
-    import os
-    try:
-        user_home = os.path.expanduser("~")
-        source_file_path = os.path.join(user_home, "source_slicer.txt")
-        
-        if not os.path.exists(source_file_path):
-            print("source_slicer.txt not found")
-            return
-            
-        with open(source_file_path, 'r', encoding='utf-8') as f:
-            directory_path = f.read().strip()
-            
-        print(f"Source directory: {directory_path}")
-        test_dicom_directory_loading(directory_path)
-        
-    except Exception as e:
-        print(f"Error: {e}")
-
 
 def test_restart_cropping_with_preservation():
     """
@@ -15118,36 +14833,6 @@ def setup_crop_display_layout():
         print(f"❌ Error setting up crop display layout: {e}")
         return False
 
-
-def reset_crop_button(button, original_text):
-    """
-    Reset the crop button to its original state
-    """
-    try:
-        if button and not button.isNull():
-            button.setText(original_text)
-            button.setStyleSheet("""
-                QPushButton { 
-                    background-color: #3498db; 
-                    color: white; 
-                    border: none; 
-                    padding: 15px; 
-                    font-weight: bold;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    min-height: 50px;
-                }
-                QPushButton:hover { 
-                    background-color: #2980b9; 
-                }
-                QPushButton:pressed { 
-                    background-color: #21618c; 
-                }
-            """)
-    except Exception:
-        pass
-
-
 def toggle_scissors_tool(activated=None):
     """
     Toggle the scissors tool on/off with proper state tracking
@@ -15242,35 +14927,6 @@ def toggle_scissors_tool(activated=None):
     except Exception as e:
         print(f"❌ Error toggling scissors tool: {e}")
 
-
-def reset_scissors_button(button):
-    """
-    Reset the scissors button to its original state
-    """
-    try:
-        if button and not button.isNull():
-            button.setText("Toggle Scissors Tool")
-            button.setStyleSheet("""
-                QPushButton { 
-                    background-color: #e74c3c; 
-                    color: white; 
-                    border: none; 
-                    padding: 12px; 
-                    font-weight: bold;
-                    border-radius: 6px;
-                    font-size: 12px;
-                }
-                QPushButton:hover { 
-                    background-color: #c0392b; 
-                }
-                QPushButton:pressed { 
-                    background-color: #a93226; 
-                }
-            """)
-    except Exception:
-        pass
-
-
 def finish_custom_crop_workflow():
     """
     Finish the custom crop workflow and continue to next steps.
@@ -15313,50 +14969,6 @@ def cleanup_custom_crop_interface():
         
     except Exception as e:
         print(f"⚠️ Error cleaning up custom crop interface: {e}")
-
-
-def offer_custom_crop_option():
-    """
-    Ask user if they want to use the custom crop interface instead of the standard module.
-    This is helpful when the crop module GUI becomes distorted after multiple recrops.
-    Now defaults to YES (custom interface) as the recommended option.
-    """
-    try:
-        # Create a custom dialog with YES as the default
-        dialog = qt.QMessageBox(slicer.util.mainWindow())
-        dialog.setWindowTitle("Choose Crop Interface")
-        dialog.setIcon(qt.QMessageBox.Question)
-        dialog.setText("Crop Interface Options")
-        dialog.setInformativeText(
-            "The crop module GUI can sometimes become distorted after multiple recrops.\n\n"
-            "Choose your preferred cropping interface:\n\n"
-            "• Clean Custom Crop Interface (Recommended)\n"
-            "  - Simple, clean interface that works reliably\n"
-            "  - Direct ROI-based cropping with scissors tool\n"
-            "  - Best for multiple recrops\n\n"
-            "• Standard Crop Module GUI\n"
-            "  - Default Slicer crop module interface\n"
-            "  - May become distorted after multiple uses"
-        )
-        
-        # Add buttons with custom interface as default
-        custom_button = dialog.addButton("Use Custom Interface", qt.QMessageBox.YesRole)
-        standard_button = dialog.addButton("Use Standard Module", qt.QMessageBox.NoRole)
-        
-        # Set custom interface as the default button
-        dialog.setDefaultButton(custom_button)
-        
-        # Execute dialog
-        dialog.exec_()
-        
-        # Return True if custom interface was selected
-        return dialog.clickedButton() == custom_button
-        
-    except Exception as e:
-        print(f"Error in crop option dialog: {e}")
-        # Default to custom interface if dialog fails
-        return True
-
 
 def use_custom_crop_instead_of_module():
     """
@@ -15417,42 +15029,3 @@ def force_custom_crop_interface():
     except Exception as e:
         print(f"❌ Error forcing custom crop interface: {e}")
         return False
-
-
-def check_crop_gui_health():
-    """
-    Check if the crop module GUI appears to be working properly.
-    Returns True if GUI seems healthy, False if it appears distorted/broken.
-    """
-    try:
-        crop_widget = slicer.modules.cropvolume.widgetRepresentation()
-        if not crop_widget:
-            return False
-        
-        # Check if widget is visible and has reasonable dimensions
-        if crop_widget.isVisible():
-            size = crop_widget.size()
-            # If widget is too small or has unusual dimensions, consider it problematic
-            if size.width() < 200 or size.height() < 200:
-                return False
-        
-        # Try to find essential UI elements
-        try:
-            crop_module = None
-            if hasattr(crop_widget, 'self'):
-                crop_module = crop_widget.self()
-            
-            if crop_module and hasattr(crop_module, 'ui'):
-                # Check if we can access basic UI elements
-                if hasattr(crop_module.ui, 'inputVolumeSelector'):
-                    return True
-        except Exception:
-            return False
-        
-        # If we can't determine health, assume it's problematic after multiple uses
-        return False
-        
-    except Exception as e:
-        print(f"Error checking crop GUI health: {e}")
-        return False
-

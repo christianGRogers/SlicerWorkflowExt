@@ -79,6 +79,9 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         # Hide help and acknowledgments section
         self.hideHelpAndAcknowledgments()
+        
+        # Collapse the left module panel when this workflow is opened
+        self.collapseLeftPanelForWorkflow()
 
         if not hasattr(self.ui, 'startWorkflowButton'):
             startButton = qt.QPushButton("Start Workflow")
@@ -245,6 +248,14 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         # If this module is shown while the scene is closed then recreate a new parameter node immediately
         if self.parent.isEntered:
             self.initializeParameterNode()
+
+    def collapseLeftPanelForWorkflow(self) -> None:
+        """Collapse the left module panel when the DAI workflow is opened."""
+        try:
+            # Use the panel collapse function from workflow_moduals
+            workflow_mod.force_collapse_left_panel_on_startup()
+        except Exception as e:
+            print(f"Could not collapse left panel: {e}")
 
     def checkForSourceSlicerFile(self) -> None:
         """Check for source_slicer.txt file in user directory and auto-load DICOM if found."""
