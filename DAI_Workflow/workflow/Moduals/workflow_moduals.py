@@ -1536,7 +1536,14 @@ def select_scissors_tool(segment_editor_widget=None):
             effect = segmentEditorWidget.activeEffect()
             
             if effect:
-                pass
+                # Configure scissors tool for workflow use - set to ERASE/SUBTRACT mode
+                if hasattr(effect, 'setParameter'):
+                    effect.setParameter("Operation", "EraseInside")  # Erase inside (subtract/cut)
+                
+                # Enable slice view interactions for scissors
+                interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                if interactionNode:
+                    interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
                 
                 # Set the scissors button to active state if it exists
                 if hasattr(slicer.modules, 'WorkflowScissorsButton'):
@@ -1544,13 +1551,17 @@ def select_scissors_tool(segment_editor_widget=None):
                     button.setChecked(True)
                     slicer.modules.WorkflowScissorsActive = True
                 
+                print("✅ Scissors tool activated and configured")
                 return True
             else:
+                print("❌ Failed to get scissors effect after activation")
                 return False
         else:
+            print("❌ WorkflowSegmentEditorWidget not available")
             return False
             
     except Exception as e:
+        print(f"❌ Error in select_scissors_tool: {e}")
         return False
 
 def create_continue_workflow_button():
@@ -11952,8 +11963,9 @@ def toggle_scissors_tool_programmatic(activated):
                     button = slicer.modules.WorkflowScissorsButton
                     button.setText("SCISSORS ACTIVE (ERASE)")
                 
+                print("✅ Scissors tool activated programmatically")
             else:
-                pass
+                print("❌ Failed to activate scissors effect programmatically")
                 return False
                 
         else:
@@ -11966,12 +11978,13 @@ def toggle_scissors_tool_programmatic(activated):
                 interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
             
             slicer.modules.WorkflowScissorsActive = False
-            pass
             
             # Update button appearance
             if hasattr(slicer.modules, 'WorkflowScissorsButton'):
                 button = slicer.modules.WorkflowScissorsButton
                 button.setText("SCISSORS (ERASE)")
+            
+            print("🔄 Scissors tool deactivated programmatically")
         return True
     except Exception as e:
         return False
@@ -13529,6 +13542,8 @@ def add_scissors_tools_to_initial_interface():
         
         # Add scissors toggle button - dark theme
         scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
         scissors_button.setStyleSheet("""
             QPushButton { 
                 background-color: #e74c3c; 
@@ -13547,11 +13562,21 @@ def add_scissors_tools_to_initial_interface():
             QPushButton:pressed { 
                 background-color: #a93226; 
             }
+            QPushButton:checked { 
+                background-color: #27ae60; 
+                border: 2px solid #1e7e34;
+            }
+            QPushButton:checked:hover { 
+                background-color: #218838; 
+            }
         """)
         
-        # Connect scissors button
-        scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
+        # Connect scissors button with proper toggle signal
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool_programmatic(checked))
         layout.addWidget(scissors_button)
+        
+        # Store button reference for external access (override previous if exists)
+        slicer.modules.CustomScissorsButton = scissors_button
         
         # Add spacing
         layout.addSpacing(15)
@@ -13715,6 +13740,8 @@ def create_custom_crop_interface():
         
         # Scissors toggle button
         scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
         scissors_button.setStyleSheet("""
             QPushButton { 
                 background-color: #e74c3c; 
@@ -13733,11 +13760,21 @@ def create_custom_crop_interface():
             QPushButton:pressed { 
                 background-color: #a93226; 
             }
+            QPushButton:checked { 
+                background-color: #27ae60; 
+                border: 2px solid #1e7e34;
+            }
+            QPushButton:checked:hover { 
+                background-color: #218838; 
+            }
         """)
         
-        # Connect scissors button
-        scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
+        # Connect scissors button with proper toggle signal
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool_programmatic(checked))
         layout.addWidget(scissors_button)
+        
+        # Store button reference for external access
+        slicer.modules.CustomScissorsButton = scissors_button
         
         # Add spacing
         layout.addSpacing(15)
@@ -14122,32 +14159,26 @@ def toggle_scissors_tool(activated=None):
                     # Update button to show active state
                     if hasattr(slicer.modules, 'CustomScissorsButton'):
                         button = slicer.modules.CustomScissorsButton
+                        if hasattr(button, 'setChecked'):
+                            button.setChecked(True)
                         button.setText("🔴 Scissors ON")
-                        button.setStyleSheet("""
-                            QPushButton { 
-                                background-color: #27ae60; 
-                                color: white; 
-                                border: 2px solid #1e7e34;
-                                padding: 10px; 
-                                font-weight: bold;
-                                border-radius: 6px;
-                                font-size: 12px;
-                                min-height: 40px;
-                                margin: 5px;
-                            }
-                            QPushButton:hover { 
-                                background-color: #218838; 
-                            }
-                            QPushButton:pressed { 
-                                background-color: #1e7e34; 
-                            }
-                        """)
+                    
+                    # Also update WorkflowScissorsButton if it exists
+                    if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                        button = slicer.modules.WorkflowScissorsButton
+                        if hasattr(button, 'setChecked'):
+                            button.setChecked(True)
                 else:
                     print("⚠️ Could not activate scissors tool")
             else:
                 # Deactivate scissors tool
                 slicer.modules.ScissorsToolActive = False
                 print("🔄 Scissors tool deactivated")
+                
+                # Actually deactivate the scissors tool in the segment editor
+                if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+                    segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+                    segmentEditorWidget.setActiveEffectByName("")  # Clear active effect
                 
                 # Switch back to default interaction mode
                 interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
@@ -14157,26 +14188,15 @@ def toggle_scissors_tool(activated=None):
                 # Update button to show inactive state
                 if hasattr(slicer.modules, 'CustomScissorsButton'):
                     button = slicer.modules.CustomScissorsButton
+                    if hasattr(button, 'setChecked'):
+                        button.setChecked(False)
                     button.setText("Toggle Scissors Tool")
-                    button.setStyleSheet("""
-                        QPushButton { 
-                            background-color: #e74c3c; 
-                            color: white; 
-                            border: none; 
-                            padding: 10px; 
-                            font-weight: bold;
-                            border-radius: 6px;
-                            font-size: 12px;
-                            min-height: 40px;
-                            margin: 5px;
-                        }
-                        QPushButton:hover { 
-                            background-color: #c0392b; 
-                        }
-                        QPushButton:pressed { 
-                            background-color: #a93226; 
-                        }
-                    """)
+                
+                # Also update WorkflowScissorsButton if it exists
+                if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                    button = slicer.modules.WorkflowScissorsButton
+                    if hasattr(button, 'setChecked'):
+                        button.setChecked(False)
         else:
             print(f"🔄 Scissors tool already {'active' if current_state else 'inactive'}")
             
