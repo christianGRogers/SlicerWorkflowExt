@@ -113,45 +113,6 @@ def debug_panel_widgets():
     except Exception as e:
         print(f"❌ Debug failed: {e}")
 
-# Console helper for users to test
-def collapse_panel():
-    """Quick console command to collapse panel"""
-    print("🔄 Attempting to collapse left module panel...")
-    result = collapse_left_module_panel()
-    if not result:
-        print("🔍 Let's see what widgets are available:")
-        debug_panel_widgets()
-    return result
-
-def expand_panel():
-    """Quick console command to expand panel"""  
-    print("🔄 Attempting to expand left module panel...")
-    result = expand_left_module_panel()
-    if not result:
-        print("🔍 Let's see what widgets are available:")
-        debug_panel_widgets()
-    return result
-
-def test_panel_management():
-    """Complete test of panel management"""
-    print("🧪 Testing Panel Management System")
-    print("=" * 40)
-    
-    print("\n1. Debugging available widgets:")
-    debug_panel_widgets()
-    
-    print("\n2. Testing collapse:")
-    collapse_result = test_panel_collapse()
-    
-    print("\n3. Testing expand:")
-    expand_result = test_panel_expand()
-    
-    print(f"\n📊 Results:")
-    print(f"   Collapse: {'✅ PASS' if collapse_result else '❌ FAIL'}")
-    print(f"   Expand:   {'✅ PASS' if expand_result else '❌ FAIL'}")
-    
-    return collapse_result and expand_result
-
 
 
 
@@ -1575,7 +1536,14 @@ def select_scissors_tool(segment_editor_widget=None):
             effect = segmentEditorWidget.activeEffect()
             
             if effect:
-                pass
+                # Configure scissors tool for workflow use - set to ERASE/SUBTRACT mode
+                if hasattr(effect, 'setParameter'):
+                    effect.setParameter("Operation", "EraseInside")  # Erase inside (subtract/cut)
+                
+                # Enable slice view interactions for scissors
+                interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+                if interactionNode:
+                    interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
                 
                 # Set the scissors button to active state if it exists
                 if hasattr(slicer.modules, 'WorkflowScissorsButton'):
@@ -1583,25 +1551,18 @@ def select_scissors_tool(segment_editor_widget=None):
                     button.setChecked(True)
                     slicer.modules.WorkflowScissorsActive = True
                 
+                print("✅ Scissors tool activated and configured")
                 return True
             else:
+                print("❌ Failed to get scissors effect after activation")
                 return False
         else:
+            print("❌ WorkflowSegmentEditorWidget not available")
             return False
             
     except Exception as e:
+        print(f"❌ Error in select_scissors_tool: {e}")
         return False
-
-def add_continue_button_to_segment_editor():
-    """
-    Add a continue button to the workflow (not to Segment Editor GUI since we're not using it)
-    """
-    try:
-        # Create a floating continue button since we're not using the Segment Editor GUI
-        create_continue_workflow_button()
-        
-    except Exception as e:
-        pass
 
 def create_continue_workflow_button():
     """
@@ -1886,119 +1847,6 @@ def cleanup_continue_ui():
     except Exception as e:
         pass
         pass
-
-def create_mask_segmentation(mask_name, threshold_low, threshold_high=None, rgb_color=(0.0, 1.0, 1.0), volume_node=None, volume_name=None):
-    """
-    Create a new mask segmentation with custom name, threshold values, and RGB color.
-    The segmentation is created but NOT added to the 3D scene for visualization.
-    
-    Args:
-        mask_name (str): Name for the mask segmentation
-        threshold_low (float): Lower threshold value
-        threshold_high (float, optional): Upper threshold value. If None, only lower threshold is used
-        rgb_color (tuple): RGB color values (r, g, b) as floats between 0.0 and 1.0
-        volume_node (vtkMRMLScalarVolumeNode, optional): Volume to apply threshold to. If None, uses volume_name or active volume
-        volume_name (str, optional): Name of the volume to use. If specified, will search for volume by name
-    
-    Returns:
-        vtkMRMLSegmentationNode: The created segmentation node, or None if failed
-    """
-    try:
-        # Get the volume node to work with
-        if volume_node is None:
-            volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
-            if not volume_nodes:
-                pass
-                return None
-            
-            # If volume_name is specified, search for it by name
-            if volume_name:
-                for volume in volume_nodes:
-                    if volume.GetName() == volume_name:
-                        volume_node = volume
-                        pass
-                        break
-                    elif volume_name.lower() in volume.GetName().lower():
-                        volume_node = volume
-                        pass
-                        break
-                
-                if volume_node is None:
-                    pass
-                    for i, vol in enumerate(volume_nodes):
-                        pass
-                    pass
-            
-            # Fallback: Try to find cropped volume first, otherwise use first available
-            if volume_node is None:
-                for volume in volume_nodes:
-                    if 'cropped' in volume.GetName().lower():
-                        volume_node = volume
-                        break
-                
-                if volume_node is None:
-                    volume_node = volume_nodes[0]
-        
-        pass
-        
-        # Create new segmentation node
-        segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
-        segmentation_node.SetName(mask_name)
-        segmentation_node.CreateDefaultDisplayNodes()
-        segmentation_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
-        
-        # Create segment with custom name
-        segmentation = segmentation_node.GetSegmentation()
-        segment_id = segmentation.AddEmptySegment(mask_name)
-        segment = segmentation.GetSegment(segment_id)
-        
-        # Set custom RGB color
-        if len(rgb_color) >= 3:
-            segment.SetColor(rgb_color[0], rgb_color[1], rgb_color[2])
-            pass
-        
-        # Apply threshold to create binary mask
-        volume_array = slicer.util.arrayFromVolume(volume_node)
-        if threshold_high is not None:
-            binary_mask = (volume_array >= threshold_low) & (volume_array <= threshold_high)
-            pass
-        else:
-            binary_mask = volume_array >= threshold_low
-            pass
-        
-        pass
-        
-        # Convert binary mask to labelmap and import to segmentation
-        temp_labelmap = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLLabelMapVolumeNode")
-        temp_labelmap.SetName(f"TempLabelmap_{mask_name}")
-        slicer.util.updateVolumeFromArray(temp_labelmap, binary_mask.astype('uint8'))
-        temp_labelmap.CopyOrientation(volume_node)
-        
-        # Import labelmap to segmentation
-        segmentationLogic = slicer.modules.segmentations.logic()
-        if segmentationLogic.ImportLabelmapToSegmentationNode(temp_labelmap, segmentation_node):
-            pass
-            
-            # Clean up temporary labelmap
-            slicer.mrmlScene.RemoveNode(temp_labelmap)
-            
-            # Ensure segmentation is NOT visible in 3D scene
-            display_node = segmentation_node.GetDisplayNode()
-            if display_node:
-                display_node.SetVisibility3D(False)  # Disable 3D visibility
-                display_node.SetVisibility(True)     # Keep 2D slice visibility
-                pass
-            
-            return segmentation_node
-        else:
-            pass
-            slicer.mrmlScene.RemoveNode(temp_labelmap)
-            slicer.mrmlScene.RemoveNode(segmentation_node)
-            return None
-            
-    except Exception as e:
-        pass
-        return None
 
 def create_analysis_masks(straightened_volumes):
     try:
@@ -2314,39 +2162,6 @@ def cleanup_centerline_ui():
             pass
             
     except Exception as e:
-        pass
-
-def clean_centerline_buttons():
-    """
-    Utility function to manually clean up duplicate centerline buttons (can be called from console)
-    """
-    pass
-    remove_duplicate_centerline_buttons()
-    pass
-
-def stop_centerline_monitoring_manually():
-    """
-    Utility function to manually stop centerline monitoring (can be called from console)
-    """
-    pass
-    stop_centerline_monitoring()
-    pass
-
-def check_monitoring_status():
-    """
-    Utility function to check if centerline monitoring is currently active
-    """
-    if hasattr(slicer.modules, 'CenterlineMonitorTimer'):
-        timer = slicer.modules.CenterlineMonitorTimer
-        if timer and timer.isActive():
-            check_count = getattr(slicer.modules, 'CenterlineCheckCount', 0)
-            start_time = getattr(slicer.modules, 'CenterlineMonitoringStartTime', 0)
-            pass
-            pass
-        else:
-            pass
-    else:
-        pass
         pass
 
 def setup_centerline_module():
@@ -2713,32 +2528,6 @@ def prepare_surface_for_centerline(segmentation_node):
         
     except Exception as e:
         return False
-
-def remove_default_segment(segmentation_node):
-    """
-    Remove any default segments like "Segment_1" to keep only our workflow segment
-    """
-    try:
-        segmentation = segmentation_node.GetSegmentation()
-        segment_ids = vtk.vtkStringArray()
-        segmentation.GetSegmentIDs(segment_ids)
-        workflow_segment_id = segmentation_node.GetAttribute("WorkflowCreatedSegmentID")
-        
-        segments_to_remove = []
-        for i in range(segment_ids.GetNumberOfValues()):
-            segment_id = segment_ids.GetValue(i)
-            segment = segmentation.GetSegment(segment_id)
-            if segment:
-                segment_name = segment.GetName()
-                if (segment_name.startswith("Segment_") and 
-                    segment_id != workflow_segment_id and 
-                    not segment_name.startswith("ThresholdSegment_")):
-                    segments_to_remove.append(segment_id)
-        for segment_id in segments_to_remove:
-            segmentation.RemoveSegment(segment_id)
-            
-    except Exception as e:
-        pass
 
 def remove_segment_from_all_segmentations(segment_name):
     """
@@ -3116,33 +2905,6 @@ def add_large_cpr_apply_button():
             
     except Exception as e:
         pass
-
-def open_cross_section_analysis_module():
-    """
-    Helper function to open the Cross-Section Analysis module.
-    Can be called from console to test the module switching functionality.
-    """
-    try:
-        # Apply transform to centerline nodes before opening Cross-Section Analysis
-        apply_cpr_transform_to_centerlines()
-        
-        # Try the most likely module name first
-        slicer.util.selectModule("CrossSectionAnalysis")
-        return True
-    except Exception as e:
-        # Try alternative module names
-        try:
-            slicer.util.selectModule("Cross-sectionanalysis")
-            return True
-        except Exception as e2:
-            try:
-                slicer.util.selectModule("CrossSection")
-                return True
-            except Exception as e3:
-
-                return False
-
-
 
 def apply_cpr_transform_to_centerlines():
     """
@@ -3575,167 +3337,6 @@ def configure_browse_cross_sections():
         return True
     except Exception as e:
         return False
-
-def apply_transform_to_specific_centerline_nodes(centerline_model=None, centerline_curve=None):
-    """
-    Apply CPR transform to specific centerline nodes (used when specific nodes are known)
-    
-    Args:
-        centerline_model: Specific centerline model node to transform
-        centerline_curve: Specific centerline curve node to transform
-    """
-    try:
-        # Find the straightening transform
-        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
-        straightening_transform = None
-        
-        for transform_node in transform_nodes:
-            transform_name = transform_node.GetName().lower()
-            if ('straighten' in transform_name or 
-                'cpr' in transform_name or 
-                'curved' in transform_name):
-                straightening_transform = transform_node
-                break
-        
-        if not straightening_transform and transform_nodes:
-            straightening_transform = transform_nodes[-1]  # Get the most recent
-        
-        if not straightening_transform:
-            pass
-            return False
-        
-        # Apply transform to specific nodes
-        transformed_count = 0
-        
-        if centerline_model:
-            centerline_model.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            transformed_count += 1
-            pass
-        
-        if centerline_curve:
-            centerline_curve.SetAndObserveTransformNodeID(straightening_transform.GetID())
-            transformed_count += 1
-            pass
-        
-        if transformed_count > 0:
-            pass
-            slicer.app.processEvents()
-            return True
-        else:
-            return False
-            
-    except Exception as e:
-        pass
-        return False
-
-def apply_cpr_transforms_manually():
-    """
-    Console helper function to manually apply CPR transforms to centerline nodes.
-    Can be called from the Python console if automatic application fails.
-    """
-    try:
-        return apply_cpr_transform_to_centerlines()
-    except Exception as e:
-        return False
-
-def list_available_transforms():
-    """
-    Console helper to list all available transform nodes in the scene
-    """
-    try:
-        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
-        return transform_nodes
-    except Exception as e:
-        return []
-
-def style_crop_apply_button():
-    """
-    Style the Apply button in the Crop Volume module to be large and green
-    """
-    try:
-        def apply_styling():
-            try:
-                crop_widget = slicer.modules.cropvolume.widgetRepresentation()
-                if crop_widget:
-                    apply_button = None
-                    
-                    if hasattr(crop_widget, 'self') and hasattr(crop_widget.self(), 'ui'):
-                        crop_module = crop_widget.self()
-                        if hasattr(crop_module.ui, 'applyButton'):
-                            apply_button = crop_module.ui.applyButton
-                            pass
-                        elif hasattr(crop_module.ui, 'ApplyButton'):
-                            apply_button = crop_module.ui.ApplyButton
-                            pass
-                    
-                    if not apply_button:
-                        all_buttons = crop_widget.findChildren(qt.QPushButton)
-                        pass
-                        for button in all_buttons:
-                            button_text = button.text if hasattr(button, 'text') else ""
-                            button_name = button.objectName() if hasattr(button, 'objectName') else ""
-                            pass
-                            if 'apply' in button_text.lower() or 'apply' in button_name.lower():
-                                apply_button = button
-                                pass
-                                break
-                    
-                    if not apply_button:
-                        main_window = slicer.util.mainWindow()
-                        all_buttons = main_window.findChildren(qt.QPushButton)
-                        for button in all_buttons:
-                            button_text = button.text if hasattr(button, 'text') else ""
-                            parent_name = button.parent().objectName() if button.parent() and hasattr(button.parent(), 'objectName') else ""
-                            if 'apply' in button_text.lower() and ('crop' in parent_name.lower() or 'volume' in parent_name.lower()):
-                                apply_button = button
-                                pass
-                                break
-                    
-                    if apply_button:
-                        style_sheet = """
-                            QPushButton { 
-                                background-color: #28a745 !important; 
-                                color: white !important; 
-                                border: 2px solid #1e7e34 !important; 
-                                padding: 20px !important; 
-                                font-weight: bold !important;
-                                border-radius: 10px !important;
-                                margin: 10px !important;
-                                font-size: 18px !important;
-                                min-height: 70px !important;
-                                min-width: 200px !important;
-                            }
-                            QPushButton:hover { 
-                                background-color: #218838 !important; 
-                                border: 2px solid #155724 !important;
-                                transform: scale(1.05);
-                            }
-                            QPushButton:pressed { 
-                                background-color: #1e7e34 !important; 
-                                border: 2px solid #0f4c2c !important;
-                            }
-                        """
-                        apply_button.setStyleSheet(style_sheet)
-                        
-                        apply_button.setMinimumHeight(70)
-                        apply_button.setMinimumWidth(200)
-                        
-                        return True
-                    else:
-                        return False
-                        
-            except Exception as e:
-                pass
-                return False
-        
-        success = apply_styling()
-        
-        if not success:
-            timer = qt.QTimer()
-            timer.singleShot(1000, apply_styling)  # Try again after 1 second
-            
-    except Exception as e:
-        pass
 
 def start_with_dicom_data():
     """
@@ -5258,69 +4859,6 @@ def test_philips_dicom_loading(dicom_path):
     except Exception as e:
         return False
 
-def test_enhanced_dicom_loading():
-    """
-    Test function to validate the enhanced DICOM loading capabilities.
-    This function can be called to test various DICOM file types and conventions.
-    """
-    print("Testing Enhanced DICOM Loading Implementation")
-    print("=" * 50)
-    
-    # Test 1: Check if required modules are available
-    print("Test 1: Module Availability")
-    print(f"  DICOMLib available: {DICOM_UTILS_AVAILABLE}")
-    print(f"  ctk available: {ctk is not None}")
-    
-    # Test 2: Check DICOM plugin availability (disabled due to compatibility)
-    print("\nTest 2: DICOM Plugin Availability")
-    try:
-        print("  Plugin system disabled due to slicer.modules.dicomPlugins compatibility issues")
-        print("  Using direct slicer.util.loadVolume methods instead")
-    except Exception as e:
-        print(f"  Error checking plugins: {e}")
-    
-    # Test 3: File analysis function
-    print("\nTest 3: File Analysis Function")
-    test_files = [
-        "i1559699.CTDC.1",
-        "i1559700.CTDC.2", 
-        "i1559701.CTDC.3",
-        "volume_headers.txt"
-    ]
-    
-    try:
-        # Mock file analysis for testing
-        analysis = {
-            'file_count': len(test_files),
-            'has_numeric_extensions': any('.' in f and f.split('.')[-1].isdigit() for f in test_files),
-            'has_ctdc_pattern': any('CTDC' in f.upper() for f in test_files),
-            'has_header_files': any('headers' in f.lower() for f in test_files),
-            'modality': 'CT',
-            'manufacturer': 'GE',
-            'series_type': 'standard'
-        }
-        print(f"  Mock analysis result: {analysis}")
-        
-        # Test confidence adjustment
-        original_confidence = 0.5
-        adjusted = _adjust_plugin_confidence(
-            'DICOMScalarVolumePlugin', original_confidence, analysis, 'CT Chest'
-        )
-        print(f"  Confidence adjustment: {original_confidence} -> {adjusted}")
-        
-    except Exception as e:
-        print(f"  Error in file analysis test: {e}")
-    
-    print("\nTest 4: Implementation Summary")
-    print("  ✓ Plugin-based DICOM loading implemented")
-    print("  ✓ Temporary database support added") 
-    print("  ✓ Enhanced file type detection implemented")
-    print("  ✓ Confidence-based plugin selection implemented")
-    print("  ✓ Fallback methods for compatibility")
-    
-    print("\nEnhanced DICOM loading is ready for use!")
-    return True
-
 def diagnose_dicom_directory(dicom_path):
     """
     Diagnose what's in a DICOM directory to help troubleshoot loading issues.
@@ -6104,33 +5642,6 @@ def setup_centerline_completion_monitor():
     except Exception as e:
         pass
 
-def setup_centerline_completion_monitor_without_reset(target_models=None, target_curves=None):
-    """
-    Set up monitoring to detect when specific centerlines have sufficient data without resetting baseline
-    """
-    try:
-        stop_centerline_monitoring()
-
-        # Do NOT clear the dialog flag - we want to show dialog when these centerlines get sufficient data
-        # Do NOT reset baseline - keep existing baseline from apply button monitoring
-
-        # Store the target centerlines to monitor
-        if target_models:
-            slicer.modules.TargetCenterlineModels = [model.GetID() for model in target_models]
-        if target_curves:
-            slicer.modules.TargetCenterlineCurves = [curve.GetID() for curve in target_curves]
-
-        timer = qt.QTimer()
-        timer.timeout.connect(check_specific_centerline_completion)
-        timer.start(2000)
-        slicer.modules.CenterlineMonitorTimer = timer
-        slicer.modules.CenterlineCheckCount = 0
-        slicer.modules.CenterlineMonitoringStartTime = time.time()
-        pass
-        
-    except Exception as e:
-        pass
-
 def check_specific_centerline_completion():
     """
     Check if specific target centerlines now have sufficient data for dialog
@@ -6244,41 +5755,6 @@ def check_centerline_completion():
         
     except Exception as e:
         pass
-
-def display_centerline_placement_status():
-    """
-    Display current status of centerline references for point placement.
-    Useful for debugging and validation.
-    """
-    try:
-        validation_info = validate_point_placement_centerline_reference()
-        
-        status_message = "Centerline Placement Status:\n\n"
-        
-        if validation_info.get("error"):
-            status_message += f"Error: {validation_info['error']}\n"
-        else:
-            status_message += f"Has current point list: {validation_info['has_current_point_list']}\n"
-            status_message += f"Point list has centerline ref: {validation_info['point_list_has_centerline_ref']}\n"
-            status_message += f"Centerline model available: {validation_info['centerline_model_available']}\n"
-            status_message += f"Centerline curve available: {validation_info['centerline_curve_available']}\n"
-            
-            if validation_info['centerline_model_name']:
-                status_message += f"Model name: {validation_info['centerline_model_name']}\n"
-            if validation_info['centerline_curve_name']:
-                status_message += f"Curve name: {validation_info['centerline_curve_name']}\n"
-            
-            status_message += "\nRecommendations:\n"
-            for rec in validation_info['recommendations']:
-                status_message += f"• {rec}\n"
-        
-        print(status_message)
-        return status_message
-        
-    except Exception as e:
-        error_msg = f"Error displaying centerline status: {str(e)}"
-        print(error_msg)
-        return error_msg
 
 def get_current_centerline_for_placement():
     """
@@ -6518,67 +5994,6 @@ def populate_centerline_dropdown():
     except Exception as e:
         pass
         print(f"Error populating centerline dropdown: {str(e)}")
-
-def get_selected_centerline():
-    """
-    Get the currently selected centerline from the dropdown
-    Returns tuple of (model, curve) where one might be None
-    """
-    try:
-        centerline_combo = getattr(slicer.modules, 'WorkflowCenterlineCombo', None)
-        if not centerline_combo:
-            return (None, None)
-        
-        current_index = centerline_combo.currentIndex
-        if current_index < 0:
-            return (None, None)
-        
-        # Get the data associated with the current selection
-        selected_item = centerline_combo.itemData(current_index)
-        
-        if selected_item is None:
-            # Auto-select mode or no centerlines - use the existing logic
-            current_centerline_model = find_recent_centerline_model()
-            current_centerline_curve = find_recent_centerline_curve()
-            return (current_centerline_model, current_centerline_curve)
-        
-        # Determine if selected item is a model or curve
-        if selected_item.GetClassName() == 'vtkMRMLModelNode':
-            return (selected_item, None)
-        elif selected_item.GetClassName() == 'vtkMRMLMarkupsCurveNode':
-            return (None, selected_item)
-        
-        return (None, None)
-        
-    except Exception as e:
-        pass
-        print(f"Error getting selected centerline: {str(e)}")
-        return (None, None)
-
-def refresh_centerline_dropdown():
-    """
-    Refresh the centerline dropdown by repopulating it with current centerlines
-    """
-    try:
-        centerline_combo = getattr(slicer.modules, 'WorkflowCenterlineCombo', None)
-        if not centerline_combo:
-            return
-        
-        # Store the currently selected item text to try to restore selection
-        current_text = centerline_combo.currentText if centerline_combo.currentIndex >= 0 else ""
-        
-        # Repopulate the dropdown
-        populate_centerline_dropdown()
-        
-        # Try to restore the previous selection if it still exists
-        if current_text:
-            index = centerline_combo.findText(current_text)
-            if index >= 0:
-                centerline_combo.setCurrentIndex(index)
-        
-    except Exception as e:
-        pass
-        print(f"Error refreshing centerline dropdown: {str(e)}")
 
 def stop_centerline_monitoring():
     """
@@ -7576,35 +6991,6 @@ def apply_radius_to_circle(circle_node, radius_value):
     except Exception as e:
         pass
 
-def start_point_placement(point_list, start_button, stop_button, count_label):
-    """
-    Start interactive point placement mode with continuous placement enabled
-    """
-    try:
-        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
-        if selectionNode:
-            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
-            selectionNode.SetActivePlaceNodeID(point_list.GetID())
-
-        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-        if interactionNode:
-            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-            interactionNode.SetPlaceModePersistence(1)
-
-        start_button.setEnabled(False)
-        stop_button.setEnabled(True)
-        update_point_count_display(point_list, count_label)
-        
-        # Set up observer for automatic tool re-selection
-        setup_point_count_observer(point_list, count_label)
-        
-        pass
-        pass
-        
-    except Exception as e:
-        pass
-        slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
-
 def toggle_point_placement_mode():
     """
     Toggle between starting and stopping point placement within the same button
@@ -8408,28 +7794,6 @@ def cleanup_orphaned_start_markers():
     except Exception as e:
         return False
 
-
-def clear_all_points(point_list, count_label):
-    """
-    Clear all points from the point list
-    """
-    try:
-        point_count = point_list.GetNumberOfControlPoints()
-        if point_count == 0:
-            pass
-            return
-        
-        result = slicer.util.confirmYesNoDisplay(f"Clear all {point_count} points?")
-        if result:
-            point_list.RemoveAllControlPoints()
-            update_point_count_display(point_list, count_label)
-            pass
-        
-    except Exception as e:
-        pass
-        slicer.util.errorDisplay(f"Could not clear points: {str(e)}")
-
-
 def setup_point_count_observer(point_list, count_label):
     """
     Set up observer to automatically update point count display and maintain point placement mode
@@ -8840,44 +8204,6 @@ def start_new_point_list_placement(count_label):
         pass
         slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
 
-def clear_all_points_from_scene(count_label):
-    """
-    Clear all lesion analysis point lists from the scene
-    """
-    try:
-        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
-        lesion_analysis_nodes = []
-        
-        for node in fiducial_nodes:
-            node_name = node.GetName()
-            if node_name == "F-1":
-                lesion_analysis_nodes.append(node)
-        
-        if not lesion_analysis_nodes:
-            pass
-            return
-        
-        node_count = len(lesion_analysis_nodes)
-        total_points = sum(node.GetNumberOfControlPoints() for node in lesion_analysis_nodes)
-        
-        for node in lesion_analysis_nodes:
-            slicer.mrmlScene.RemoveNode(node)
-            pass
-        
-        if hasattr(slicer.modules, 'CurrentLesionAnalysisPointList'):
-            del slicer.modules.CurrentLesionAnalysisPointList
-
-        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
-        if interactionNode:
-            interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
-        
-        count_label.setText("Points placed: 0")
-        pass
-        
-    except Exception as e:
-        pass
-        slicer.util.errorDisplay(f"Could not clear points: {str(e)}")
-
 def toggle_analysis_masks_visibility(toggle_button):
     """
     Toggle visibility of AnalysisMasks nodes in the scene
@@ -9139,27 +8465,6 @@ def check_single_line_completion(line_node):
     except Exception as e:
         pass
 
-
-
-def setup_stenosis_line_sequence_observer(first_line_node, second_line_node):
-    """
-    Set up observer to automatically switch to second line when first is complete
-    """
-    try:
-        if hasattr(first_line_node, 'StenosisSequenceObserver'):
-            first_line_node.RemoveObserver(first_line_node.StenosisSequenceObserver)
-        
-        observer_id = first_line_node.AddObserver(
-            first_line_node.PointAddedEvent, 
-            lambda caller, event: check_first_line_completion_carefully(caller, second_line_node)
-        )
-        first_line_node.StenosisSequenceObserver = observer_id
-        
-        pass
-        
-    except Exception as e:
-        pass
-
 def check_first_line_completion_carefully(first_line_node, second_line_node):
     """
     Check if the first stenosis line has exactly 2 points and a distance > 0mm before switching
@@ -9301,44 +8606,6 @@ def stop_stenosis_measurement_tool():
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             selectionNode.SetActivePlaceNodeID(None)
-        
-    except Exception as e:
-        pass
-
-def show_stenosis_measurements_summary():
-    """
-    Show a summary of all stenosis measurements created
-    """
-    try:
-        line_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsLineNode')
-        stenosis_lines = []
-        
-        for node in line_nodes:
-            if "StenosisLine" in node.GetName() and node.GetNumberOfControlPoints() == 2:
-                measurement = node.GetMeasurement("length")
-                if measurement:
-                    length_value = measurement.GetValue()
-                    stenosis_lines.append((node.GetName(), length_value))
-        
-        if stenosis_lines:
-            pass
-            pass
-            pass
-            for name, length in stenosis_lines:
-                pass
-            pass
-            pass
-            
-            # Show summary dialog
-            summary_text = "Stenosis Measurements Complete!\n\n"
-            summary_text += f"Created {len(stenosis_lines)} stenosis measurements:\n\n"
-            for name, length in stenosis_lines:
-                summary_text += f"• {name}: {length:.2f} mm\n"
-            summary_text += f"\nAll measurements are available in the scene for analysis."
-            
-            slicer.util.infoDisplay(summary_text)
-        else:
-            pass
         
     except Exception as e:
         pass
@@ -12696,8 +11963,9 @@ def toggle_scissors_tool_programmatic(activated):
                     button = slicer.modules.WorkflowScissorsButton
                     button.setText("SCISSORS ACTIVE (ERASE)")
                 
+                print("✅ Scissors tool activated programmatically")
             else:
-                pass
+                print("❌ Failed to activate scissors effect programmatically")
                 return False
                 
         else:
@@ -12710,12 +11978,13 @@ def toggle_scissors_tool_programmatic(activated):
                 interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
             
             slicer.modules.WorkflowScissorsActive = False
-            pass
             
             # Update button appearance
             if hasattr(slicer.modules, 'WorkflowScissorsButton'):
                 button = slicer.modules.WorkflowScissorsButton
                 button.setText("SCISSORS (ERASE)")
+            
+            print("🔄 Scissors tool deactivated programmatically")
         return True
     except Exception as e:
         return False
@@ -14273,6 +13542,8 @@ def add_scissors_tools_to_initial_interface():
         
         # Add scissors toggle button - dark theme
         scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
         scissors_button.setStyleSheet("""
             QPushButton { 
                 background-color: #e74c3c; 
@@ -14291,11 +13562,21 @@ def add_scissors_tools_to_initial_interface():
             QPushButton:pressed { 
                 background-color: #a93226; 
             }
+            QPushButton:checked { 
+                background-color: #27ae60; 
+                border: 2px solid #1e7e34;
+            }
+            QPushButton:checked:hover { 
+                background-color: #218838; 
+            }
         """)
         
-        # Connect scissors button
-        scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
+        # Connect scissors button with proper toggle signal
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool_programmatic(checked))
         layout.addWidget(scissors_button)
+        
+        # Store button reference for external access (override previous if exists)
+        slicer.modules.CustomScissorsButton = scissors_button
         
         # Add spacing
         layout.addSpacing(15)
@@ -14459,6 +13740,8 @@ def create_custom_crop_interface():
         
         # Scissors toggle button
         scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
         scissors_button.setStyleSheet("""
             QPushButton { 
                 background-color: #e74c3c; 
@@ -14477,11 +13760,21 @@ def create_custom_crop_interface():
             QPushButton:pressed { 
                 background-color: #a93226; 
             }
+            QPushButton:checked { 
+                background-color: #27ae60; 
+                border: 2px solid #1e7e34;
+            }
+            QPushButton:checked:hover { 
+                background-color: #218838; 
+            }
         """)
         
-        # Connect scissors button
-        scissors_button.connect('clicked()', lambda: toggle_scissors_tool())
+        # Connect scissors button with proper toggle signal
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool_programmatic(checked))
         layout.addWidget(scissors_button)
+        
+        # Store button reference for external access
+        slicer.modules.CustomScissorsButton = scissors_button
         
         # Add spacing
         layout.addSpacing(15)
@@ -14866,32 +14159,26 @@ def toggle_scissors_tool(activated=None):
                     # Update button to show active state
                     if hasattr(slicer.modules, 'CustomScissorsButton'):
                         button = slicer.modules.CustomScissorsButton
+                        if hasattr(button, 'setChecked'):
+                            button.setChecked(True)
                         button.setText("🔴 Scissors ON")
-                        button.setStyleSheet("""
-                            QPushButton { 
-                                background-color: #27ae60; 
-                                color: white; 
-                                border: 2px solid #1e7e34;
-                                padding: 10px; 
-                                font-weight: bold;
-                                border-radius: 6px;
-                                font-size: 12px;
-                                min-height: 40px;
-                                margin: 5px;
-                            }
-                            QPushButton:hover { 
-                                background-color: #218838; 
-                            }
-                            QPushButton:pressed { 
-                                background-color: #1e7e34; 
-                            }
-                        """)
+                    
+                    # Also update WorkflowScissorsButton if it exists
+                    if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                        button = slicer.modules.WorkflowScissorsButton
+                        if hasattr(button, 'setChecked'):
+                            button.setChecked(True)
                 else:
                     print("⚠️ Could not activate scissors tool")
             else:
                 # Deactivate scissors tool
                 slicer.modules.ScissorsToolActive = False
                 print("🔄 Scissors tool deactivated")
+                
+                # Actually deactivate the scissors tool in the segment editor
+                if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+                    segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+                    segmentEditorWidget.setActiveEffectByName("")  # Clear active effect
                 
                 # Switch back to default interaction mode
                 interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
@@ -14901,26 +14188,15 @@ def toggle_scissors_tool(activated=None):
                 # Update button to show inactive state
                 if hasattr(slicer.modules, 'CustomScissorsButton'):
                     button = slicer.modules.CustomScissorsButton
+                    if hasattr(button, 'setChecked'):
+                        button.setChecked(False)
                     button.setText("Toggle Scissors Tool")
-                    button.setStyleSheet("""
-                        QPushButton { 
-                            background-color: #e74c3c; 
-                            color: white; 
-                            border: none; 
-                            padding: 10px; 
-                            font-weight: bold;
-                            border-radius: 6px;
-                            font-size: 12px;
-                            min-height: 40px;
-                            margin: 5px;
-                        }
-                        QPushButton:hover { 
-                            background-color: #c0392b; 
-                        }
-                        QPushButton:pressed { 
-                            background-color: #a93226; 
-                        }
-                    """)
+                
+                # Also update WorkflowScissorsButton if it exists
+                if hasattr(slicer.modules, 'WorkflowScissorsButton'):
+                    button = slicer.modules.WorkflowScissorsButton
+                    if hasattr(button, 'setChecked'):
+                        button.setChecked(False)
         else:
             print(f"🔄 Scissors tool already {'active' if current_state else 'inactive'}")
             
