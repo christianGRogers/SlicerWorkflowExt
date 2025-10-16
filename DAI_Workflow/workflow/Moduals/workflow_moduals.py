@@ -1426,8 +1426,12 @@ def create_threshold_segment_with_markup_only():
         show_segmentation_in_3d(segmentation_node)
         load_into_segment_editor(segmentation_node, volume_node)
         
-        # After threshold segmentation, add scissors and markup tools to left panel
-        add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
+        # Only add post-threshold tools if markup was actually imported
+        if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
+            add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
+            print("✅ Markup workflow completed - post-threshold tools available")
+        else:
+            print("✅ Threshold workflow completed - ready for centerline extraction")
 
 def markup_workflow_after_crop():
     """
@@ -1524,10 +1528,9 @@ def continue_workflow_without_markup():
             show_segmentation_in_3d(segmentation_node)
             load_into_segment_editor(segmentation_node, volume_node)
             
-            # After threshold segmentation, add scissors and markup tools to left panel
-            add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
-            
+            # No post-threshold tools for non-markup workflow
             print("✅ Workflow continued successfully without markup import")
+            print("📋 Ready for centerline extraction - use Extract Centerline module")
         else:
             print("❌ Failed to create segmentation for threshold workflow")
             
@@ -1536,9 +1539,17 @@ def continue_workflow_without_markup():
 
 def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
     """
-    Add scissors tools and markup placement controls to the left module panel after threshold segmentation
+    Add scissors tools and markup placement controls to the left module panel after threshold segmentation.
+    Only shows when markup workflow is being used.
     """
     try:
+        # Safety check: only show post-threshold tools if markup workflow is active
+        if not (hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup):
+            print("📋 Post-threshold tools skipped - no markup workflow active")
+            return
+            
+        print("🔧 Adding post-threshold tools for markup workflow")
+        
         # Expand left panel to show the new tools
         expand_left_module_panel()
         
