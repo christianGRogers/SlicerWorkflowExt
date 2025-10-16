@@ -518,8 +518,8 @@ def hide_cpr_slice_size_controls():
 
 def ask_user_for_markup_import():
     """
-    Ask the user if they want to import markup workflow files
-    Returns True if yes, False if no
+    Ask the user if they want to import markup workflow files.
+    Now handles workflow continuation directly instead of just returning boolean.
     """
     try:
         result = slicer.util.confirmYesNoDisplay(
@@ -531,6 +531,40 @@ def ask_user_for_markup_import():
             "• YES: Import all files, create curve models, and open Data module\n"
             "• NO: Continue with normal segmentation workflow",
             windowTitle="Import Markup Workflow Files"
+        )
+        
+        if result:
+            # User wants to import markup - use the full markup workflow function
+            print("✅ User chose to import markup - starting markup workflow")
+            # Call the function that handles markup import and continues workflow
+            markup_workflow_after_crop()
+        else:
+            # User declined markup import - continue with normal threshold workflow
+            print("✅ User declined markup import - continuing with threshold workflow")
+            continue_workflow_without_markup()
+            
+        return result
+    except Exception as e:
+        print(f"❌ Error in markup import dialog: {e}")
+        # On error, continue without markup
+        continue_workflow_without_markup()
+        return False
+
+def ask_user_for_segmentation_import():
+    """
+    Ask the user if they want to import an existing segmentation file to start alternate workflow
+    Returns True if yes, False if no
+    """
+    try:
+        result = slicer.util.confirmYesNoDisplay(
+            "Would you like to import an existing segmentation file?\n\n"
+            "This will:\n"
+            "• Skip the threshold segmentation step\n"
+            "• Load your existing segmentation\n"
+            "• Proceed directly to centerline extraction\n\n"
+            "• YES: Import segmentation file (.seg.nrrd, .nrrd, etc.)\n"
+            "• NO: Continue with normal threshold segmentation workflow",
+            windowTitle="Import Existing Segmentation"
         )
         return result
     except Exception as e:
@@ -731,6 +765,110 @@ def import_transform_file():
     except Exception as e:
         slicer.util.errorDisplay(f"Error in transform file selection: {str(e)}")
         return None
+
+def import_segmentation_file():
+    """
+    Let the user select and import a segmentation file
+    Returns the imported segmentation node or None if cancelled/failed
+    """
+    try:
+        # Use Slicer's file dialog to select segmentation file
+        file_dialog = qt.QFileDialog()
+        file_dialog.setFileMode(qt.QFileDialog.ExistingFile)
+        file_dialog.setNameFilter("Segmentation Files (*.seg.nrrd *.nrrd *.nii *.nii.gz);;All Files (*)")
+        file_dialog.setWindowTitle("Select Segmentation File")
+        
+        if file_dialog.exec():
+            file_paths = file_dialog.selectedFiles()
+            if file_paths:
+                segmentation_file_path = file_paths[0]
+                
+                # Load the segmentation file
+                try:
+                    segmentation_node = None
+                    
+                    # Method 1: Direct segmentation loading
+                    if segmentation_file_path.endswith('.seg.nrrd'):
+                        segmentation_node = slicer.util.loadSegmentation(segmentation_file_path)
+                    
+                    # Method 2: Load as volume then convert to segmentation
+                    elif segmentation_file_path.endswith(('.nrrd', '.nii', '.nii.gz')):
+                        # Load as labelmap volume first
+                        labelmap_node = slicer.util.loadLabelVolume(segmentation_file_path)
+                        if labelmap_node:
+                            # Convert labelmap to segmentation
+                            segmentation_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
+                            segmentation_node.SetName(f"ImportedSegmentation_{labelmap_node.GetName()}")
+                            
+                            # Import labelmap into segmentation
+                            segmentationLogic = slicer.modules.segmentations.logic()
+                            if segmentationLogic.ImportLabelmapToSegmentationNode(labelmap_node, segmentation_node):
+                                # Remove the temporary labelmap
+                                slicer.mrmlScene.RemoveNode(labelmap_node)
+                            else:
+                                slicer.mrmlScene.RemoveNode(segmentation_node)
+                                segmentation_node = None
+                    
+                    if segmentation_node:
+                        # Set reference geometry if volume exists
+                        volume_node = find_working_volume()
+                        if volume_node:
+                            segmentation_node.SetReferenceImageGeometryParameterFromVolumeNode(volume_node)
+                        
+                        slicer.util.infoDisplay(f"Segmentation file loaded successfully: {segmentation_node.GetName()}")
+                        
+                        # Store workflow flags for imported segmentation
+                        slicer.modules.WorkflowUsingImportedSegmentation = True
+                        slicer.modules.WorkflowImportedSegmentationNode = segmentation_node
+                        
+                        return segmentation_node
+                    else:
+                        slicer.util.errorDisplay(f"Failed to load segmentation file: {segmentation_file_path}")
+                        return None
+                        
+                except Exception as load_error:
+                    slicer.util.errorDisplay(f"Error loading segmentation file: {load_error}")
+                    return None
+        
+        return None
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error in segmentation file selection: {e}")
+        return None
+
+def start_imported_segmentation_workflow(segmentation_node, volume_node):
+    """
+    Start alternate workflow with imported segmentation - skip threshold creation and go directly to centerline extraction
+    """
+    try:
+        # Ensure 3D view shows the segmentation
+        show_segmentation_in_3d(segmentation_node)
+        
+        # Load the imported segmentation into the segment editor for potential editing
+        load_into_segment_editor(segmentation_node, volume_node)
+        
+        # Set appropriate view layout
+        set_3d_view_background_black()
+        
+        # Mark that dialog has been shown to prevent loops when continuing workflow
+        slicer.modules.WorkflowDialogShown = True
+        
+        # Provide user feedback about the alternate workflow
+        slicer.util.infoDisplay(
+            "Imported segmentation workflow started.\n\n"
+            "Next steps:\n"
+            "1. Use scissors tools if you need to edit the segmentation\n"
+            "2. When ready, continue to centerline extraction\n\n"
+            "The threshold segmentation step has been skipped."
+        )
+        
+        print("✅ Imported segmentation workflow started")
+        print("📋 You can use scissors tools to edit the segmentation if needed")
+        print("📋 When ready, continue to centerline extraction")
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error starting imported segmentation workflow: {e}")
+        print(f"❌ Error starting imported segmentation workflow: {e}")
 
 def set_volume_visible_in_slice_views(volume_node):
     """
@@ -1228,15 +1366,19 @@ def set_3d_view_background_black():
     except Exception as e:
         pass
 
-def create_threshold_segment():
+def create_threshold_segment_with_markup_only():
     """
-    Main workflow function to create a threshold segment with default values
+    Main workflow function with markup import only (no segmentation import)
     """
     volume_node = find_working_volume()
     
     if not volume_node:
         slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
         return
+    
+    # Initialize workflow flags
+    slicer.modules.WorkflowUsingMarkup = False
+    slicer.modules.WorkflowUsingImportedSegmentation = False
     
     # Ask user if they want to import markup
     want_markup = ask_user_for_markup_import()
@@ -1270,11 +1412,513 @@ def create_threshold_segment():
             # Markup import failed, continue with normal workflow
             slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
             slicer.modules.WorkflowUsingMarkup = False
-    else:
-        # Normal workflow path (no markup)
-        slicer.modules.WorkflowUsingMarkup = False
     
-    # Continue with normal threshold workflow (regardless of markup import)
+    # Continue with threshold workflow
+    threshold_values = prompt_for_threshold_range()
+    if threshold_values is None:
+        return
+    
+    threshold_value_low, threshold_value_high = threshold_values
+    
+    segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
+    
+    if segmentation_node:
+        show_segmentation_in_3d(segmentation_node)
+        load_into_segment_editor(segmentation_node, volume_node)
+        
+        # Only add post-threshold tools if markup was actually imported
+        if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
+            add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
+            print("✅ Markup workflow completed - post-threshold tools available")
+        else:
+            print("✅ Threshold workflow completed - ready for centerline extraction")
+
+def markup_workflow_after_crop():
+    """
+    Handle markup import workflow after crop completion.
+    This is called when user chooses to import markup from the post-ROI dialog.
+    """
+    try:
+        volume_node = find_working_volume()
+        if not volume_node:
+            slicer.util.errorDisplay("No volume found for markup workflow.")
+            return
+            
+        # Set workflow flags
+        slicer.modules.WorkflowUsingMarkup = False
+        slicer.modules.WorkflowUsingImportedSegmentation = False
+        
+        # Import markup file
+        markup_node = import_markup_file()
+        if markup_node:
+            # Store markup workflow flag for later use
+            slicer.modules.WorkflowUsingMarkup = True
+            slicer.modules.WorkflowMarkupNode = markup_node
+            
+            # Also import straightened volume
+            straightened_volume = import_straightened_volume()
+            if straightened_volume:
+                slicer.modules.WorkflowStraightenedVolume = straightened_volume
+                slicer.util.infoDisplay("Straightened volume imported successfully.")
+            else:
+                slicer.util.infoDisplay("Straightened volume import cancelled or failed.")
+            
+            # Also import transform
+            transform_node = import_transform_file()
+            if transform_node:
+                slicer.modules.WorkflowTransform = transform_node
+                slicer.util.infoDisplay("Transform imported successfully.")
+            else:
+                slicer.util.infoDisplay("Transform import cancelled or failed.")
+            
+            slicer.util.infoDisplay("Markup workflow imports completed. Continuing with threshold segmentation workflow.")
+        else:
+            # Markup import failed, continue with normal workflow
+            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
+            slicer.modules.WorkflowUsingMarkup = False
+        
+        # Continue with threshold workflow (same as create_threshold_segment_with_markup_only)
+        threshold_values = prompt_for_threshold_range()
+        if threshold_values is None:
+            return
+        
+        threshold_value_low, threshold_value_high = threshold_values
+        
+        segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
+        
+        if segmentation_node:
+            show_segmentation_in_3d(segmentation_node)
+            load_into_segment_editor(segmentation_node, volume_node)
+            
+            # After threshold segmentation, add scissors and markup tools to left panel
+            add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
+            
+            print("✅ Markup workflow completed successfully")
+        else:
+            print("❌ Failed to create segmentation for markup workflow")
+            
+    except Exception as e:
+        print(f"❌ Error in markup workflow after crop: {e}")
+
+def continue_workflow_without_markup():
+    """
+    Continue the workflow with threshold segmentation only (no markup import).
+    Called when user declines markup import from the post-ROI dialog.
+    """
+    try:
+        volume_node = find_working_volume()
+        if not volume_node:
+            slicer.util.errorDisplay("No volume found to continue workflow.")
+            return
+            
+        # Set workflow flags for no markup
+        slicer.modules.WorkflowUsingMarkup = False
+        slicer.modules.WorkflowUsingImportedSegmentation = False
+        
+        # Continue with threshold segmentation workflow
+        threshold_values = prompt_for_threshold_range()
+        if threshold_values is None:
+            return
+        
+        threshold_value_low, threshold_value_high = threshold_values
+        
+        segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
+        
+        if segmentation_node:
+            show_segmentation_in_3d(segmentation_node)
+            load_into_segment_editor(segmentation_node, volume_node)
+            
+            # No post-threshold tools for non-markup workflow
+            print("✅ Workflow continued successfully without markup import")
+            print("📋 Ready for centerline extraction - use Extract Centerline module")
+        else:
+            print("❌ Failed to create segmentation for threshold workflow")
+            
+    except Exception as e:
+        print(f"❌ Error continuing workflow without markup: {e}")
+
+def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
+    """
+    Add scissors tools and markup placement controls to the left module panel after threshold segmentation.
+    Only shows when markup workflow is being used.
+    """
+    try:
+        # Safety check: only show post-threshold tools if markup workflow is active
+        if not (hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup):
+            print("📋 Post-threshold tools skipped - no markup workflow active")
+            return
+            
+        print("🔧 Adding post-threshold tools for markup workflow")
+        
+        # Expand left panel to show the new tools
+        expand_left_module_panel()
+        
+        # Get the main window and find a suitable location for the tools
+        main_window = slicer.util.mainWindow()
+        if not main_window:
+            print("❌ Could not find main window for left panel tools")
+            return
+        
+        # Create a widget container for post-threshold tools
+        if hasattr(slicer.modules, 'PostThresholdToolsWidget'):
+            # Clean up existing widget first
+            slicer.modules.PostThresholdToolsWidget.deleteLater()
+        
+        tools_widget = qt.QWidget()
+        tools_widget.setWindowTitle("Post-Threshold Tools")
+        tools_widget.setMinimumWidth(300)
+        tools_widget.setMaximumWidth(350)
+        
+        # Create layout for tools
+        layout = qt.QVBoxLayout(tools_widget)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Add title
+        title_label = qt.QLabel("Segmentation Editing Tools")
+        title_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #2c3e50;
+                padding: 5px;
+                background-color: #ecf0f1;
+                border-radius: 5px;
+                margin-bottom: 10px;
+            }
+        """)
+        layout.addWidget(title_label)
+        
+        # Add scissors tool toggle button
+        scissors_button = qt.QPushButton("Toggle Scissors Tool")
+        scissors_button.setCheckable(True)
+        scissors_button.setChecked(False)
+        scissors_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                border: none; 
+                padding: 12px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 14px;
+                min-height: 45px;
+                margin: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #c0392b; 
+            }
+            QPushButton:pressed { 
+                background-color: #a93226; 
+            }
+            QPushButton:checked { 
+                background-color: #27ae60; 
+                border: 2px solid #1e7e34;
+            }
+            QPushButton:checked:hover { 
+                background-color: #218838; 
+            }
+        """)
+        
+        # Connect scissors button
+        scissors_button.connect('toggled(bool)', lambda checked: toggle_scissors_tool_programmatic(checked))
+        layout.addWidget(scissors_button)
+        
+        # Store button reference
+        slicer.modules.LeftPanelScissorsButton = scissors_button
+        
+        # Add separator
+        separator = qt.QFrame()
+        separator.setFrameShape(qt.QFrame.HLine)
+        separator.setFrameShadow(qt.QFrame.Sunken)
+        layout.addWidget(separator)
+        
+        # Add markup placement section
+        markup_label = qt.QLabel("Additional Markup Placement")
+        markup_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #34495e;
+                padding: 5px;
+                margin-top: 10px;
+            }
+        """)
+        layout.addWidget(markup_label)
+        
+        # Add fiducial point placement button
+        fiducial_button = qt.QPushButton("Place Additional Fiducial Points")
+        fiducial_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #3498db; 
+                color: white; 
+                border: none; 
+                padding: 10px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 12px;
+                min-height: 40px;
+                margin: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #2980b9; 
+            }
+            QPushButton:pressed { 
+                background-color: #1f4e79; 
+            }
+        """)
+        
+        fiducial_button.connect('clicked()', lambda: create_additional_fiducial_list())
+        layout.addWidget(fiducial_button)
+        
+        # Add curve placement button
+        curve_button = qt.QPushButton("Place Additional Curves")
+        curve_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #9b59b6; 
+                color: white; 
+                border: none; 
+                padding: 10px; 
+                font-weight: bold;
+                border-radius: 6px;
+                font-size: 12px;
+                min-height: 40px;
+                margin: 5px;
+            }
+            QPushButton:hover { 
+                background-color: #8e44ad; 
+            }
+            QPushButton:pressed { 
+                background-color: #6a1b9a; 
+            }
+        """)
+        
+        curve_button.connect('clicked()', lambda: create_additional_curve_markup())
+        layout.addWidget(curve_button)
+        
+        # Add continue workflow button
+        continue_button = qt.QPushButton("Continue to Centerline Extraction")
+        continue_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #27ae60; 
+                color: white; 
+                border: 2px solid #1e7e34; 
+                padding: 15px; 
+                font-weight: bold;
+                border-radius: 8px;
+                font-size: 14px;
+                min-height: 50px;
+                margin: 10px 5px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        
+        continue_button.connect('clicked()', lambda: continue_to_centerline_from_left_panel())
+        layout.addWidget(continue_button)
+        
+        # Add stretch to push everything to top
+        layout.addStretch()
+        
+        # Show the widget as a floating window on the left
+        tools_widget.setWindowFlags(qt.Qt.Tool | qt.Qt.WindowStaysOnTopHint)
+        tools_widget.show()
+        
+        # Position on the left side of screen
+        screen_geometry = qt.QApplication.desktop().screenGeometry()
+        tools_widget.move(50, 100)
+        
+        # Store reference to widget
+        slicer.modules.PostThresholdToolsWidget = tools_widget
+        
+        print("✅ Post-threshold tools added to left panel")
+        
+    except Exception as e:
+        print(f"❌ Error adding tools to left panel: {e}")
+
+def create_additional_fiducial_list():
+    """
+    Create a new fiducial list for additional markup placement
+    """
+    try:
+        # Create a new fiducial list
+        fiducial_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
+        fiducial_node.SetName(f"AdditionalMarkups_{slicer.mrmlScene.GetUniqueNameByString('Fiducial')}")
+        
+        # Configure the fiducial list
+        fiducial_node.GetDisplayNode().SetTextScale(2.0)
+        fiducial_node.GetDisplayNode().SetGlyphScale(3.0)
+        fiducial_node.GetDisplayNode().SetSelectedColor(0.0, 1.0, 0.0)  # Green
+        
+        # Activate placement mode
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+            selectionNode.SetActivePlaceNodeID(fiducial_node.GetID())
+        
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+        
+        slicer.util.infoDisplay(f"Additional fiducial placement activated.\nClick in 3D or slice views to place points.")
+        print(f"✅ Additional fiducial list created: {fiducial_node.GetName()}")
+        
+        return fiducial_node
+        
+    except Exception as e:
+        print(f"❌ Error creating additional fiducial list: {e}")
+        return None
+
+def create_additional_curve_markup():
+    """
+    Create a new curve markup for additional curve placement
+    """
+    try:
+        # Create a new curve markup
+        curve_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
+        curve_node.SetName(f"AdditionalCurve_{slicer.mrmlScene.GetUniqueNameByString('Curve')}")
+        
+        # Configure the curve
+        curve_node.GetDisplayNode().SetTextScale(2.0)
+        curve_node.GetDisplayNode().SetLineThickness(3.0)
+        curve_node.GetDisplayNode().SetSelectedColor(1.0, 0.5, 0.0)  # Orange
+        
+        # Activate placement mode
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsCurveNode")
+            selectionNode.SetActivePlaceNodeID(curve_node.GetID())
+        
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode:
+            interactionNode.SetCurrentInteractionMode(interactionNode.Place)
+        
+        slicer.util.infoDisplay(f"Additional curve placement activated.\nClick in 3D or slice views to place curve points.")
+        print(f"✅ Additional curve markup created: {curve_node.GetName()}")
+        
+        return curve_node
+        
+    except Exception as e:
+        print(f"❌ Error creating additional curve markup: {e}")
+        return None
+
+def continue_to_centerline_from_left_panel():
+    """
+    Continue to centerline extraction from the left panel tools
+    """
+    try:
+        # Clean up the left panel tools
+        cleanup_post_threshold_tools()
+        
+        # Continue with the normal workflow path
+        print("🔄 Continuing to centerline extraction...")
+        slicer.util.infoDisplay("Proceeding to centerline extraction.\n\nNext: Extract Centerline module will open.")
+        
+        # Set up for centerline extraction
+        qt.QTimer.singleShot(1000, lambda: on_continue_from_scissors())
+        
+    except Exception as e:
+        print(f"❌ Error continuing to centerline: {e}")
+
+def cleanup_post_threshold_tools():
+    """
+    Clean up the post-threshold tools widget
+    """
+    try:
+        if hasattr(slicer.modules, 'PostThresholdToolsWidget'):
+            slicer.modules.PostThresholdToolsWidget.deleteLater()
+            del slicer.modules.PostThresholdToolsWidget
+        
+        if hasattr(slicer.modules, 'LeftPanelScissorsButton'):
+            del slicer.modules.LeftPanelScissorsButton
+            
+        print("✅ Post-threshold tools cleaned up")
+        
+    except Exception as e:
+        print(f"❌ Error cleaning up post-threshold tools: {e}")
+
+def create_threshold_segment():
+    """
+    Main workflow function to create a threshold segment with default values or import existing segmentation
+    """
+    volume_node = find_working_volume()
+    
+    if not volume_node:
+        slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
+        return
+    
+    # Initialize workflow flags
+    slicer.modules.WorkflowUsingMarkup = False
+    slicer.modules.WorkflowUsingImportedSegmentation = False
+    
+    # Check if this is being called from an alternate path (prevent dialog loops)
+    calling_from_crop = hasattr(slicer.modules, 'WorkflowDialogShown') and slicer.modules.WorkflowDialogShown
+    
+    # First ask if user wants to import an existing segmentation (alternate workflow)
+    want_segmentation = ask_user_for_segmentation_import()
+    
+    if want_segmentation:
+        # User wants to import existing segmentation - alternate workflow
+        segmentation_node = import_segmentation_file()
+        if segmentation_node:
+            slicer.util.infoDisplay("Segmentation imported successfully. Proceeding directly to centerline extraction.")
+            
+            # Show segmentation in 3D
+            show_segmentation_in_3d(segmentation_node)
+            
+            # Skip threshold creation and go directly to centerline extraction
+            start_imported_segmentation_workflow(segmentation_node, volume_node)
+            return
+        else:
+            # Segmentation import failed, continue with normal workflow
+            slicer.util.infoDisplay("Segmentation import cancelled or failed. Continuing with normal workflow.")
+    
+    # Ask user if they want to import markup
+    want_markup = ask_user_for_markup_import()
+    
+    if want_markup:
+        # User wants to import markup - handle all imports (markup, volume, transform)
+        markup_node = import_markup_file()
+        if markup_node:
+            # Store markup workflow flag for later use
+            slicer.modules.WorkflowUsingMarkup = True
+            slicer.modules.WorkflowMarkupNode = markup_node
+            
+            # Also import straightened volume
+            straightened_volume = import_straightened_volume()
+            if straightened_volume:
+                slicer.modules.WorkflowStraightenedVolume = straightened_volume
+                slicer.util.infoDisplay("Straightened volume imported successfully.")
+            else:
+                slicer.util.infoDisplay("Straightened volume import cancelled or failed.")
+            
+            # Also import transform
+            transform_node = import_transform_file()
+            if transform_node:
+                slicer.modules.WorkflowTransform = transform_node
+                slicer.util.infoDisplay("Transform imported successfully.")
+            else:
+                slicer.util.infoDisplay("Transform import cancelled or failed.")
+            
+            slicer.util.infoDisplay("Markup workflow imports completed. Continuing with threshold segmentation workflow.")
+        else:
+            # Markup import failed, continue with normal workflow
+            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
+            slicer.modules.WorkflowUsingMarkup = False
+    
+    # If neither segmentation nor markup is imported, continue with normal threshold workflow
+    # But if user cancelled both and we were called from crop workflow, go to crop workflow
+    if (not want_segmentation and not want_markup) and calling_from_crop:
+        # Reset the flag and continue with crop workflow
+        slicer.modules.WorkflowDialogShown = False
+        start_crop_workflow_directly()
+        return
+    
+    # Continue with normal threshold workflow
     threshold_values = prompt_for_threshold_range()
     if threshold_values is None:
         return
@@ -3361,7 +4005,7 @@ def start_with_dicom_data():
                 windowTitle="Existing Volumes Found"
             )
             if result:
-                start_with_volume_crop()
+                start_workflow_with_segmentation_dialog()
                 return
         
         slicer.util.selectModule("DICOM")
@@ -3543,7 +4187,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     if philips_result:
                         print("✅ Philips DICOM loading completed successfully!")
                         set_3d_view_background_black()
-                        qt.QTimer.singleShot(1000, start_with_volume_crop)
+                        qt.QTimer.singleShot(1000, start_markup_workflow)
                         return True
                     else:
                         print("❌ Philips loader failed, trying standard methods...")
@@ -3576,7 +4220,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     
                     volume_node.SetName("CT_Cardiac_Series")
                     set_3d_view_background_black()
-                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    qt.QTimer.singleShot(1000, start_markup_workflow)
                     return True
                     
             except Exception as dir_load_error:
@@ -5400,7 +6044,7 @@ def check_for_volume_addition():
                 latest_volume = volume_nodes[-1]
             
             qt.QTimer.singleShot(2000, cleanup_volume_waiting_status_widget)
-            pass
+            # Start crop workflow directly when volume is detected
             qt.QTimer.singleShot(500, start_with_volume_crop)
             
     except Exception as e:
@@ -5427,6 +6071,53 @@ def stop_volume_addition_monitoring():
     except Exception as e:
         pass
 
+def start_markup_workflow():
+    """
+    Start the workflow with crop first, then markup import after ROI is set
+    """
+    try:
+        # Start with crop workflow - markup dialog will appear after ROI is set
+        start_with_volume_crop()
+    except Exception as e:
+        print(f"Error starting markup workflow: {e}")
+        # Fallback to the original function if needed
+        create_threshold_segment_with_markup_only()
+
+def start_crop_workflow_directly():
+    """
+    Start the crop workflow directly without showing segmentation dialog again
+    """
+    # Collapse the left module panel at workflow start to maximize view space
+    collapse_left_module_panel()
+    
+    # Set 3D view background to black at the start of workflow
+    set_3d_view_background_black()
+    
+    # Set three-up view (Red, Green, Yellow) before cropping
+    set_three_up_view()
+    
+    volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+    if not volume_node:
+        slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
+        return
+    
+    # Use custom crop interface instead of standard module
+    create_initial_custom_crop_interface()
+    print("✅ Initial custom crop interface ready (left panel collapsed)")
+    print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
+
+def start_workflow_with_segmentation_dialog():
+    """
+    Start the workflow by first showing the segmentation import dialog, then continuing accordingly
+    """
+    try:
+        # Call the main workflow function which now includes segmentation import dialog
+        create_threshold_segment()
+    except Exception as e:
+        print(f"Error starting workflow with segmentation dialog: {e}")
+        # Fallback to original crop workflow if dialog fails
+        start_with_volume_crop()
+
 def start_with_volume_crop():
     """
     Start the workflow using the custom crop interface instead of the standard crop module.
@@ -5439,6 +6130,16 @@ def start_with_volume_crop():
     
     # Set three-up view (Red, Green, Yellow) before cropping
     set_three_up_view()
+    
+    volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+    if not volume_node:
+        slicer.util.errorDisplay("No volume loaded. Please load a volume first.")
+        return
+    
+    # Use custom crop interface instead of standard module
+    create_initial_custom_crop_interface()
+    print("✅ Initial custom crop interface ready (left panel collapsed)")
+    print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
     
     volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
     if not volume_node:
@@ -13617,10 +14318,8 @@ def add_scissors_tools_to_initial_interface():
         # Resize the widget to accommodate new buttons
         crop_widget.setFixedHeight(400)
         
-        print("✅ Scissors tools added to initial crop interface")
-        
     except Exception as e:
-        print(f"❌ Error adding scissors tools to initial interface: {e}")
+        pass
 
 
 def create_custom_crop_interface():
@@ -13891,10 +14590,15 @@ def continue_workflow_after_custom_crop():
         if not volume_node:
             return
             
-        # Continue with threshold segmentation (same as original workflow)
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
-            return
+        # Show markup import dialog now that ROI is set
+        print("✅ ROI crop completed - showing markup import dialog")
+        ask_user_for_markup_import()
+        
+        # Don't continue immediately - wait for user response from dialog
+        # The workflow will continue through either:
+        # - create_threshold_segment_with_markup_only() if markup imported
+        # - continue_workflow_without_markup() if no markup imported
+        return
         
         threshold_value_low, threshold_value_high = threshold_values
         
