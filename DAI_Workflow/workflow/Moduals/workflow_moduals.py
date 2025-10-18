@@ -12,13 +12,13 @@ try:
     from DICOMLib.DICOMUtils import TemporaryDICOMDatabase
     DICOM_UTILS_AVAILABLE = True
 except ImportError:
-    print("Warning: DICOMLib not available, using fallback DICOM methods")
+    pass
     DICOM_UTILS_AVAILABLE = False
 
 try:
     import ctk
 except ImportError:
-    print("Warning: ctk not available, some DICOM functions may be limited")
+    pass
     ctk = None
 
 """
@@ -54,22 +54,20 @@ except:
 # Console testing functions
 def test_panel_collapse():
     """Console function to test panel collapse"""
-    print("Testing left panel collapse...")
     result = collapse_left_module_panel()
     if result:
-        print("✅ Panel collapse test PASSED")
+        pass
     else:
-        print("❌ Panel collapse test FAILED")
+        pass
     return result
 
 def test_panel_expand():
     """Console function to test panel expand"""
-    print("Testing left panel expand...")
     result = expand_left_module_panel()
     if result:
-        print("✅ Panel expand test PASSED")
+        pass
     else:
-        print("❌ Panel expand test FAILED")
+        pass
     return result
 
 def debug_panel_widgets():
@@ -77,21 +75,16 @@ def debug_panel_widgets():
     try:
         main_window = slicer.util.mainWindow()
         if not main_window:
-            print("❌ No main window found")
             return
             
-        print("🔍 Searching for panel widgets...")
-        
         # Find all dock widgets
         try:
             dock_widgets = main_window.findChildren(qt.QDockWidget)
-            print(f"Found {len(dock_widgets)} dock widgets:")
             for i, widget in enumerate(dock_widgets):
                 name = widget.objectName()
                 visible = widget.isVisible()
-                print(f"  {i+1}. '{name}' (visible: {visible})")
         except Exception as e:
-            print(f"Could not get dock widgets: {e}")
+            pass
         
         # Find all widgets with 'panel' or 'module' in name
         try:
@@ -102,16 +95,14 @@ def debug_panel_widgets():
                 if widget_name and ('panel' in widget_name.lower() or 'module' in widget_name.lower()):
                     panel_widgets.append(w)
                     
-            print(f"\nFound {len(panel_widgets)} panel-related widgets:")
             for i, widget in enumerate(panel_widgets):
                 name = widget.objectName()
                 visible = widget.isVisible()
-                print(f"  {i+1}. '{name}' (visible: {visible})")
         except Exception as e:
-            print(f"Could not get panel widgets: {e}")
+            pass
             
     except Exception as e:
-        print(f"❌ Debug failed: {e}")
+        pass
 
 
 
@@ -196,9 +187,8 @@ def force_collapse_left_panel_on_startup():
                 if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
                     widget.hide()
                     success = True
-                    print(f"✅ Hidden dock widget: {widget_name}")
         except Exception as e:
-            print(f"Method 1 failed: {e}")
+            pass
         
         # Method 2: Try specific known panel names
         try:
@@ -208,9 +198,8 @@ def force_collapse_left_panel_on_startup():
                 for panel in panels:
                     panel.hide()
                     success = True
-                    print(f"✅ Hidden panel: {panel_name}")
         except Exception as e:
-            print(f"Method 2 failed: {e}")
+            pass
         
         # Method 3: Try to find all QWidget children and hide panel-related ones
         try:
@@ -220,19 +209,13 @@ def force_collapse_left_panel_on_startup():
                 if widget_name and ("PanelDockWidget" in widget_name or "ModulePanel" in widget_name):
                     widget.hide()
                     success = True
-                    print(f"✅ Hidden widget: {widget_name}")
         except Exception as e:
-            print(f"Method 3 failed: {e}")
+            pass
         
-        if success:
-            print("✅ Left module panel collapsed on startup")
-        else:
-            print("⚠️ No panel widgets found to hide")
-            
         return success
         
     except Exception as e:
-        print(f"⚠️ Could not force collapse left module panel: {e}")
+        pass
         return False
 
 def collapse_left_module_panel():
@@ -254,9 +237,8 @@ def collapse_left_module_panel():
                 if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
                     widget.hide()
                     success = True
-                    print(f"✅ Collapsed dock widget: {widget_name}")
         except Exception as e:
-            print(f"Dock widget method failed: {e}")
+            pass
         
         # Method 2: Try specific panel names
         try:
@@ -266,18 +248,13 @@ def collapse_left_module_panel():
                 for panel in panels:
                     panel.hide()
                     success = True
-                    print(f"✅ Collapsed panel: {panel_name}")
         except Exception as e:
-            print(f"Panel name method failed: {e}")
+            pass
         
-        if success:
-            print("✅ Left module panel collapsed")
-        else:
-            print("⚠️ Could not find any panels to collapse")
         return success
         
     except Exception as e:
-        print(f"⚠️ Could not collapse left module panel: {e}")
+        pass
         return False
 
 def expand_left_module_panel():
@@ -299,9 +276,8 @@ def expand_left_module_panel():
                 if widget_name and ('module' in widget_name.lower() or 'panel' in widget_name.lower()):
                     widget.show()
                     success = True
-                    print(f"✅ Expanded dock widget: {widget_name}")
         except Exception as e:
-            print(f"Dock widget expand failed: {e}")
+            pass
         
         # Method 2: Try specific panel names
         try:
@@ -311,18 +287,13 @@ def expand_left_module_panel():
                 for panel in panels:
                     panel.show()
                     success = True
-                    print(f"✅ Expanded panel: {panel_name}")
         except Exception as e:
-            print(f"Panel expand failed: {e}")
+            pass
         
-        if success:
-            print("✅ Left module panel expanded")
-        else:
-            print("⚠️ Could not find any panels to expand")
         return success
         
     except Exception as e:
-        print(f"⚠️ Could not expand left module panel: {e}")
+        pass
         return False
 
 def get_volume_slice_thickness(volume_node):
@@ -535,19 +506,15 @@ def ask_user_for_markup_import():
         
         if result:
             # User wants to import markup - use the full markup workflow function
-            print("✅ User chose to import markup - starting markup workflow")
             # Call the function that handles markup import and continues workflow
             markup_workflow_after_crop()
         else:
             # User declined markup import - continue with normal threshold workflow
-            print("✅ User declined markup import - continuing with threshold workflow")
             continue_workflow_without_markup()
             
         return result
     except Exception as e:
-        print(f"❌ Error in markup import dialog: {e}")
-        # On error, continue without markup
-        continue_workflow_without_markup()
+        pass
         return False
 
 def ask_user_for_segmentation_import():
@@ -862,13 +829,9 @@ def start_imported_segmentation_workflow(segmentation_node, volume_node):
             "The threshold segmentation step has been skipped."
         )
         
-        print("✅ Imported segmentation workflow started")
-        print("📋 You can use scissors tools to edit the segmentation if needed")
-        print("📋 When ready, continue to centerline extraction")
-        
     except Exception as e:
         slicer.util.errorDisplay(f"Error starting imported segmentation workflow: {e}")
-        print(f"❌ Error starting imported segmentation workflow: {e}")
+        pass
 
 def set_volume_visible_in_slice_views(volume_node):
     """
@@ -1024,10 +987,9 @@ def set_three_up_view():
         slicer.app.processEvents()
         qt.QTimer.singleShot(100, lambda: slicer.app.processEvents())
         
-        print("Switched to three-up view (Red, Green, Yellow) side by side - 3D hidden - Images centered with resetSliceViews after volume loading")
         return True
     except Exception as e:
-        print(f"Error setting three-up view: {e}")
+        pass
         return False
 
 
@@ -1061,10 +1023,9 @@ def set_3d_only_view():
                     threeDView.resetCamera()
 
         slicer.app.processEvents()
-        print("Switched to 3D-only view")
         return True
     except Exception as e:
-        print(f"Error setting 3D-only view: {e}")
+        pass
         return False
 
 def create_curve_models_from_markup(markup_node):
@@ -1429,9 +1390,8 @@ def create_threshold_segment_with_markup_only():
         # Only add post-threshold tools if markup was actually imported
         if hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup:
             add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
-            print("✅ Markup workflow completed - post-threshold tools available")
         else:
-            print("✅ Threshold workflow completed - ready for centerline extraction")
+            pass
 
 def markup_workflow_after_crop():
     """
@@ -1493,12 +1453,11 @@ def markup_workflow_after_crop():
             # After threshold segmentation, add scissors and markup tools to left panel
             add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
             
-            print("✅ Markup workflow completed successfully")
         else:
-            print("❌ Failed to create segmentation for markup workflow")
+            pass
             
     except Exception as e:
-        print(f"❌ Error in markup workflow after crop: {e}")
+        pass
 
 def continue_workflow_without_markup():
     """
@@ -1529,13 +1488,11 @@ def continue_workflow_without_markup():
             load_into_segment_editor(segmentation_node, volume_node)
             
             # No post-threshold tools for non-markup workflow
-            print("✅ Workflow continued successfully without markup import")
-            print("📋 Ready for centerline extraction - use Extract Centerline module")
         else:
-            print("❌ Failed to create segmentation for threshold workflow")
+            pass
             
     except Exception as e:
-        print(f"❌ Error continuing workflow without markup: {e}")
+        pass
 
 def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
     """
@@ -1545,18 +1502,14 @@ def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
     try:
         # Safety check: only show post-threshold tools if markup workflow is active
         if not (hasattr(slicer.modules, 'WorkflowUsingMarkup') and slicer.modules.WorkflowUsingMarkup):
-            print("📋 Post-threshold tools skipped - no markup workflow active")
             return
             
-        print("🔧 Adding post-threshold tools for markup workflow")
-        
         # Expand left panel to show the new tools
         expand_left_module_panel()
         
         # Get the main window and find a suitable location for the tools
         main_window = slicer.util.mainWindow()
         if not main_window:
-            print("❌ Could not find main window for left panel tools")
             return
         
         # Create a widget container for post-threshold tools
@@ -1735,10 +1688,8 @@ def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
         # Store reference to widget
         slicer.modules.PostThresholdToolsWidget = tools_widget
         
-        print("✅ Post-threshold tools added to left panel")
-        
     except Exception as e:
-        print(f"❌ Error adding tools to left panel: {e}")
+        pass
 
 def create_additional_fiducial_list():
     """
@@ -1765,12 +1716,11 @@ def create_additional_fiducial_list():
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
         
         slicer.util.infoDisplay(f"Additional fiducial placement activated.\nClick in 3D or slice views to place points.")
-        print(f"✅ Additional fiducial list created: {fiducial_node.GetName()}")
         
         return fiducial_node
         
     except Exception as e:
-        print(f"❌ Error creating additional fiducial list: {e}")
+        pass
         return None
 
 def create_additional_curve_markup():
@@ -1798,12 +1748,11 @@ def create_additional_curve_markup():
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
         
         slicer.util.infoDisplay(f"Additional curve placement activated.\nClick in 3D or slice views to place curve points.")
-        print(f"✅ Additional curve markup created: {curve_node.GetName()}")
         
         return curve_node
         
     except Exception as e:
-        print(f"❌ Error creating additional curve markup: {e}")
+        pass
         return None
 
 def continue_to_centerline_from_left_panel():
@@ -1815,14 +1764,13 @@ def continue_to_centerline_from_left_panel():
         cleanup_post_threshold_tools()
         
         # Continue with the normal workflow path
-        print("🔄 Continuing to centerline extraction...")
         slicer.util.infoDisplay("Proceeding to centerline extraction.\n\nNext: Extract Centerline module will open.")
         
         # Set up for centerline extraction
         qt.QTimer.singleShot(1000, lambda: on_continue_from_scissors())
         
     except Exception as e:
-        print(f"❌ Error continuing to centerline: {e}")
+        pass
 
 def cleanup_post_threshold_tools():
     """
@@ -1836,10 +1784,8 @@ def cleanup_post_threshold_tools():
         if hasattr(slicer.modules, 'LeftPanelScissorsButton'):
             del slicer.modules.LeftPanelScissorsButton
             
-        print("✅ Post-threshold tools cleaned up")
-        
     except Exception as e:
-        print(f"❌ Error cleaning up post-threshold tools: {e}")
+        pass
 
 def create_threshold_segment():
     """
@@ -2195,17 +2141,14 @@ def select_scissors_tool(segment_editor_widget=None):
                     button.setChecked(True)
                     slicer.modules.WorkflowScissorsActive = True
                 
-                print("✅ Scissors tool activated and configured")
                 return True
             else:
-                print("❌ Failed to get scissors effect after activation")
                 return False
         else:
-            print("❌ WorkflowSegmentEditorWidget not available")
             return False
             
     except Exception as e:
-        print(f"❌ Error in select_scissors_tool: {e}")
+        pass
         return False
 
 def create_continue_workflow_button():
@@ -4025,11 +3968,9 @@ def load_dicom_from_source_file(dicom_path):
     import os
     import vtk
     try:
-        print(f"Loading DICOM from source file path: {dicom_path}")
         
         # Check if path exists
         if not os.path.exists(dicom_path):
-            print(f"Error: DICOM path does not exist: {dicom_path}")
             qt.QMessageBox.warning(
                 None,
                 "DICOM Path Not Found",
@@ -4056,12 +3997,10 @@ def load_dicom_from_source_file(dicom_path):
         
         # Check if enhanced DICOM utilities are available
         if not DICOM_UTILS_AVAILABLE:
-            print("DICOMLib not available, using fallback methods")
             return _fallback_dicom_loading(dicom_path)
         
         # Use robust plugin-based approach inspired by mpReviewPreprocessor
         try:
-            print("Using enhanced DICOM loading with plugin detection...")
             
             # Check if we can use TemporaryDICOMDatabase
             if DICOM_UTILS_AVAILABLE:
@@ -4077,7 +4016,7 @@ def load_dicom_from_source_file(dicom_path):
                         if success:
                             return success
                 except Exception as temp_db_error:
-                    print(f"Temporary database approach failed: {temp_db_error}")
+                    pass
             
             # Fallback to direct plugin examination without temporary database
             success = _import_and_load_dicom_data(dicom_path, None)
@@ -4085,12 +4024,11 @@ def load_dicom_from_source_file(dicom_path):
                 return success
                     
         except Exception as e:
-            print(f"Enhanced DICOM loading failed: {e}")
-            print("Falling back to traditional methods...")
+            pass
+            pass
             return _fallback_dicom_loading(dicom_path)
         
         # If we get here, all methods failed
-        print("All automatic loading methods failed")
         
         # Provide specific guidance based on file types found
         dicom_info = ""
@@ -4113,7 +4051,7 @@ def load_dicom_from_source_file(dicom_path):
         return False
         
     except Exception as e:
-        print(f"Error in load_dicom_from_source_file: {e}")
+        pass
         qt.QMessageBox.critical(
             None,
             "Error",
@@ -4127,7 +4065,6 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
     Based on mpReviewPreprocessor methodology for robust DICOM handling.
     """
     try:
-        print(f"Starting enhanced DICOM import from: {input_dir}")
         
         # Use temporary database if provided, otherwise get main database safely
         dicom_database = temp_db
@@ -4143,80 +4080,61 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                         if hasattr(dicom_logic, 'database'):
                             dicom_database = dicom_logic.database
                 else:
-                    print("No DICOM database available - using direct file loading approach")
                     dicom_database = None
             except Exception as db_error:
-                print(f"Could not access DICOM database: {db_error}")
+                pass
                 dicom_database = None
         
         # Try different import methods based on available components
         if ctk and dicom_database:
             # Method 1: Use ctk indexer if both are available
             try:
-                print("Using CTK indexer for DICOM import...")
                 indexer = ctk.ctkDICOMIndexer()
                 indexer.addDirectory(dicom_database, input_dir)
-                print("CTK indexer completed successfully")
                 
                 # Continue with database analysis
-                print("Analyzing imported patients...")
                 patients = dicom_database.patients()
                 
                 if patients:
-                    print(f"Found {len(patients)} patients")
                     # Process patients as before...
                     return _process_dicom_database_patients(dicom_database, patients, input_dir)
                     
             except Exception as indexer_error:
-                print(f"CTK indexer failed: {indexer_error}")
-                print("Falling back to direct file analysis...")
-        
+                pass
+
         # Method 2: Direct file analysis without plugins (bypass database issues)
-        print("Using direct file analysis approach...")
         dicom_files = _find_dicom_files_in_directory(input_dir)
         
         if dicom_files:
-            print(f"Found {len(dicom_files)} DICOM files for direct loading")
             
             # Check if these are Philips files first - use specialized loader if so
             file_analysis = _analyze_dicom_files(dicom_files)
             if file_analysis.get('is_philips', False):
-                print("🏥 Detected Philips DICOM files - using optimized Philips loader...")
                 try:
                     philips_result = _load_philips_dicom_series(input_dir)
                     if philips_result:
-                        print("✅ Philips DICOM loading completed successfully!")
                         set_3d_view_background_black()
                         qt.QTimer.singleShot(1000, start_markup_workflow)
                         return True
-                    else:
-                        print("❌ Philips loader failed, trying standard methods...")
+                
                 except Exception as philips_error:
-                    print(f"❌ Philips loader error: {philips_error}")
-                    print("Falling back to standard DICOM loading methods...")
+                    pass
+                    pass
             
             # Skip plugin system entirely and use Slicer's built-in loading
             try:
-                print("Attempting direct slicer.util.loadVolume with DICOM directory...")
                 
                 # Method 2a: Try loading the directory directly
                 volume_node = slicer.util.loadVolume(input_dir)
                 
                 if volume_node:
-                    print("✓ Success: DICOM directory loaded directly")
                     
                     # Check if we got a proper multi-slice volume
                     image_data = volume_node.GetImageData()
                     if image_data:
                         dims = image_data.GetDimensions()
-                        print(f"Loaded volume: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                         
-                        if dims[2] >= len(dicom_files) * 0.8:  # Got most of the slices
-                            print(f"✓ Successfully loaded {dims[2]} slices from {len(dicom_files)} DICOM files")
-                        elif dims[2] > 1:
-                            print(f"⚠ Loaded {dims[2]} slices (expected {len(dicom_files)})")
-                        else:
-                            print(f"⚠ Only single slice loaded from {len(dicom_files)} files")
+
                     
                     volume_node.SetName("CT_Cardiac_Series")
                     set_3d_view_background_black()
@@ -4224,33 +4142,27 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     return True
                     
             except Exception as dir_load_error:
-                print(f"Directory loading failed: {dir_load_error}")
+                pass
             
             # Method 2b: Try loading first DICOM file (should trigger series loading)
             try:
-                print("Attempting to load first DICOM file to trigger series loading...")
                 first_file = dicom_files[0]
-                print(f"Loading: {os.path.basename(first_file)}")
                 
                 volume_node = slicer.util.loadVolume(first_file)
                 
                 if volume_node:
-                    print("✓ Success: DICOM file loaded")
                     
                     # Check what we got
                     image_data = volume_node.GetImageData()
                     if image_data:
                         dims = image_data.GetDimensions()
-                        print(f"Loaded volume: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                         
                         if dims[2] > 1:
-                            print(f"✓ Multi-slice volume with {dims[2]} slices")
                             volume_node.SetName("CT_Series")
                             set_3d_view_background_black()
                             qt.QTimer.singleShot(1000, start_with_volume_crop)
                             return True
                         else:
-                            print(f"⚠ Single slice loaded from {len(dicom_files)} files - trying series loading")
                             
                             # Try to load the full series using DICOM module
                             success = _load_dicom_series_manually(dicom_files, input_dir)
@@ -4264,35 +4176,28 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     return True
                     
             except Exception as file_load_error:
-                print(f"First file loading failed: {file_load_error}")
+                pass
             
             # Method 2c: Try manual series loading for numbered DICOM files
-            print("Attempting manual series loading...")
             success = _load_dicom_series_manually(dicom_files, input_dir)
             if success:
                 return True
             
             # Method 2d: Try Slicer's volume sequence loading
-            print("Attempting Slicer volume sequence loading...")
             success = _load_as_volume_sequence(dicom_files, input_dir)
             if success:
                 return True
             
             # Method 2e: Last resort - try loading with VTK directly
-            print("Attempting VTK direct loading (last resort)...")
             success = _load_with_vtk_direct(dicom_files)
             if success:
                 return True
-            
-            print("Direct loading methods failed")
-        else:
-            print("No DICOM files found for direct analysis")
+
         
-        print("Enhanced import methods failed, falling back to simple loading...")
         return False
     
     except Exception as e:
-        print(f"Error in _import_and_load_dicom_data: {e}")
+        pass
         return False
 
 def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
@@ -4302,11 +4207,9 @@ def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
     try:
         # Process each patient to find loadable series
         for patient in patients:
-            print(f"Processing patient: {patient}")
             studies = dicom_database.studiesForPatient(patient)
             
             for study in studies:
-                print(f"Processing study: {study}")
                 series_list = dicom_database.seriesForStudy(study)
                 
                 for series_uid in series_list:
@@ -4315,13 +4218,11 @@ def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
                         continue
                     
                     series_description = dicom_database.seriesDescription(series_uid)
-                    print(f"Examining series: {series_description} ({len(files)} files)")
                     
                     # Use plugin-based approach to find best loader
                     plugin, loadable = _get_plugin_and_loadable_for_files(series_description, files)
                     
                     if loadable and plugin:
-                        print(f"Loading series with {plugin.__class__.__name__}")
                         
                         try:
                             # Load the series using the best plugin
@@ -4338,14 +4239,12 @@ def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
                                 volume_node.SetAttribute("DICOM_SeriesUID", series_uid)
                                 volume_node.SetAttribute("DICOM_PatientID", patient)
                                 
-                                print(f"Successfully loaded: {volume_node.GetName()}")
                                 
                                 # Verify we have a proper volume
                                 image_data = volume_node.GetImageData()
                                 if image_data:
                                     dims = image_data.GetDimensions()
                                     spacing = volume_node.GetSpacing()
-                                    print(f"Volume dimensions: {dims}, spacing: {spacing}")
                                     
                                     # Apply any necessary corrections
                                     fix_dicom_spacing_and_orientation(volume_node, input_dir)
@@ -4356,14 +4255,13 @@ def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
                                     return True
                                     
                         except Exception as load_error:
-                            print(f"Failed to load with {plugin.__class__.__name__}: {load_error}")
+                            pass
                             continue
         
-        print("No loadable series found with database approach")
         return False
         
     except Exception as e:
-        print(f"Error processing DICOM database patients: {e}")
+        pass
         return False
 
 def _get_plugin_and_loadable_for_files(series_description, files):
@@ -4373,7 +4271,6 @@ def _get_plugin_and_loadable_for_files(series_description, files):
     Enhanced to handle various DICOM file types and conventions.
     """
     try:
-        print(f"Examining loadables for: {series_description}")
         
         # Enhanced plugin list to handle various DICOM file types and conventions
         plugin_names = [
@@ -4392,25 +4289,20 @@ def _get_plugin_and_loadable_for_files(series_description, files):
         
         # First, analyze files to understand the data type
         file_analysis = _analyze_dicom_files(files)
-        print(f"File analysis: {file_analysis}")
         
         best_plugin = None
         best_loadable = None
         best_confidence = 0
         
         # Plugin system disabled due to slicer.modules.dicomPlugins compatibility issues
-        print("Skipping plugin examination - using direct loading instead")
-        print(f"Would have examined {len(plugin_names)} plugin types for {len(files)} files")
         
         if best_plugin and best_loadable:
-            print(f"Selected {best_plugin.__class__.__name__} with confidence {best_confidence}")
             return best_plugin, best_loadable
         
-        print("No suitable plugin found with sufficient confidence")
         return None, None
         
     except Exception as e:
-        print(f"Error in _get_plugin_and_loadable_for_files: {e}")
+        pass
         return None, None
 
 def _load_via_standardized_temp_folder(dicom_files, series_directory):
@@ -4423,11 +4315,9 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
         import shutil
         import pydicom
         
-        print(f"Creating standardized temp folder for {len(dicom_files)} DICOM files...")
         
         # Create temporary directory
         temp_dir = tempfile.mkdtemp(prefix="slicer_dicom_")
-        print(f"Temp directory: {temp_dir}")
         
         # Read all DICOM files and extract metadata for proper sorting
         dicom_data = []
@@ -4459,7 +4349,7 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                 })
                 
             except Exception as e:
-                print(f"Warning: Could not read DICOM metadata from {file_path}: {e}")
+                pass
                 # Add file anyway with basic info
                 dicom_data.append({
                     'file_path': file_path,
@@ -4474,7 +4364,6 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
             return (item['instance_number'], item['slice_location'], item['filename_slice'])
         
         dicom_data.sort(key=sort_key)
-        print(f"Sorted {len(dicom_data)} DICOM files by instance/slice order")
         
         # Copy files to temp directory with standardized naming
         standardized_files = []
@@ -4487,10 +4376,8 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
             shutil.copy2(item['file_path'], dest_path)
             standardized_files.append(dest_path)
         
-        print(f"Created {len(standardized_files)} standardized DICOM files")
         
         # Now try loading from the standardized temp folder
-        print("Loading standardized DICOM series...")
         
         # Method 1: Load directory as DICOM series
         try:
@@ -4499,7 +4386,6 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                 image_data = volume_node.GetImageData()
                 if image_data:
                     dims = image_data.GetDimensions()
-                    print(f"✅ Loaded standardized series: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                     
                     if dims[2] > 1:
                         volume_node.SetName("CT_Series_Standardized")
@@ -4508,7 +4394,6 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                         def cleanup_temp():
                             try:
                                 shutil.rmtree(temp_dir, ignore_errors=True)
-                                print("Cleaned up temp directory")
                             except:
                                 pass
                         
@@ -4517,7 +4402,7 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                         
                         return volume_node
         except Exception as e:
-            print(f"Directory loading failed: {e}")
+            pass
         
         # Method 2: Load using first file in standardized series
         try:
@@ -4527,7 +4412,6 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                     image_data = volume_node.GetImageData()
                     if image_data:
                         dims = image_data.GetDimensions()
-                        print(f"✅ Loaded from first standardized file: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                         
                         if dims[2] > 1:
                             volume_node.SetName("CT_Series_StandardizedFile")
@@ -4536,7 +4420,6 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                             def cleanup_temp():
                                 try:
                                     shutil.rmtree(temp_dir, ignore_errors=True)
-                                    print("Cleaned up temp directory")
                                 except:
                                     pass
                             
@@ -4544,19 +4427,17 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                             
                             return volume_node
         except Exception as e:
-            print(f"First file loading failed: {e}")
+            pass
         
         # Method 3: Try VTK DICOM reader with standardized files
         try:
             result = _load_volume_from_file_list(standardized_files)
             if result:
-                print("✅ VTK DICOM reader succeeded with standardized files")
                 
                 # Clean up temp folder
                 def cleanup_temp():
                     try:
                         shutil.rmtree(temp_dir, ignore_errors=True)
-                        print("Cleaned up temp directory")
                     except:
                         pass
                 
@@ -4564,7 +4445,7 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                 
                 return result
         except Exception as e:
-            print(f"VTK loading failed: {e}")
+            pass
         
         # Clean up temp folder if all methods failed
         try:
@@ -4575,7 +4456,7 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
         return None
         
     except Exception as e:
-        print(f"❌ Standardized temp folder loading failed: {e}")
+        pass
         import traceback
         traceback.print_exc()
         return None
@@ -4614,7 +4495,7 @@ def _load_philips_dicom_series(dicom_directory):
         DICOMUtils.importDicom(dicom_directory)
         
         # Access the Slicer DICOM database instance (exactly as in working script)
-        db = slicer.dicomDatabase  # ✅ this is the correct database handle
+        db = slicer.dicomDatabase  #  this is the correct database handle
         
         # Get all patient UIDs in the database
         patientUIDs = db.patients()
@@ -4671,46 +4552,34 @@ def _load_dicom_series_manually(dicom_files, series_directory):
     Now includes Philips-specific loading and standardized temp folder conversion for better compatibility.
     """
     try:
-        print(f"Manual series loading for {len(dicom_files)} DICOM files...")
         
         # Method -1: Check if this is Philips DICOM and use specialized loading
-        print("Analyzing DICOM files for manufacturer-specific handling...")
         file_analysis = _analyze_dicom_files(dicom_files)
         
         if file_analysis.get('is_philips', False):
-            print("Detected Philips DICOM files - using specialized Philips loader...")
             try:
                 philips_result = _load_philips_dicom_series(series_directory)
                 if philips_result:
-                    print("✅ Philips-specific loading succeeded!")
                     set_3d_view_background_black()
                     qt.QTimer.singleShot(1000, start_with_volume_crop)
                     return True
-                else:
-                    print("❌ Philips-specific loading failed, trying generic methods...")
             except Exception as philips_error:
-                print(f"❌ Philips-specific loading error: {philips_error}")
+                pass
         
         # Method 0: Try standardized temp folder conversion first
-        print("Method 0: Standardized DICOM conversion...")
         try:
             standardized_result = _load_via_standardized_temp_folder(dicom_files, series_directory)
             if standardized_result:
-                print("✅ Standardized conversion succeeded!")
                 set_3d_view_background_black()
                 qt.QTimer.singleShot(1000, start_with_volume_crop)
                 return True
-            else:
-                print("❌ Standardized conversion failed, trying fallback methods...")
         except Exception as std_error:
-            print(f"❌ Standardized conversion error: {std_error}")
+            pass
         
         # Method 1: Try using DICOMLib to create a temporary database and load series
         try:
-            print("Method 1: Using DICOMLib for series loading...")
             
             import DICOMLib
-            print("✓ DICOMLib available")
             
             # Create a temporary database in memory
             db = DICOMLib.DICOMDatabase()
@@ -4721,7 +4590,6 @@ def _load_dicom_series_manually(dicom_files, series_directory):
             db_path = os.path.join(temp_dir, "temp_dicom.db")
             
             if db.openDatabase(db_path):
-                print(f"✓ Temporary database created: {db_path}")
                 
                 # Index the DICOM files
                 indexer = ctk.ctkDICOMIndexer()
@@ -4738,7 +4606,6 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                                 files_in_series = db.filesForSeries(series)
                                 
                                 if len(files_in_series) >= len(dicom_files) * 0.8:  # Got most files
-                                    print(f"✓ Found series with {len(files_in_series)} files")
                                     
                                     # Load using slicer with the series files
                                     volume_node = slicer.util.loadVolume(files_in_series[0])
@@ -4748,7 +4615,6 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                                         image_data = volume_node.GetImageData()
                                         if image_data:
                                             dims = image_data.GetDimensions()
-                                            print(f"✓ Loaded series: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                                             
                                             if dims[2] > 1:
                                                 volume_node.SetName("CT_Series_Manual")
@@ -4768,11 +4634,10 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 
         except Exception as dicomlib_error:
-            print(f"DICOMLib method failed: {dicomlib_error}")
+            pass
         
         # Method 2: Try loading with explicit file list
         try:
-            print("Method 2: Loading with explicit file list...")
             
             # Sort files by slice number if possible
             sorted_files = sorted(dicom_files, key=lambda x: _extract_slice_number(x))
@@ -4786,43 +4651,37 @@ def _load_dicom_series_manually(dicom_files, series_directory):
             
             for approach_name, approach_func in approaches:
                 try:
-                    print(f"  Trying: {approach_name}...")
                     volume_node = approach_func()
                     
                     if volume_node:
                         image_data = volume_node.GetImageData()
                         if image_data:
                             dims = image_data.GetDimensions()
-                            print(f"✓ Loaded: {dims[0]}x{dims[1]}x{dims[2]} voxels")
                             
                             if dims[2] > 1:
                                 volume_node.SetName("CT_Series_FileList")
                                 set_3d_view_background_black()
                                 qt.QTimer.singleShot(1000, start_with_volume_crop)
                                 return True
-                            else:
-                                print(f"  Only got {dims[2]} slices, trying next approach...")
-                            
+
                 except Exception as approach_error:
-                    print(f"  {approach_name} failed: {approach_error}")
+                    pass
                     
         except Exception as filelist_error:
-            print(f"File list method failed: {filelist_error}")
+            pass
         
         # Method 3: Try DICOM browser loading
         try:
-            print("Method 3: Using DICOM browser...")
             success = _load_with_dicom_browser(series_directory)
             if success:
                 return True
         except Exception as browser_error:
-            print(f"DICOM browser failed: {browser_error}")
+            pass
         
-        print("Manual series loading failed")
         return False
         
     except Exception as e:
-        print(f"Error in manual series loading: {e}")
+        pass
         return False
 
 def _extract_slice_number(file_path):
@@ -4842,7 +4701,6 @@ def _extract_slice_number(file_path):
 def _load_volume_from_file_list(file_list):
     """Try to load volume from an explicit list of DICOM files."""
     try:
-        print(f"Attempting VTK DICOM reader with {len(file_list)} files...")
         
         # Method 1: Use VTK DICOM reader with directory
         import vtk
@@ -4858,7 +4716,6 @@ def _load_volume_from_file_list(file_list):
             
             if output and output.GetNumberOfPoints() > 0:
                 dims = output.GetDimensions()
-                print(f"VTK directory reader: {dims[0]}x{dims[1]}x{dims[2]}")
                 
                 if dims[2] > 1:
                     # Create volume node
@@ -4867,11 +4724,10 @@ def _load_volume_from_file_list(file_list):
                     volume_node.CreateDefaultDisplayNodes()
                     return volume_node
         except Exception as dir_error:
-            print(f"VTK directory reading failed: {dir_error}")
+            pass
         
         # Method 2: Use SimpleITK for DICOM series reading
         try:
-            print("Trying SimpleITK DICOM series reader...")
             import SimpleITK as sitk
             
             # Read the DICOM series
@@ -4882,7 +4738,6 @@ def _load_volume_from_file_list(file_list):
             sitk_image = series_reader.Execute()
             
             if sitk_image:
-                print(f"SimpleITK loaded: {sitk_image.GetSize()}")
                 
                 # Convert to VTK and create Slicer volume
                 sitk_utils = slicer.util.getModuleLogic('SimpleITK')
@@ -4893,13 +4748,12 @@ def _load_volume_from_file_list(file_list):
                         return volume_node
                 
         except ImportError:
-            print("SimpleITK not available")
+            pass
         except Exception as sitk_error:
-            print(f"SimpleITK failed: {sitk_error}")
+            pass
         
         # Method 3: Try VTK ImageReader2 with file pattern
         try:
-            print("Trying VTK ImageReader2 with file pattern...")
             
             # Find a pattern in the files
             first_file = os.path.basename(file_list[0])
@@ -4907,22 +4761,18 @@ def _load_volume_from_file_list(file_list):
                 # For files like i1559699.CTDC.1, create pattern like i%d.CTDC.%d
                 base_pattern = first_file.split('.')[0]
                 pattern_file = os.path.join(os.path.dirname(file_list[0]), f"{base_pattern[:8]}*.CTDC.*")
-                print(f"Pattern: {pattern_file}")
         
         except Exception as pattern_error:
-            print(f"Pattern method failed: {pattern_error}")
+            pass
         
-        print("All VTK methods failed")
         return None
         
     except Exception as e:
-        print(f"VTK DICOM reader failed: {e}")
         return None
 
 def _load_with_series_hint(directory, file_list):
     """Try to load DICOM with series loading hints."""
     try:
-        print(f"Loading with series hint from {len(file_list)} files...")
         
         # Try loading with properties that indicate this is a series
         properties = {
@@ -4936,13 +4786,12 @@ def _load_with_series_hint(directory, file_list):
         return volume_node
         
     except Exception as e:
-        print(f"Series hint loading failed: {e}")
+        pass
         return None
 
 def _load_with_dicom_browser(directory):
     """Try to load using DICOM browser module."""
     try:
-        print("Loading with DICOM browser...")
         
         # Get DICOM browser module
         if hasattr(slicer.modules, 'dicom'):
@@ -4959,13 +4808,11 @@ def _load_with_dicom_browser(directory):
             return False
             
     except Exception as e:
-        print(f"DICOM browser loading failed: {e}")
         return False
 
 def _load_as_volume_sequence(dicom_files, directory):
     """Try to load DICOM files as a volume sequence."""
     try:
-        print(f"Attempting volume sequence loading for {len(dicom_files)} files...")
         
         # Sort files by slice number
         sorted_files = sorted(dicom_files, key=lambda x: _extract_slice_number(x))
@@ -4981,31 +4828,21 @@ def _load_as_volume_sequence(dicom_files, directory):
             image_data = base_volume.GetImageData()
             if image_data:
                 dims = image_data.GetDimensions()
-                print(f"Base volume loaded: {dims[0]}x{dims[1]}x{dims[2]}")
                 
                 if dims[2] >= len(sorted_files) * 0.8:  # Got most of the series
-                    print(f"✓ Slicer automatically loaded {dims[2]} slices!")
                     base_volume.SetName("CT_AutoSeries")
                     set_3d_view_background_black()
                     qt.QTimer.singleShot(1000, start_with_volume_crop)
                     return True
                 elif dims[2] > 1:
-                    print(f"✓ Partial series loaded: {dims[2]} slices")
                     base_volume.SetName("CT_PartialSeries")
                     set_3d_view_background_black()
                     qt.QTimer.singleShot(1000, start_with_volume_crop)
                     return True
-                else:
-                    print("Only single slice loaded from base volume")
-            
-            # If single slice, try alternative approaches
-            print("Base volume only loaded single slice, trying alternatives...")
-            
-            # Method: Try loading multiple files at once using different approaches
+
             chunk_size = 10
             for i in range(0, len(sorted_files), chunk_size):
                 chunk = sorted_files[i:i+chunk_size]
-                print(f"  Trying chunk {i//chunk_size + 1}: files {i+1}-{min(i+chunk_size, len(sorted_files))}")
                 
                 try:
                     # Try loading the chunk
@@ -5014,7 +4851,6 @@ def _load_as_volume_sequence(dicom_files, directory):
                         if temp_volume:
                             temp_data = temp_volume.GetImageData()
                             if temp_data and temp_data.GetDimensions()[2] > 1:
-                                print(f"✓ Found multi-slice volume in chunk!")
                                 temp_volume.SetName("CT_ChunkSeries")
                                 # Remove other volumes
                                 if base_volume != temp_volume:
@@ -5026,28 +4862,26 @@ def _load_as_volume_sequence(dicom_files, directory):
                                 # Clean up single slice
                                 slicer.mrmlScene.RemoveNode(temp_volume)
                 except Exception as chunk_error:
-                    print(f"  Chunk loading failed: {chunk_error}")
+                    pass
                     
                 # Don't try too many chunks
                 if i > 100:
                     break
             
             # Keep the single slice if nothing else worked
-            print("Keeping single slice volume as fallback")
             return False
             
         except Exception as seq_error:
-            print(f"Volume sequence loading failed: {seq_error}")
+            pass
             return False
             
     except Exception as e:
-        print(f"Error in volume sequence loading: {e}")
+        pass
         return False
 
 def _load_with_vtk_direct(dicom_files):
     """Last resort: direct VTK DICOM loading with comprehensive error handling."""
     try:
-        print(f"VTK direct loading for {len(dicom_files)} DICOM files...")
         
         import vtk
         
@@ -5056,7 +4890,6 @@ def _load_with_vtk_direct(dicom_files):
         
         # Method 1: Try VTK DICOM directory reader
         try:
-            print("Method 1: VTK DICOM directory reader...")
             reader = vtk.vtkDICOMImageReader()
             directory = os.path.dirname(sorted_files[0])
             reader.SetDirectoryName(directory)
@@ -5065,7 +4898,6 @@ def _load_with_vtk_direct(dicom_files):
             output = reader.GetOutput()
             if output and output.GetNumberOfPoints() > 0:
                 dims = output.GetDimensions()
-                print(f"VTK reader output: {dims[0]}x{dims[1]}x{dims[2]}")
                 
                 if dims[2] > 1:
                     # Create volume node
@@ -5080,14 +4912,12 @@ def _load_with_vtk_direct(dicom_files):
                     set_3d_view_background_black()
                     qt.QTimer.singleShot(1000, start_with_volume_crop)
                     
-                    print("✓ VTK directory loading successful!")
                     return True
         except Exception as vtk_error:
-            print(f"VTK directory method failed: {vtk_error}")
+            pass
         
         # Method 2: Try creating a volume from individual slice loading
         try:
-            print("Method 2: Individual slice loading...")
             
             # Load first slice to get dimensions
             first_reader = vtk.vtkDICOMImageReader()
@@ -5097,7 +4927,6 @@ def _load_with_vtk_direct(dicom_files):
             
             if first_output:
                 dims_2d = first_output.GetDimensions()
-                print(f"Single slice dimensions: {dims_2d[0]}x{dims_2d[1]}")
                 
                 # Create 3D volume by stacking slices
                 num_slices = len(sorted_files)
@@ -5106,7 +4935,6 @@ def _load_with_vtk_direct(dicom_files):
                 append_filter = vtk.vtkImageAppend()
                 append_filter.SetAppendAxis(2)  # Stack along Z axis
                 
-                print(f"Loading {num_slices} slices...")
                 loaded_count = 0
                 
                 for i, file_path in enumerate(sorted_files):
@@ -5120,20 +4948,17 @@ def _load_with_vtk_direct(dicom_files):
                             append_filter.AddInputData(slice_output)
                             loaded_count += 1
                             
-                            if (i + 1) % 50 == 0:  # Progress indicator
-                                print(f"  Loaded {i+1}/{num_slices} slices...")
+
                         
                     except Exception as slice_error:
-                        print(f"  Failed to load slice {i+1}: {slice_error}")
+                        pass
                 
                 if loaded_count > 1:
-                    print(f"Stacking {loaded_count} slices...")
                     append_filter.Update()
                     stacked_output = append_filter.GetOutput()
                     
                     if stacked_output:
                         final_dims = stacked_output.GetDimensions()
-                        print(f"Final stacked volume: {final_dims[0]}x{final_dims[1]}x{final_dims[2]}")
                         
                         # Create volume node
                         volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
@@ -5147,17 +4972,15 @@ def _load_with_vtk_direct(dicom_files):
                         set_3d_view_background_black()
                         qt.QTimer.singleShot(1000, start_with_volume_crop)
                         
-                        print("✓ VTK slice stacking successful!")
                         return True
                         
         except Exception as stack_error:
-            print(f"VTK slice stacking failed: {stack_error}")
+            pass
         
-        print("All VTK direct loading methods failed")
         return False
         
     except Exception as e:
-        print(f"VTK direct loading failed: {e}")
+        pass
         return False
 
 def _analyze_dicom_files(files):
@@ -5234,7 +5057,7 @@ def _analyze_dicom_files(files):
             pass  # DICOM analysis failed, use basic analysis
         
     except Exception as e:
-        print(f"Warning: File analysis failed: {e}")
+        pass
     
     return analysis
 
@@ -5289,7 +5112,7 @@ def _adjust_plugin_confidence(plugin_name, original_confidence, file_analysis, s
         return min(adjusted, 1.0)
         
     except Exception as e:
-        print(f"Warning: Confidence adjustment failed: {e}")
+        pass
         return original_confidence
 
 def _find_dicom_files_in_directory(directory):
@@ -5299,11 +5122,9 @@ def _find_dicom_files_in_directory(directory):
     """
     dicom_files = []
     try:
-        print(f"Scanning directory: {directory}")
         file_count = 0
         
         for root, dirs, files in os.walk(directory):
-            print(f"Checking subdirectory: {root}")
             
             for file in files:
                 file_count += 1
@@ -5325,29 +5146,24 @@ def _find_dicom_files_in_directory(directory):
                 # Standard DICOM extensions
                 if filename_lower.endswith(('.dcm', '.dicom', '.ima', '.dcm30', '.dic')):
                     is_dicom = True
-                    print(f"Found DICOM by extension: {filename}")
                 
                 # Files with no extension (common in medical imaging)
                 elif '.' not in filename and len(filename) > 3:
                     is_dicom = True
-                    print(f"Found potential DICOM (no extension): {filename}")
                 
                 # Files starting with medical imaging prefixes
                 elif filename_lower.startswith(('i', 'im', 'ima', 'dicom', 'ct', 'mr')):
                     is_dicom = True
-                    print(f"Found DICOM by prefix: {filename}")
                 
                 # Files containing medical patterns (but exclude known non-DICOM files)
                 elif any(pattern in filename_lower for pattern in ['ctdc', 'ct_', 'mr_', 'cta', 'coronary']):
                     # Exclude known non-DICOM files
                     if not any(exclude in filename_lower for exclude in ['header', 'readme', 'info', 'summary']):
                         is_dicom = True
-                        print(f"Found DICOM by medical pattern: {filename}")
                 
                 # Numbered series (.1, .2, .3, etc.) but not headers
                 elif '.' in filename and filename.split('.')[-1].isdigit() and 'header' not in filename_lower:
                     is_dicom = True
-                    print(f"Found DICOM by numeric extension: {filename}")
                 
                 # Try to detect DICOM by reading file header
                 elif file_size > 132:  # DICOM files have at least 132 byte preamble
@@ -5359,30 +5175,21 @@ def _find_dicom_files_in_directory(directory):
                                 dicm_tag = f.read(4)
                                 if dicm_tag == b'DICM':
                                     is_dicom = True
-                                    print(f"Found DICOM by header signature: {filename}")
                         except:
                             pass
                 
                 if is_dicom:
                     dicom_files.append(file_path)
         
-        print(f"Scanned {file_count} total files, found {len(dicom_files)} DICOM files")
         
         # Sort files for proper series order
         dicom_files.sort()
-        
-        # Show sample of found files
-        if dicom_files:
-            print("Sample DICOM files found:")
-            for i, f in enumerate(dicom_files[:5]):
-                print(f"  {i+1}: {os.path.basename(f)}")
-            if len(dicom_files) > 5:
-                print(f"  ... and {len(dicom_files) - 5} more")
+
         
         return dicom_files
         
     except Exception as e:
-        print(f"Error finding DICOM files: {e}")
+        pass
         return []
 
 def test_philips_detection(dicom_path):
@@ -5390,28 +5197,19 @@ def test_philips_detection(dicom_path):
     Test Philips DICOM detection for a given directory.
     Usage: test_philips_detection(r"C:\\Users\\username\\Desktop\\DICOM_folder")
     """
-    print(f"=== Testing Philips Detection ===")
-    print(f"Directory: {dicom_path}")
     
     if not os.path.exists(dicom_path):
-        print(f"❌ Directory does not exist: {dicom_path}")
         return False
     
     try:
         # Find DICOM files
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         if not dicom_files:
-            print("❌ No DICOM files found")
             return False
         
-        print(f"✅ Found {len(dicom_files)} DICOM files")
         
         # Analyze files
         analysis = _analyze_dicom_files(dicom_files)
-        print(f"Manufacturer: {analysis.get('manufacturer', 'Unknown')}")
-        print(f"Is Philips: {analysis.get('is_philips', False)}")
-        print(f"Modality: {analysis.get('modality', 'Unknown')}")
-        print(f"Series Type: {analysis.get('series_type', 'Unknown')}")
         
         if analysis.get('is_philips', False):
             return True
@@ -5462,38 +5260,27 @@ def test_philips_dicom_loading(dicom_path):
     Test the complete Philips DICOM loading workflow.
     Usage: test_philips_dicom_loading(r"C:\\Users\\username\\Desktop\\Philips_DICOM_folder")
     """
-    print(f"=== Testing Philips DICOM Loading Workflow ===")
-    print(f"Directory: {dicom_path}")
     
     if not os.path.exists(dicom_path):
-        print(f"❌ Directory does not exist: {dicom_path}")
         return False
     
     try:
         # Step 1: Test detection
-        print("\n1. Testing Philips detection...")
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         if not dicom_files:
-            print("❌ No DICOM files found")
             return False
         
         analysis = _analyze_dicom_files(dicom_files)
-        print(f"   Files found: {len(dicom_files)}")
-        print(f"   Philips detected: {analysis.get('is_philips', False)}")
-        print(f"   Has v_headers: {analysis.get('has_header_files', False)}")
         
         if not analysis.get('is_philips', False):
             return False
         
         # Step 2: Test Philips loading
-        print("\n2. Testing Philips loading method...")
         initial_volumes = len(slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode'))
-        print(f"   Initial volume count: {initial_volumes}")
         
         result = _load_philips_dicom_series(dicom_path)
         
         final_volumes = len(slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode'))
-        print(f"   Final volume count: {final_volumes}")
         
         if result:
             return True
@@ -5508,18 +5295,12 @@ def diagnose_dicom_directory(dicom_path):
     Diagnose what's in a DICOM directory to help troubleshoot loading issues.
     Usage: diagnose_dicom_directory(r"G:\\My Drive\\Lawson\\FOURDIX\\...")
     """
-    print(f"=== DICOM Directory Diagnosis ===")
-    print(f"Path: {dicom_path}")
-    print(f"Exists: {os.path.exists(dicom_path)}")
-    print(f"Is directory: {os.path.isdir(dicom_path)}")
     
     if not os.path.exists(dicom_path) or not os.path.isdir(dicom_path):
-        print("❌ Path is not a valid directory")
         return
     
     try:
         # Get directory structure
-        print(f"\n=== Directory Structure ===")
         subdirs = []
         total_files = 0
         
@@ -5527,7 +5308,6 @@ def diagnose_dicom_directory(dicom_path):
             level = root.replace(dicom_path, '').count(os.sep)
             indent = ' ' * 2 * level
             folder_name = os.path.basename(root) if level > 0 else "ROOT"
-            print(f"{indent}{folder_name}/ ({len(files)} files)")
             total_files += len(files)
             
             if level == 1:  # First level subdirectories
@@ -5536,60 +5316,38 @@ def diagnose_dicom_directory(dicom_path):
             if level > 3:  # Don't go too deep in display
                 continue
         
-        print(f"\nTotal files found: {total_files}")
-        print(f"Subdirectories: {len(subdirs)}")
         
         # Analyze DICOM files
-        print(f"\n=== DICOM File Analysis ===")
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         
         if not dicom_files:
-            print("❌ No DICOM files detected")
             
             # Suggest looking in subdirectories
             if subdirs:
-                print("\n🔍 Trying subdirectories...")
                 for subdir in subdirs[:3]:  # Check first 3 subdirs
-                    print(f"\nChecking: {os.path.basename(subdir)}")
                     sub_dicom_files = _find_dicom_files_in_directory(subdir)
                     if sub_dicom_files:
-                        print(f"✓ Found {len(sub_dicom_files)} DICOM files in: {subdir}")
-                        print(f"💡 Try using this path instead: {subdir}")
                         break
-        else:
-            print(f"✓ Found {len(dicom_files)} DICOM files")
-            
-        print(f"\n=== Recommendations ===")
-        if dicom_files:
-            print("✓ DICOM files detected - should be loadable")
-            print("💡 Try running: test_dicom_loading_with_path(r'" + dicom_path + "')")
-        elif subdirs:
-            print("💡 No DICOM files in root, but subdirectories exist")
-            print("💡 Try manually going into subdirectories or use DICOM module")
-        else:
-            print("❌ No DICOM files or subdirectories found")
+
             
     except Exception as e:
-        print(f"Error during diagnosis: {e}")
+        pass
 
 def test_dicom_loading_with_path(dicom_path):
     """
     Test the enhanced DICOM loading with a specific path.
     Usage: test_dicom_loading_with_path(r"C:\\Users\\username\\Desktop\\DICOM_folder")
     """
-    print(f"Testing DICOM loading with path: {dicom_path}")
     
     if not os.path.exists(dicom_path):
-        print(f"Path does not exist: {dicom_path}")
         return False
     
     # Test the enhanced loading function
     try:
         success = load_dicom_from_source_file(dicom_path)
-        print(f"Loading result: {'SUCCESS' if success else 'FAILED'}")
         return success
     except Exception as e:
-        print(f"Error during testing: {e}")
+        pass
         return False
 
 def simple_dicom_load(dicom_path):
@@ -5597,65 +5355,47 @@ def simple_dicom_load(dicom_path):
     Simplified DICOM loading that bypasses complex database operations.
     Usage: simple_dicom_load(r"G:\\My Drive\\Lawson\\FOURDIX\\...")
     """
-    print(f"=== Simple DICOM Loading ===")
-    print(f"Path: {dicom_path}")
     
     if not os.path.exists(dicom_path):
-        print("❌ Path does not exist")
         return False
     
     try:
         # Method 1: Try direct directory loading
-        print("Attempting direct directory loading...")
         volume_node = slicer.util.loadVolume(dicom_path)
         
         if volume_node:
-            print("✓ Success: Directory loaded directly")
             image_data = volume_node.GetImageData()
             if image_data:
                 dims = image_data.GetDimensions()
-                print(f"Volume: {dims[0]}x{dims[1]}x{dims[2]}")
             
             set_3d_view_background_black()
             qt.QTimer.singleShot(1000, start_with_volume_crop)
             return True
             
     except Exception as e:
-        print(f"Directory loading failed: {e}")
+        pass
     
     try:
         # Method 2: Find and load first DICOM file
-        print("Searching for DICOM files...")
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         
         if not dicom_files:
-            print("❌ No DICOM files found")
             return False
             
-        print(f"Found {len(dicom_files)} DICOM files")
         first_file = dicom_files[0]
         
-        print(f"Loading: {os.path.basename(first_file)}")
         volume_node = slicer.util.loadVolume(first_file)
         
         if volume_node:
-            print("✓ Success: DICOM file loaded")
             image_data = volume_node.GetImageData()
-            if image_data:
-                dims = image_data.GetDimensions()
-                print(f"Volume: {dims[0]}x{dims[1]}x{dims[2]}")
-                
-                if dims[2] == 1:
-                    print("⚠ Only single slice loaded - series may need manual loading")
             
             set_3d_view_background_black()
             qt.QTimer.singleShot(1000, start_with_volume_crop)
             return True
             
     except Exception as e:
-        print(f"File loading failed: {e}")
+        pass
     
-    print("❌ All simple loading methods failed")
     return False
 
 def _fallback_dicom_loading(dicom_path):
@@ -5664,49 +5404,45 @@ def _fallback_dicom_loading(dicom_path):
     Uses simplified but robust approaches.
     """
     try:
-        print("Using fallback DICOM loading methods...")
         
         # Method 1: Simple directory loading (try multiple approaches)
         try:
-            print("Attempting simple directory loading...")
             
             # Try loading the directory directly
             volume_node = slicer.util.loadVolume(dicom_path)
             if volume_node:
-                print("Success: DICOM loaded via simple directory method")
                 set_3d_view_background_black()
                 qt.QTimer.singleShot(1000, start_with_volume_crop)
                 return True
                 
         except Exception as e:
-            print(f"Simple directory loading failed: {e}")
+            pass
             
             # Try loading subdirectories if main directory fails
             try:
-                print("Trying subdirectories...")
+                pass
                 subdirs = [d for d in os.listdir(dicom_path) if os.path.isdir(os.path.join(dicom_path, d))]
                 
                 for subdir in subdirs:
                     subdir_path = os.path.join(dicom_path, subdir)
-                    print(f"Trying subdirectory: {subdir}")
+                    pass
                     
                     try:
                         volume_node = slicer.util.loadVolume(subdir_path)
                         if volume_node:
-                            print(f"Success: DICOM loaded from subdirectory: {subdir}")
+                            pass
                             set_3d_view_background_black()
                             qt.QTimer.singleShot(1000, start_with_volume_crop)
                             return True
                     except Exception as subdir_error:
-                        print(f"Subdirectory {subdir} failed: {subdir_error}")
+                        pass
                         continue
                         
             except Exception as subdir_scan_error:
-                print(f"Subdirectory scanning failed: {subdir_scan_error}")
+                pass
         
         # Method 2: Enhanced directory analysis and direct loading
         try:
-            print("Attempting enhanced directory analysis...")
             
             # Analyze directory for DICOM files
             dicom_files = []
@@ -5727,7 +5463,6 @@ def _fallback_dicom_loading(dicom_path):
                     if is_dicom:
                         dicom_files.append(file_path)
             
-            print(f"Found {len(dicom_files)} potential DICOM files")
             
             if dicom_files:
                 # Sort files for proper series order
@@ -5740,31 +5475,27 @@ def _fallback_dicom_loading(dicom_path):
                     volume_node = slicer.util.loadVolume(parent_dir)
                     
                     if volume_node:
-                        print("Success: DICOM series loaded from directory analysis")
                         set_3d_view_background_black()
                         qt.QTimer.singleShot(1000, start_with_volume_crop)
                         return True
                 except Exception as dir_load_error:
-                    print(f"Directory loading failed: {dir_load_error}")
+                    pass
                 
                 # Try loading first file (may only get single slice)
                 try:
                     volume_node = slicer.util.loadVolume(dicom_files[0])
                     if volume_node:
-                        print(f"Loaded single DICOM file: {os.path.basename(dicom_files[0])}")
-                        print(f"Warning: May only contain single slice from {len(dicom_files)} file series")
                         set_3d_view_background_black()
                         qt.QTimer.singleShot(1000, start_with_volume_crop)
                         return True
                 except Exception as file_load_error:
-                    print(f"Single file loading failed: {file_load_error}")
+                    pass
                                 
         except Exception as e:
-            print(f"Enhanced directory analysis failed: {e}")
+            pass
             
         # Method 3: Try using Slicer's DICOM database directly (safer approach)
         try:
-            print("Attempting direct DICOM database import (safe method)...")
             
             # Clear any existing data
             current_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
@@ -5789,7 +5520,6 @@ def _fallback_dicom_loading(dicom_path):
                 dicom_db = None
                 
             if dicom_db:
-                print("Adding directory to DICOM database...")
                 
                 # Initialize database if needed
                 if hasattr(dicom_db, 'initializeDatabase'):
@@ -5802,38 +5532,29 @@ def _fallback_dicom_loading(dicom_path):
                     all_files = glob.glob(os.path.join(dicom_path, '**', '*'), recursive=True)
                     dicom_files = [f for f in all_files if os.path.isfile(f)]
                     
-                    print(f"Found {len(dicom_files)} files to analyze")
                     
                     if dicom_files:
                         # Try loading a representative file to trigger series detection
                         test_file = dicom_files[0]
-                        print(f"Testing with file: {os.path.basename(test_file)}")
                         
                         # Use Slicer's own loading logic
                         volume_node = slicer.util.loadVolume(test_file)
                         
                         if volume_node:
-                            print("Success: DICOM loaded via database import method")
                             
                             # Check if we got more than one slice
                             image_data = volume_node.GetImageData()
                             if image_data:
                                 dims = image_data.GetDimensions()
-                                print(f"Loaded volume dimensions: {dims}")
-                                
-                                if dims[2] > 1:
-                                    print(f"✓ Successfully loaded {dims[2]} slices")
-                                else:
-                                    print(f"⚠ Only loaded single slice - may need manual import")
+    
                             
                             set_3d_view_background_black()
                             qt.QTimer.singleShot(1000, start_with_volume_crop)
                             return True
                             
                 except Exception as db_import_error:
-                    print(f"Database import method failed: {db_import_error}")
+                    pass
             else:
-                print("No DICOM database available, trying direct slicer.util.loadVolume...")
                 
                 # Method 4: Direct Slicer loading without database
                 try:
@@ -5841,43 +5562,34 @@ def _fallback_dicom_loading(dicom_path):
                     dicom_files = _find_dicom_files_in_directory(dicom_path)
                     
                     if dicom_files:
-                        print(f"Found {len(dicom_files)} DICOM files, trying direct loading...")
                         
                         # Try loading the first file (should trigger series loading)
                         first_file = dicom_files[0]
-                        print(f"Attempting to load: {os.path.basename(first_file)}")
                         
                         volume_node = slicer.util.loadVolume(first_file)
                         
                         if volume_node:
-                            print("✓ Success: DICOM loaded via direct Slicer method")
                             
                             # Check dimensions
                             image_data = volume_node.GetImageData()
                             if image_data:
                                 dims = image_data.GetDimensions()
-                                print(f"Volume loaded: {dims[0]}x{dims[1]}x{dims[2]} voxels")
-                                
-                                if dims[2] > 1:
-                                    print(f"✓ Multi-slice volume with {dims[2]} slices")
-                                else:
-                                    print(f"⚠ Single slice - may need to load entire series manually")
+
                             
                             set_3d_view_background_black()
                             qt.QTimer.singleShot(1000, start_with_volume_crop)
                             return True
                             
                 except Exception as direct_load_error:
-                    print(f"Direct loading method failed: {direct_load_error}")
+                    pass
                     
         except Exception as e:
-            print(f"Direct DICOM database method failed: {e}")
+            pass
         
-        print("All fallback methods failed")
         return False
         
     except Exception as e:
-        print(f"Error in fallback DICOM loading: {e}")
+        pass
         return False
 
 def setup_volume_addition_monitor():
@@ -6079,7 +5791,7 @@ def start_markup_workflow():
         # Start with crop workflow - markup dialog will appear after ROI is set
         start_with_volume_crop()
     except Exception as e:
-        print(f"Error starting markup workflow: {e}")
+        pass
         # Fallback to the original function if needed
         create_threshold_segment_with_markup_only()
 
@@ -6103,8 +5815,6 @@ def start_crop_workflow_directly():
     
     # Use custom crop interface instead of standard module
     create_initial_custom_crop_interface()
-    print("✅ Initial custom crop interface ready (left panel collapsed)")
-    print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
 
 def start_workflow_with_segmentation_dialog():
     """
@@ -6114,7 +5824,7 @@ def start_workflow_with_segmentation_dialog():
         # Call the main workflow function which now includes segmentation import dialog
         create_threshold_segment()
     except Exception as e:
-        print(f"Error starting workflow with segmentation dialog: {e}")
+        pass
         # Fallback to original crop workflow if dialog fails
         start_with_volume_crop()
 
@@ -6138,8 +5848,6 @@ def start_with_volume_crop():
     
     # Use custom crop interface instead of standard module
     create_initial_custom_crop_interface()
-    print("✅ Initial custom crop interface ready (left panel collapsed)")
-    print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
     
     volume_node = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
     if not volume_node:
@@ -6148,8 +5856,6 @@ def start_with_volume_crop():
     
     # Use custom crop interface instead of standard module
     create_initial_custom_crop_interface()
-    print("✅ Initial custom crop interface ready (left panel collapsed)")
-    print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
     return
     
     roi_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode", "CropROI")
@@ -6694,7 +6400,7 @@ def populate_centerline_dropdown():
         
     except Exception as e:
         pass
-        print(f"Error populating centerline dropdown: {str(e)}")
+        pass
 
 def stop_centerline_monitoring():
     """
@@ -9694,7 +9400,6 @@ def on_restart_cropping(dialog, centerline_model=None, centerline_curve=None):
         cleanup_custom_crop_interface()
         
         # Show progress message
-        print("🔄 Starting cropping restart with centerline preservation...")
         
         # Stage 1: Store centerlines immediately
         store_existing_centerlines()
@@ -9709,7 +9414,7 @@ def on_restart_cropping(dialog, centerline_model=None, centerline_curve=None):
         qt.QTimer.singleShot(3000, lambda: restart_cropping_workflow_safely())
         
     except Exception as e:
-        print(f"❌ Error restarting cropping: {e}")
+        pass
         # Fallback - just restart cropping without preservation after delay
         qt.QTimer.singleShot(1000, start_with_volume_crop)
 
@@ -9719,7 +9424,6 @@ def reset_crop_module_safely():
     Safely reset the crop module with error handling to prevent freezing.
     """
     try:
-        print("🔧 Resetting Crop Volume module...")
         slicer.app.processEvents()
         
         # Clean up custom elements first
@@ -9730,10 +9434,9 @@ def reset_crop_module_safely():
         slicer.util.selectModule("CropVolume")
         slicer.app.processEvents()
         
-        print("✅ Crop module ready for recropping")
         
     except Exception as e:
-        print(f"⚠️  Warning during crop module reset: {e}")
+        pass
 
 
 def restart_cropping_workflow_safely():
@@ -9742,7 +9445,6 @@ def restart_cropping_workflow_safely():
     Shows the custom crop interface and waits for user to perform recropping.
     """
     try:
-        print("🚀 Starting cropping workflow...")
         slicer.app.processEvents()
         
         # Collapse the left module panel for recropping to maximize view space
@@ -9765,29 +9467,21 @@ def restart_cropping_workflow_safely():
             
             # Create initial custom crop interface (without scissors tools) to match first crop
             success = create_initial_custom_crop_interface()
-            if success:
-                print("✅ Crop module displayed (UI hidden) with initial crop interface overlay")
-                print("📋 Adjust the crop ROI and click 'CROP VOLUME' to proceed")
-                # Don't proceed automatically - wait for user to crop
-                return
-            else:
-                print("⚠️ Custom interface failed, using standard module...")
-                # Just use the crop module that's already open
-                print("📋 Use the crop module to adjust ROI and apply cropping")
+
         except Exception as e:
-            print(f"⚠️ Error showing crop module: {e}")
+            pass
             # Fallback to standard crop workflow
             start_with_volume_crop()
         
         slicer.app.processEvents()
         
     except Exception as e:
-        print(f"❌ Error starting cropping workflow: {e}")
+        pass
         # Fallback to standard crop module
         try:
             start_with_volume_crop()
         except:
-            print("❌ All methods failed - please manually open Crop Volume module")
+            pass
 
 
 # Removed show_restart_completion_message function - no longer needed
@@ -9823,10 +9517,9 @@ def store_existing_centerlines():
         slicer.modules.PreservedModelVisibility = model_visibility
         slicer.modules.PreservedCurveVisibility = curve_visibility
         
-        print(f"Stored {len(centerline_models)} centerline models and {len(centerline_curves)} curves for preservation")
         
     except Exception as e:
-        print(f"Error storing centerlines: {e}")
+        pass
 
 
 def clear_workflow_for_cropping_restart():
@@ -9835,7 +9528,6 @@ def clear_workflow_for_cropping_restart():
     Uses safe node removal with error handling to prevent freezing.
     """
     try:
-        print("🧹 Clearing workflow data while preserving centerlines...")
         slicer.app.processEvents()
         
         # Get the original volume (not cropped)
@@ -9863,7 +9555,7 @@ def clear_workflow_for_cropping_restart():
                 slicer.mrmlScene.RemoveNode(volume)
                 slicer.app.processEvents()  # Process events after each removal
             except Exception as e:
-                print(f"Warning: Could not remove volume {volume.GetName()}: {e}")
+                pass
         
         # Safely clear existing ROI nodes
         roi_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsROINode')
@@ -9872,7 +9564,7 @@ def clear_workflow_for_cropping_restart():
                 slicer.mrmlScene.RemoveNode(roi)
                 slicer.app.processEvents()
             except Exception as e:
-                print(f"Warning: Could not remove ROI {roi.GetName()}: {e}")
+                pass
         
         # Safely clear segmentation nodes (user will need to re-segment after cropping)
         segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
@@ -9881,7 +9573,7 @@ def clear_workflow_for_cropping_restart():
                 slicer.mrmlScene.RemoveNode(seg)
                 slicer.app.processEvents()
             except Exception as e:
-                print(f"Warning: Could not remove segmentation {seg.GetName()}: {e}")
+                pass
         
         # Safely clear endpoint markups but preserve centerlines
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
@@ -9892,16 +9584,15 @@ def clear_workflow_for_cropping_restart():
                     slicer.mrmlScene.RemoveNode(fid)
                     slicer.app.processEvents()
             except Exception as e:
-                print(f"Warning: Could not remove fiducial {fid.GetName()}: {e}")
+                pass
         
         # Store reference to original volume for workflow
         if original_volume:
             slicer.modules.WorkflowOriginalVolume = original_volume
         
-        print("✅ Cleared workflow data while preserving centerlines and original volume")
         
     except Exception as e:
-        print(f"❌ Error clearing workflow data: {e}")
+        pass
         # Don't let this stop the restart process - continue anyway
 
 
@@ -9922,10 +9613,9 @@ def restart_cropping_preserving_centerlines():
         # Set up monitoring to restore centerlines after cropping completion
         setup_post_crop_centerline_restoration()
         
-        print("Restarted cropping workflow with centerline preservation and reset module")
         
     except Exception as e:
-        print(f"Error restarting cropping workflow: {e}")
+        pass
 
 
 def restore_centerline_visibility():
@@ -9959,10 +9649,9 @@ def restore_centerline_visibility():
                         visibility = curve_visibility.get(curve_id, True)
                         display_node.SetVisibility(visibility)
         
-        print("Restored centerline visibility")
         
     except Exception as e:
-        print(f"Error restoring centerline visibility: {e}")
+        pass
 
 
 def setup_post_crop_centerline_restoration():
@@ -9975,7 +9664,7 @@ def setup_post_crop_centerline_restoration():
         pass
         
     except Exception as e:
-        print(f"Error setting up post-crop restoration: {e}")
+        pass
 
 
 def create_additional_centerline_setup():
@@ -11888,7 +11577,6 @@ def hide_crop_volume_ui_elements():
         except Exception:
             pass
         
-        print(f"✅ Hidden {elements_hidden} UI elements from Crop Volume module")
         return True
         
     except Exception as e:
@@ -12664,9 +12352,7 @@ def toggle_scissors_tool_programmatic(activated):
                     button = slicer.modules.WorkflowScissorsButton
                     button.setText("SCISSORS ACTIVE (ERASE)")
                 
-                print("✅ Scissors tool activated programmatically")
             else:
-                print("❌ Failed to activate scissors effect programmatically")
                 return False
                 
         else:
@@ -12685,7 +12371,6 @@ def toggle_scissors_tool_programmatic(activated):
                 button = slicer.modules.WorkflowScissorsButton
                 button.setText("SCISSORS (ERASE)")
             
-            print("🔄 Scissors tool deactivated programmatically")
         return True
     except Exception as e:
         return False
@@ -12774,17 +12459,11 @@ def test_dicom_directory_loading(directory_path):
     Usage: test_dicom_directory_loading(r"C:\\Users\\croger52\\Desktop\\SYS_01")
     """
     import os
-    print(f"\n=== Testing DICOM Directory Loading ===")
-    print(f"Directory: {directory_path}")
-    print(f"Exists: {os.path.exists(directory_path)}")
-    print(f"Is directory: {os.path.isdir(directory_path)}")
     
     if not os.path.exists(directory_path):
-        print("Directory does not exist!")
         return
     
     if not os.path.isdir(directory_path):
-        print("Path is not a directory!")
         return
     
     # List all files and identify potential DICOM files and header files
@@ -12830,16 +12509,8 @@ def test_dicom_directory_loading(directory_path):
                 if is_dicom:
                     potential_dicom_files.append((full_path, ", ".join(reason)))
         
-        print(f"\nTotal files found: {len(all_files)}")
-        print(f"Potential DICOM files: {len(potential_dicom_files)}")
-        print(f"Header files found: {len(header_files)}")
-        
-        # Display header files if found
-        if header_files:
-            print(f"\nHeader files detected:")
-            for file_path, reason in header_files:
-                print(f"  - {os.path.basename(file_path)} ({reason})")
-            print("  → These header files should be included with DICOM series loading")
+
+
         
         # Analyze for DICOM series patterns
         numeric_files = []
@@ -12854,43 +12525,10 @@ def test_dicom_directory_loading(directory_path):
                 numeric_files.append((filename, reason))
             elif filename.lower().endswith(('.dcm', '.dicom')):
                 standard_dicom_files.append((filename, reason))
-        
-        if ctdc_files:
-            print(f"\nCTDC series files: {len(ctdc_files)}")
-            for filename, reason in ctdc_files[:10]:  # Show more for CTDC
-                print(f"  - {filename} ({reason})")
-            if len(ctdc_files) > 10:
-                print(f"  ... and {len(ctdc_files) - 10} more")
-            print("  → These appear to be a CTDC DICOM series that should load as a complete volume")
-        
-        if numeric_files:
-            print(f"\nNumeric extension files (DICOM series): {len(numeric_files)}")
-            for filename, reason in numeric_files[:5]:
-                print(f"  - {filename} ({reason})")
-            if len(numeric_files) > 5:
-                print(f"  ... and {len(numeric_files) - 5} more")
-            print("  → These should load as a complete DICOM series")
-        
-        if standard_dicom_files:
-            print(f"\nStandard DICOM files: {len(standard_dicom_files)}")
-            for filename, reason in standard_dicom_files[:5]:
-                print(f"  - {filename} ({reason})")
-            if len(standard_dicom_files) > 5:
-                print(f"  ... and {len(standard_dicom_files) - 5} more")
-        
-        print("\nAll potential DICOM files:")
-        for file_path, reason in potential_dicom_files[:10]:  # Show first 10
-            print(f"  - {os.path.basename(file_path)} ({reason})")
-        
-        if len(potential_dicom_files) > 10:
-            print(f"  ... and {len(potential_dicom_files) - 10} more")
+
             
         # Test loading the enhanced function
-        print(f"\n=== Testing Enhanced DICOM Loading ===")
-        print("Note: The enhanced loader now prioritizes loading the entire DICOM series")
-        print("instead of individual slices to get the complete volume.")
         success = load_dicom_from_source_file(directory_path)
-        print(f"Loading result: {'SUCCESS' if success else 'FAILED'}")
         
         if success:
             # Check if we got a proper volume series
@@ -12900,16 +12538,10 @@ def test_dicom_directory_loading(directory_path):
                 image_data = latest_volume.GetImageData()
                 if image_data:
                     dimensions = image_data.GetDimensions()
-                    print(f"Loaded volume dimensions: {dimensions[0]} x {dimensions[1]} x {dimensions[2]}")
-                    if dimensions[2] > 1:
-                        print("✓ Successfully loaded multi-slice DICOM series")
-                    else:
-                        print("⚠ Warning: Only single slice loaded - may need manual DICOM import")
-                else:
-                    print("⚠ Warning: Volume loaded but no image data found")
+
         
     except Exception as e:
-        print(f"Error analyzing directory: {e}")
+        pass
 
 def debug_dicom_file(file_path):
     """
@@ -12918,35 +12550,26 @@ def debug_dicom_file(file_path):
     """
     import os
     try:
-        print(f"\n=== DICOM File Debug Info ===")
-        print(f"File: {file_path}")
-        print(f"Exists: {os.path.exists(file_path)}")
         
         if not os.path.exists(file_path):
             return
             
-        print(f"Size: {os.path.getsize(file_path)} bytes")
         
         # Try to read first few bytes to check if it looks like DICOM
         try:
             with open(file_path, 'rb') as f:
                 first_bytes = f.read(200)
-                print(f"First 20 bytes (hex): {first_bytes[:20].hex()}")
                 
                 # Check for DICOM magic number at offset 128
                 if len(first_bytes) > 132:
                     magic = first_bytes[128:132]
-                    print(f"DICOM magic at 128: {magic}")
                     is_dicom = magic == b'DICM'
-                    print(f"Valid DICOM header: {is_dicom}")
-                else:
-                    print("File too small to contain DICOM header")
                 
         except Exception as e:
-            print(f"Error reading file: {e}")
+            pass
             
     except Exception as e:
-        print(f"Error in debug_dicom_file: {e}")
+        pass
 
 def set_source_path(new_path):
     """
@@ -12961,15 +12584,13 @@ def set_source_path(new_path):
         with open(source_file_path, 'w', encoding='utf-8') as f:
             f.write(new_path)
             
-        print(f"Updated source_slicer.txt with path: {new_path}")
-        print(f"File location: {source_file_path}")
         
         # Reset the processed flag so it can be loaded again
         if hasattr(slicer.modules, 'SourceSlicerFileProcessed'):
             delattr(slicer.modules, 'SourceSlicerFileProcessed')
             
     except Exception as e:
-        print(f"Error updating source file: {e}")
+        pass
 
 def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
     """
@@ -12986,30 +12607,24 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
     import os
     
     if not volume_node:
-        print("No volume node provided for spacing/orientation correction")
         return False
     
     try:
-        print(f"Analyzing spacing and orientation for volume: {volume_node.GetName()}")
         
         # Get current properties
         current_spacing = volume_node.GetSpacing()
         image_data = volume_node.GetImageData()
         
         if not image_data:
-            print("No image data available for analysis")
             return False
         
         dims = image_data.GetDimensions()
-        print(f"Current spacing: {current_spacing}")
-        print(f"Volume dimensions: {dims}")
         
         # Try to analyze DICOM files in directory for proper spacing
         corrections_applied = False
         
         if dicom_directory and os.path.exists(dicom_directory):
             try:
-                print("Analyzing DICOM files for spacing information...")
                 
                 # Find DICOM files
                 dicom_files = []
@@ -13023,7 +12638,6 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
                 if len(dicom_files) >= 2:
                     # Sort files to get proper sequence
                     dicom_files.sort()
-                    print(f"Found {len(dicom_files)} DICOM files for analysis")
                     
                     # Try to read first few files to get spacing info
                     try:
@@ -13036,7 +12650,6 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
                         pixel_spacing = None
                         if hasattr(ds1, 'PixelSpacing') and ds1.PixelSpacing:
                             pixel_spacing = [float(x) for x in ds1.PixelSpacing]
-                            print(f"Found pixel spacing in DICOM: {pixel_spacing}")
                         
                         # Calculate slice thickness from file positions if possible
                         slice_thickness = None
@@ -13054,14 +12667,12 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
                                     # Calculate distance between slices
                                     import math
                                     slice_thickness = math.sqrt(sum([(p2-p1)**2 for p1, p2 in zip(pos1, pos2)]))
-                                    print(f"Calculated slice thickness: {slice_thickness}")
                                 
                                 elif hasattr(ds1, 'SliceThickness') and ds1.SliceThickness:
                                     slice_thickness = float(ds1.SliceThickness)
-                                    print(f"Found slice thickness in DICOM: {slice_thickness}")
                                     
                             except Exception as slice_error:
-                                print(f"Could not calculate slice thickness: {slice_error}")
+                                pass
                         
                         # Apply corrections if we found proper spacing
                         if pixel_spacing:
@@ -13081,32 +12692,26 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
                             # Only apply if significantly different from current
                             spacing_diff = max([abs(new_spacing[i] - current_spacing[i]) for i in range(3)])
                             if spacing_diff > 0.01:  # Only if difference is > 0.01mm
-                                print(f"Applying corrected spacing: {new_spacing}")
                                 volume_node.SetSpacing(new_spacing)
                                 corrections_applied = True
-                            else:
-                                print("Current spacing is already appropriate")
                         
                     except ImportError:
-                        print("PyDICOM not available - cannot read DICOM headers directly")
+                        pass
                     except Exception as dicom_error:
-                        print(f"DICOM header analysis failed: {dicom_error}")
+                        pass
                         
             except Exception as analysis_error:
-                print(f"Directory analysis failed: {analysis_error}")
+                pass
         
         # Fallback: Apply reasonable defaults if spacing looks wrong
         if not corrections_applied:
             # Check if current spacing looks unreasonable
             if (current_spacing[0] == 1.0 and current_spacing[1] == 1.0 and current_spacing[2] == 1.0):
-                print("Applying default medical imaging spacing...")
                 # Common CT spacing
                 volume_node.SetSpacing((0.5, 0.5, 1.0))  # 0.5mm pixel, 1mm slice
                 corrections_applied = True
-                print("Applied default CT spacing: (0.5, 0.5, 1.0)")
         
         if corrections_applied:
-            print("Volume spacing and orientation corrections applied")
             
             # Update display
             volume_node.Modified()
@@ -13118,7 +12723,7 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
         return corrections_applied
         
     except Exception as e:
-        print(f"Error in fix_dicom_spacing_and_orientation: {e}")
+        pass
         return False
 
 def fix_volume_spacing_manually(spacing_x=0.5, spacing_y=0.5, spacing_z=1.0):
@@ -13131,20 +12736,17 @@ def fix_volume_spacing_manually(spacing_x=0.5, spacing_y=0.5, spacing_z=1.0):
         if volume_nodes:
             latest_volume = volume_nodes[-1]
             old_spacing = latest_volume.GetSpacing()
-            print(f"Changing spacing from {old_spacing} to ({spacing_x}, {spacing_y}, {spacing_z})")
             
             latest_volume.SetSpacing((spacing_x, spacing_y, spacing_z))
             latest_volume.Modified()
             slicer.app.processEvents()
             slicer.util.resetSliceViews()
             
-            print(f"Applied new spacing to volume: {latest_volume.GetName()}")
             return True
         else:
-            print("No volume nodes found in scene")
             return False
     except Exception as e:
-        print(f"Error fixing volume spacing: {e}")
+        pass
         return False
 
 def reset_volume_to_identity_matrix():
@@ -13156,7 +12758,6 @@ def reset_volume_to_identity_matrix():
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         if volume_nodes:
             latest_volume = volume_nodes[-1]
-            print(f"Resetting orientation matrix for volume: {latest_volume.GetName()}")
             
             # Create identity matrix
             import vtk
@@ -13169,13 +12770,11 @@ def reset_volume_to_identity_matrix():
             slicer.app.processEvents()
             slicer.util.resetSliceViews()
             
-            print("Applied identity matrix to volume orientation")
             return True
         else:
-            print("No volume nodes found in scene")
             return False
     except Exception as e:
-        print(f"Error resetting volume orientation: {e}")
+        pass
         return False
 
 def analyze_volume_properties():
@@ -13187,41 +12786,32 @@ def analyze_volume_properties():
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         if volume_nodes:
             latest_volume = volume_nodes[-1]
-            print(f"\n=== Volume Properties Analysis ===")
-            print(f"Volume name: {latest_volume.GetName()}")
             
             # Spacing
             spacing = latest_volume.GetSpacing()
-            print(f"Spacing: {spacing}")
             
             # Dimensions
             image_data = latest_volume.GetImageData()
             if image_data:
                 dims = image_data.GetDimensions()
-                print(f"Dimensions: {dims}")
                 
                 # Physical size
                 physical_size = (dims[0]*spacing[0], dims[1]*spacing[1], dims[2]*spacing[2])
-                print(f"Physical size (mm): {physical_size}")
             
             # Origin
             origin = latest_volume.GetOrigin()
-            print(f"Origin: {origin}")
             
             # Orientation matrix
             matrix = vtk.vtkMatrix4x4()
             latest_volume.GetIJKToRASMatrix(matrix)
-            print(f"IJK to RAS Matrix:")
             for i in range(4):
                 row = [matrix.GetElement(i, j) for j in range(4)]
-                print(f"  {row}")
             
             return True
         else:
-            print("No volume nodes found in scene")
             return False
     except Exception as e:
-        print(f"Error analyzing volume properties: {e}")
+        pass
         return False
 
 def load_dicom_like_reference():
@@ -13231,7 +12821,6 @@ def load_dicom_like_reference():
     """
     import os
     try:
-        print("Loading DICOM using reference-style import method...")
         
         # Read the source path - use user's home directory (consistent with other functions)
         user_home = os.path.expanduser("~")
@@ -13242,14 +12831,12 @@ def load_dicom_like_reference():
             with open(source_file_path, 'r') as f:
                 dicom_path = f.read().strip()
         except FileNotFoundError:
-            print(f"Source file not found: {source_file_path}")
+            pass
             return False
         
         if not dicom_path or not os.path.exists(dicom_path):
-            print(f"Invalid DICOM path: {dicom_path}")
             return False
         
-        print(f"Loading DICOM from: {dicom_path}")
         
         # Method 1: Use the exact same approach as the DICOM module
         # This matches how the reference import was likely created
@@ -13265,7 +12852,6 @@ def load_dicom_like_reference():
         slicer.dicomDatabase.initializeDatabase()
         
         # Import the directory with the same settings as manual import
-        print("Importing directory using DICOM browser...")
         dicom_browser.importDirectory(dicom_path, copy=True)
         
         # Process events and wait for completion
@@ -13279,19 +12865,16 @@ def load_dicom_like_reference():
         patients = dicomDatabase.patients()
         
         if patients:
-            print(f"Found {len(patients)} patients")
             
             # Get the patient (should be the one we just imported)
             patient_id = patients[-1]  # Most recent
             patient_name = dicomDatabase.patientName(patient_id)
-            print(f"Patient: {patient_name} (ID: {patient_id})")
             
             # Get studies for this patient
             studies = dicomDatabase.studiesForPatient(patient_id)
             if studies:
                 study_uid = studies[-1]  # Most recent study
                 study_description = dicomDatabase.studyDescription(study_uid)
-                print(f"Study: {study_description}")
                 
                 # Get series for this study
                 series_list = dicomDatabase.seriesForStudy(study_uid)
@@ -13303,14 +12886,12 @@ def load_dicom_like_reference():
                     for series_uid in series_list:
                         series_files = dicomDatabase.filesForSeries(series_uid)
                         series_description = dicomDatabase.seriesDescription(series_uid)
-                        print(f"Series: {series_description} ({len(series_files)} files)")
                         
                         if len(series_files) > max_files:
                             max_files = len(series_files)
                             best_series = series_uid
                     
                     if best_series:
-                        print(f"Loading best series with {max_files} files...")
                         series_files = dicomDatabase.filesForSeries(best_series)
                         series_description = dicomDatabase.seriesDescription(best_series)
                         
@@ -13328,23 +12909,20 @@ def load_dicom_like_reference():
                             if image_data:
                                 dims = image_data.GetDimensions()
                                 spacing = volume_node.GetSpacing()
-                                print(f"✓ Loaded: {dims[0]}x{dims[1]}x{dims[2]}, spacing: {spacing}")
                                 
                                 # Store DICOM metadata
                                 volume_node.SetAttribute("DICOM_PatientName", patient_name)
                                 volume_node.SetAttribute("DICOM_SeriesDescription", series_description)
                                 volume_node.SetAttribute("DICOM_SeriesUID", best_series)
                                 
-                                print(f"Success: DICOM loaded with reference-style structure")
                                 set_3d_view_background_black()
                                 qt.QTimer.singleShot(1000, start_with_volume_crop)
                                 return True
         
-        print("Reference-style loading failed")
         return False
         
     except Exception as e:
-        print(f"Error in load_dicom_like_reference: {e}")
+        pass
         return False
 
 def force_dicom_reimport():
@@ -13365,7 +12943,7 @@ def force_dicom_reimport():
         return load_dicom_like_reference()
         
     except Exception as e:
-        print(f"Error in force_dicom_reimport: {e}")
+        pass
         return False
 
 def test_restart_cropping_with_preservation():
@@ -13382,11 +12960,9 @@ def test_restart_cropping_with_preservation():
         centerline_curves = find_all_centerline_curves()
         
         if not centerline_models and not centerline_curves:
-            print("No centerlines found to preserve. Starting regular cropping workflow.")
             start_with_volume_crop()
             return
         
-        print(f"Found {len(centerline_models)} centerline models and {len(centerline_curves)} curves to preserve")
         
         # Store existing centerlines
         store_existing_centerlines()
@@ -13397,15 +12973,12 @@ def test_restart_cropping_with_preservation():
         # Restart cropping workflow
         restart_cropping_preserving_centerlines()
         
-        print("✅ Successfully restarted cropping workflow with centerline preservation!")
-        print("Your existing centerlines have been preserved and will remain visible.")
-        print("You can now adjust your crop region and continue the workflow.")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error restarting cropping with preservation: {e}")
-        print("Falling back to regular cropping workflow...")
+        pass
+        pass
         start_with_volume_crop()
         return False
 
@@ -13461,7 +13034,6 @@ WHAT'S CLEARED:
 After restarting, simply crop your volume again and the workflow will continue
 with both your existing centerlines and new cropped volume.
 """
-    print(help_text)
 
 
 def reset_crop_module_to_default():
@@ -13476,7 +13048,6 @@ def reset_crop_module_to_default():
         bool: True if reset was successful, False otherwise
     """
     try:
-        print("Resetting Crop Volume module to default state...")
         
         # Method 1: Force module reload by switching modules
         current_module = slicer.util.moduleSelector().selectedModule
@@ -13514,11 +13085,10 @@ def reset_crop_module_to_default():
             slicer.util.selectModule(current_module)
             slicer.app.processEvents()
         
-        print("✅ Crop Volume module reset to default state successfully")
         return True
         
     except Exception as e:
-        print(f"❌ Error resetting Crop Volume module: {e}")
+        pass
         return False
 
 
@@ -13551,11 +13121,10 @@ def cleanup_crop_module_custom_elements():
             if hasattr(slicer.modules, attr):
                 delattr(slicer.modules, attr)
         
-        print("🧹 Cleaned up custom Crop Volume module elements")
         return True
         
     except Exception as e:
-        print(f"⚠️  Warning during cleanup: {e}")
+        pass
         return False
 
 
@@ -13726,7 +13295,6 @@ def reset_extract_centerline_module():
         # Restore UI elements
         restore_extract_centerline_ui()
         
-        print("🔧 Extract Centerline module reset")
         return True
         
     except Exception as e:
@@ -13876,7 +13444,6 @@ def restart_cropping_simple():
         restart_cropping_simple()  # Simple restart without preservation
     """
     try:
-        print("🔄 Starting simple cropping restart...")
         
         # Stop all monitoring to prevent conflicts
         stop_all_centerline_monitoring()
@@ -13934,7 +13501,6 @@ QUICK COMMANDS:
    >>> test.test_crop_module_reset()      # Test reset
    >>> manual_restart_cropping_help()     # Show this help again
 """
-    print(help_text)
 
 
 def test_crop_module_reset():
@@ -14047,10 +13613,7 @@ def create_initial_custom_crop_interface():
         
         # First, ensure ROI exists and is visible
         roi_node = ensure_crop_roi_exists()
-        if roi_node:
-            print("✅ CropROI created and visible for initial custom crop interface")
-        else:
-            print("⚠️ Warning: Could not create CropROI")
+
         
         # Switch to the same three-up view used in the workflow
         setup_crop_display_layout()
@@ -14160,11 +13723,10 @@ def create_initial_custom_crop_interface():
         slicer.modules.CustomCropWidget = crop_widget
         slicer.modules.CustomCropButton = crop_button
         
-        print("✅ Initial custom crop interface created with dark theme (scissors tools hidden)")
         return crop_widget
         
     except Exception as e:
-        print(f"❌ Error creating initial custom crop interface: {e}")
+        pass
         return None
 
 
@@ -14173,7 +13735,6 @@ def execute_initial_custom_crop():
     Execute the initial custom crop operation and add scissors tools after cropping.
     """
     try:
-        print("🔄 Executing initial custom crop operation...")
         
         # Check if ROI exists, create if needed
         ensure_crop_roi_exists()
@@ -14192,7 +13753,6 @@ def execute_initial_custom_crop():
             if roiCollection.GetNumberOfItems() > 0:
                 roi_node = roiCollection.GetItemAsObject(0)
                 slicer.mrmlScene.RemoveNode(roi_node)
-                print("✅ ROI deleted after initial cropping")
             
             # Reset slice views to show the cropped volume properly
             slicer.util.resetSliceViews()
@@ -14203,7 +13763,6 @@ def execute_initial_custom_crop():
             # Set dark background
             set_3d_view_background_black()
             
-            print("✅ Initial custom crop operation completed successfully")
             
             # Add scissors tools and continue button to the interface after cropping
             add_scissors_tools_to_initial_interface()
@@ -14211,11 +13770,8 @@ def execute_initial_custom_crop():
             # Continue with the normal workflow - threshold segmentation
             qt.QTimer.singleShot(500, lambda: continue_workflow_after_custom_crop())
             
-        else:
-            print("❌ Initial crop operation failed")
-            
     except Exception as e:
-        print(f"❌ Error during initial custom crop execution: {e}")
+        pass
 
 
 def add_scissors_tools_to_initial_interface():
@@ -14536,7 +14092,6 @@ def execute_custom_crop():
     Continues with the normal workflow after cropping.
     """
     try:
-        print("🔄 Executing custom crop operation...")
         
         # Check if ROI exists, create if needed
         ensure_crop_roi_exists()
@@ -14555,7 +14110,6 @@ def execute_custom_crop():
             if roiCollection.GetNumberOfItems() > 0:
                 roi_node = roiCollection.GetItemAsObject(0)
                 slicer.mrmlScene.RemoveNode(roi_node)
-                print("✅ ROI deleted after cropping")
             
             # Reset slice views to show the cropped volume properly
             slicer.util.resetSliceViews()
@@ -14566,7 +14120,6 @@ def execute_custom_crop():
             # Set dark background
             set_3d_view_background_black()
             
-            print("✅ Custom crop operation completed successfully")
             
             # Continue with the normal workflow - threshold segmentation immediately
             qt.QTimer.singleShot(500, lambda: continue_workflow_after_custom_crop())
@@ -14591,7 +14144,6 @@ def continue_workflow_after_custom_crop():
             return
             
         # Show markup import dialog now that ROI is set
-        print("✅ ROI crop completed - showing markup import dialog")
         ask_user_for_markup_import()
         
         # Don't continue immediately - wait for user response from dialog
@@ -14612,14 +14164,10 @@ def continue_workflow_after_custom_crop():
             
             # Update the custom crop interface to show it's ready for scissors/continue
             update_crop_interface_for_segmentation_phase()
-            
-            print("✅ Workflow continued successfully after custom crop")
-            print("✅ Crop tools interface still available for scissors tool and workflow continuation")
-        else:
-            print("❌ Failed to create segmentation after custom crop")
+
             
     except Exception as e:
-        print(f"❌ Error continuing workflow after custom crop: {e}")
+        pass
 
 
 def update_crop_interface_for_segmentation_phase():
@@ -14709,10 +14257,9 @@ def update_crop_interface_for_segmentation_phase():
         crop_widget.show()
         crop_widget.raise_()
         
-        print("✅ Crop interface updated for segmentation phase")
         
     except Exception as e:
-        print(f"❌ Error updating crop interface for segmentation phase: {e}")
+        pass
 
 
 def ensure_crop_roi_exists():
@@ -14736,16 +14283,13 @@ def ensure_crop_roi_exists():
                 displayNode.SetOutlineVisibility(True)
                 displayNode.SetFillVisibility(True)
             
-            print("✅ Found existing CropROI and made it visible")
             return existing_roi
         
         # Create new ROI if none exists
-        print("🔧 Creating new CropROI...")
         
         # Get the current volume to base ROI size on
         inputVolume = find_working_volume()
         if not inputVolume:
-            print("❌ No input volume found for ROI creation")
             return None
         
         # Create ROI node
@@ -14789,12 +14333,10 @@ def ensure_crop_roi_exists():
         if selectionNode:
             selectionNode.SetActivePlaceNodeID(roiNode.GetID())
         
-        print(f"✅ Created new CropROI with center {center} and size {size}")
-        print("🎯 ROI is visible and ready for positioning in the 3D view")
         return roiNode
         
     except Exception as e:
-        print(f"❌ Error creating CropROI: {e}")
+        pass
         return None
 
 
@@ -14804,7 +14346,6 @@ def setup_crop_display_layout():
     This ensures consistent behavior between first and subsequent croppings.
     """
     try:
-        print("🖥️ Setting up crop display layout...")
         
         # Use the same three-up view as the original workflow
         success = set_three_up_view()
@@ -14815,9 +14356,7 @@ def setup_crop_display_layout():
             if vol:
                 set_volume_visible_in_slice_views(vol)
             
-            print("✅ Crop display layout ready - same as original workflow")
         else:
-            print("⚠️ Using fallback display setup")
             # Fallback to standard layout
             lm = slicer.app.layoutManager()
             if lm:
@@ -14827,7 +14366,7 @@ def setup_crop_display_layout():
         return success
         
     except Exception as e:
-        print(f"❌ Error setting up crop display layout: {e}")
+        pass
         return False
 
 def toggle_scissors_tool(activated=None):
@@ -14858,7 +14397,6 @@ def toggle_scissors_tool(activated=None):
                 
                 if success:
                     slicer.modules.ScissorsToolActive = True
-                    print("✅ Scissors tool activated")
                     
                     # Update button to show active state
                     if hasattr(slicer.modules, 'CustomScissorsButton'):
@@ -14872,12 +14410,9 @@ def toggle_scissors_tool(activated=None):
                         button = slicer.modules.WorkflowScissorsButton
                         if hasattr(button, 'setChecked'):
                             button.setChecked(True)
-                else:
-                    print("⚠️ Could not activate scissors tool")
             else:
                 # Deactivate scissors tool
                 slicer.modules.ScissorsToolActive = False
-                print("🔄 Scissors tool deactivated")
                 
                 # Actually deactivate the scissors tool in the segment editor
                 if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
@@ -14901,11 +14436,10 @@ def toggle_scissors_tool(activated=None):
                     button = slicer.modules.WorkflowScissorsButton
                     if hasattr(button, 'setChecked'):
                         button.setChecked(False)
-        else:
-            print(f"🔄 Scissors tool already {'active' if current_state else 'inactive'}")
+
             
     except Exception as e:
-        print(f"❌ Error toggling scissors tool: {e}")
+        pass
 
 def finish_custom_crop_workflow():
     """
@@ -14913,7 +14447,6 @@ def finish_custom_crop_workflow():
     This is called by the "FINISH SEGMENTATION - CONTINUE" button.
     """
     try:
-        print("🔄 Finishing custom crop workflow...")
         
         # Clean up the custom crop interface
         cleanup_custom_crop_interface()
@@ -14921,10 +14454,9 @@ def finish_custom_crop_workflow():
         # Continue with the normal workflow (same as scissors workflow)
         on_continue_from_scissors()
         
-        print("✅ Custom crop workflow finished, continuing to next steps")
         
     except Exception as e:
-        print(f"❌ Error finishing custom crop workflow: {e}")
+        pass
 
 
 def cleanup_custom_crop_interface():
@@ -14945,10 +14477,9 @@ def cleanup_custom_crop_interface():
             if hasattr(slicer.modules, attr_name):
                 delattr(slicer.modules, attr_name)
         
-        print("✅ Custom crop interface cleaned up")
         
     except Exception as e:
-        print(f"⚠️ Error cleaning up custom crop interface: {e}")
+        pass
 
 def use_custom_crop_instead_of_module():
     """
@@ -14956,7 +14487,6 @@ def use_custom_crop_instead_of_module():
     Call this when the crop module GUI becomes distorted during recropping.
     """
     try:
-        print("🔄 Switching to custom crop interface...")
         
         # First try to close/hide any existing crop module GUI
         try:
@@ -14968,19 +14498,12 @@ def use_custom_crop_instead_of_module():
         custom_interface = create_custom_crop_interface()
         
         if custom_interface:
-            print("✅ Successfully switched to custom crop interface")
-            print("📋 Instructions:")
-            print("   1. Position the ROI box as needed")
-            print("   2. Click 'CROP VOLUME' to apply cropping")
-            print("   3. Use 'Toggle Scissors Tool' to refine segmentation")
-            print("   4. Click 'FINISH SEGMENTATION - CONTINUE' when done")
             return True
         else:
-            print("❌ Failed to create custom crop interface")
             return False
             
     except Exception as e:
-        print(f"❌ Error switching to custom crop interface: {e}")
+        pass
         return False
 
 
@@ -14994,18 +14517,11 @@ def force_custom_crop_interface():
     force_custom_crop_interface()
     """
     try:
-        print("🎯 Forcing custom crop interface...")
         success = use_custom_crop_instead_of_module()
         
-        if success:
-            print("✅ Custom crop interface is now active")
-            print("💡 TIP: You can call this function anytime the crop GUI becomes unusable:")
-            print("   force_custom_crop_interface()")
-        else:
-            print("❌ Failed to activate custom crop interface")
             
         return success
         
     except Exception as e:
-        print(f"❌ Error forcing custom crop interface: {e}")
+        pass
         return False
