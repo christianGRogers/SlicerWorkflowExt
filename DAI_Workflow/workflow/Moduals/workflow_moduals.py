@@ -539,65 +539,332 @@ def ask_user_for_segmentation_import():
 
 def import_markup_file():
     """
-    Let the user select and import a markup file
-    Returns the imported markup node or None if cancelled/failed
+    Let the user select a source folder containing markup files and automatically create tube masks
+    Expects files like: Circle_start-slice-1.mrk.json, Circle_end-slice-1.mrk.json, etc.
+    Also automatically imports transform file and "Straightened Volume"
     """
     try:
-        # Create file dialog for markup import
-        file_dialog = qt.QFileDialog(slicer.util.mainWindow())
-        file_dialog.setWindowTitle("Select Markup File")
-        file_dialog.setFileMode(qt.QFileDialog.ExistingFile)
-        file_dialog.setAcceptMode(qt.QFileDialog.AcceptOpen)
+        # Create folder dialog for markup import
+        folder_dialog = qt.QFileDialog(slicer.util.mainWindow())
+        folder_dialog.setWindowTitle("Select Source Folder with Markup Files")
+        folder_dialog.setFileMode(qt.QFileDialog.Directory)
+        folder_dialog.setAcceptMode(qt.QFileDialog.AcceptOpen)
         
-        # Set file filters for common markup formats
-        file_dialog.setNameFilters([
-            "All Markup Files (*.mrk.json *.fcsv *.json)",
-            "Slicer Markup JSON (*.mrk.json)",
-            "Fiducial CSV (*.fcsv)",
-            "JSON Files (*.json)",
-            "All Files (*.*)"
-        ])
-        
-        if file_dialog.exec_():
-            selected_files = file_dialog.selectedFiles()
-            if selected_files:
-                markup_file = selected_files[0]
-                
-                # Try to load the markup file
-                try:
-                    # Get existing markup nodes count to find the new one
-                    existing_markups = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
-                    
-                    # Load the markup file
-                    success = slicer.util.loadMarkups(markup_file)
-                    
-                    if success:
-                        # Find the newly loaded markup node
-                        new_markups = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
-                        new_markup_nodes = [node for node in new_markups if node not in existing_markups]
-                        
-                        if new_markup_nodes:
-                            markup_node = new_markup_nodes[0]  # Get the first new markup node
-                            slicer.util.infoDisplay(f"Successfully imported markup: {markup_node.GetName()}")
-                            
-                            # Create curve models from the imported markup points
-                            curve_models = create_curve_models_from_markup(markup_node)
-                            
-                            return markup_node
-                        else:
-                            slicer.util.errorDisplay("Markup file loaded but no new markup node found.")
-                            return None
-                    else:
-                        slicer.util.errorDisplay("Failed to load the selected markup file.")
-                        return None
-                        
-                except Exception as e:
-                    slicer.util.errorDisplay(f"Error loading markup file: {str(e)}")
-                    return None
+        if folder_dialog.exec_():
+            selected_folder = folder_dialog.selectedFiles()[0]
             
+            # Process the folder and create tube masks
+            success = process_markup_folder_and_create_tubes(selected_folder)
+            
+            if success:
+                slicer.util.infoDisplay("Successfully imported markup files and created tube masks from source folder.")
+                return True
+            else:
+                slicer.util.errorDisplay("Failed to process markup files from source folder.")
+                return None
+        
         return None
         
     except Exception as e:
+        slicer.util.errorDisplay(f"Error importing markup folder: {str(e)}")
+        return None
+
+def process_markup_folder_and_create_tubes(folder_path):
+    """
+    Process a folder containing markup files and create tube masks automatically
+    """
+    import os
+    import json
+    
+    try:
+        print(f"Processing folder: {folder_path}")
+        
+        # Find all markup files in the folder
+        markup_files = {}
+        transform_file = None
+        pre_lesion_file = None
+        post_lesion_file = None
+        
+        print("Scanning folder for markup files...")
+        for filename in os.listdir(folder_path):
+            print(f"Found file: {filename}")
+            file_path = os.path.join(folder_path, filename)
+            
+            if filename.endswith('.mrk.json'):
+                # Parse the filename to extract slice information
+                if 'Circle_start-slice-' in filename:
+                    slice_num = filename.split('start-slice-')[1].split('.')[0]
+                    if slice_num not in markup_files:
+                        markup_files[slice_num] = {}
+                    markup_files[slice_num]['start'] = file_path
+                    print(f"Found start markup for slice {slice_num}")
+                elif 'Circle_end-slice-' in filename:
+                    slice_num = filename.split('end-slice-')[1].split('.')[0]
+                    if slice_num not in markup_files:
+                        markup_files[slice_num] = {}
+                    markup_files[slice_num]['end'] = file_path
+                    print(f"Found end markup for slice {slice_num}")
+                elif 'Circle_pre-lesion' in filename:
+                    pre_lesion_file = file_path
+                    print(f"Found pre-lesion circle: {filename}")
+                elif 'Circle_post-lesion' in filename:
+                    post_lesion_file = file_path
+                    print(f"Found post-lesion circle: {filename}")
+            elif filename.endswith('.tfm') or filename.endswith('.h5'):
+                # Found transform file
+                transform_file = file_path
+                print(f"Found transform file: {filename}")
+        
+        print(f"Found markup files for slices: {list(markup_files.keys())}")
+        
+        if not markup_files:
+            print("No markup files found in the selected folder.")
+            slicer.util.errorDisplay("No markup files found in the selected folder.")
+            return False
+        
+        # Load pre and post lesion circles if they exist
+        if pre_lesion_file:
+            try:
+                print("Loading pre-lesion circle...")
+                pre_lesion_markup = slicer.util.loadMarkups(pre_lesion_file)
+                if pre_lesion_markup:
+                    pre_lesion_markup.SetName("Circle_pre-lesion")
+                    print("Pre-lesion circle loaded successfully")
+            except Exception as e:
+                print(f"Error loading pre-lesion circle: {e}")
+        
+        if post_lesion_file:
+            try:
+                print("Loading post-lesion circle...")
+                post_lesion_markup = slicer.util.loadMarkups(post_lesion_file)
+                if post_lesion_markup:
+                    post_lesion_markup.SetName("Circle_post-lesion")
+                    print("Post-lesion circle loaded successfully")
+            except Exception as e:
+                print(f"Error loading post-lesion circle: {e}")
+        
+        # Load the "Straightened Volume" if it exists
+        straightened_volume_path = None
+        for filename in os.listdir(folder_path):
+            if 'Straightened Volume' in filename and (filename.endswith('.nrrd') or filename.endswith('.nii')):
+                straightened_volume_path = os.path.join(folder_path, filename)
+                print(f"Found straightened volume: {filename}")
+                break
+        
+        if straightened_volume_path:
+            try:
+                print("Loading straightened volume...")
+                straightened_volume = slicer.util.loadVolume(straightened_volume_path)
+                if straightened_volume:
+                    slicer.modules.WorkflowStraightenedVolume = straightened_volume
+                    print("Straightened volume loaded successfully")
+            except Exception as e:
+                print(f"Error loading straightened volume: {e}")
+        
+        # Load transform file if found
+        if transform_file:
+            try:
+                print("Loading transform file...")
+                transform_node = slicer.util.loadTransform(transform_file)
+                if transform_node:
+                    slicer.modules.WorkflowTransform = transform_node
+                    print("Transform loaded successfully")
+            except Exception as e:
+                print(f"Error loading transform: {e}")
+        
+        # Create tube masks from markup file pairs
+        created_tubes = []
+        tube_colors = [
+            (1.0, 0.0, 0.0),  # Red
+            (0.0, 1.0, 0.0),  # Green  
+            (0.0, 0.0, 1.0),  # Blue
+            (1.0, 1.0, 0.0),  # Yellow
+            (1.0, 0.0, 1.0),  # Magenta
+            (0.0, 1.0, 1.0),  # Cyan
+            (1.0, 0.5, 0.0),  # Orange
+            (0.5, 0.0, 1.0),  # Purple
+        ]
+        
+        # Process each slice pair
+        print("Processing markup file pairs...")
+        for slice_num in sorted(markup_files.keys(), key=int):
+            print(f"Processing slice {slice_num}")
+            slice_data = markup_files[slice_num]
+            
+            if 'start' in slice_data and 'end' in slice_data:
+                print(f"Found complete pair for slice {slice_num}")
+                # Load both markup files and extract first points
+                start_point = load_first_point_from_markup(slice_data['start'])
+                end_point = load_first_point_from_markup(slice_data['end'])
+                
+                print(f"Start point: {start_point}")
+                print(f"End point: {end_point}")
+                
+                if start_point and end_point:
+                    # Create tube mask from these two points
+                    tube_index = int(slice_num) - 1
+                    color_index = tube_index % len(tube_colors)
+                    print(f"Creating tube for slice {slice_num} with color {tube_colors[color_index]}")
+                    tube_model = create_tube_from_two_points(
+                        start_point, end_point, 
+                        f"TubeMask_slice_{slice_num}", 
+                        tube_colors[color_index]
+                    )
+                    
+                    if tube_model:
+                        created_tubes.append(tube_model)
+                        print(f"Tube created successfully for slice {slice_num}")
+                    else:
+                        print(f"Failed to create tube for slice {slice_num}")
+                else:
+                    print(f"Failed to extract points for slice {slice_num}")
+            else:
+                print(f"Incomplete pair for slice {slice_num} - missing start or end file")
+        
+        print(f"Created {len(created_tubes)} tubes total")
+        
+        if created_tubes:
+            # Set workflow flag to indicate markup was imported
+            slicer.modules.WorkflowUsingMarkup = True
+            return True
+        else:
+            print("No tubes were created")
+            return False
+            
+    except Exception as e:
+        print(f"Exception in process_markup_folder_and_create_tubes: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def load_first_point_from_markup(markup_file_path):
+    """
+    Load the first point from a markup file
+    """
+    import json
+    
+    try:
+        print(f"Loading markup file: {markup_file_path}")
+        with open(markup_file_path, 'r') as f:
+            markup_data = json.load(f)
+        
+        print(f"Markup file loaded successfully")
+        print(f"Keys in markup data: {list(markup_data.keys())}")
+        
+        # Extract the first control point
+        if 'markups' in markup_data and len(markup_data['markups']) > 0:
+            markup = markup_data['markups'][0]
+            print(f"Found markup with keys: {list(markup.keys())}")
+            
+            if 'controlPoints' in markup and len(markup['controlPoints']) > 0:
+                first_point = markup['controlPoints'][0]
+                print(f"Found control point with keys: {list(first_point.keys())}")
+                
+                if 'position' in first_point:
+                    position = first_point['position']
+                    print(f"Extracted position: {position}")
+                    return position
+                else:
+                    print("No 'position' key found in control point")
+            else:
+                print("No control points found in markup")
+        else:
+            print("No markups found in markup data")
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error loading markup file {markup_file_path}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def create_tube_from_two_points(start_point, end_point, tube_name, color):
+    """
+    Create a tube model from two points
+    """
+    try:
+        print(f"Creating tube '{tube_name}' from points {start_point} to {end_point}")
+        
+        # Create a curve markup with the two points
+        curve_markup = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
+        curve_markup.SetName(f"Curve_{tube_name}")
+        print(f"Created curve markup: {curve_markup.GetName()}")
+        
+        # Add the two points to the curve (points are already in world coordinates)
+        curve_markup.AddControlPoint(start_point[0], start_point[1], start_point[2])
+        curve_markup.AddControlPoint(end_point[0], end_point[1], end_point[2])
+        print(f"Added {curve_markup.GetNumberOfControlPoints()} points to curve")
+        
+        # Create tube from the curve
+        tube_model = create_tube_from_curve_with_color(curve_markup, tube_name, color)
+        print(f"Tube creation result: {tube_model}")
+        
+        # Clean up the temporary curve
+        slicer.mrmlScene.RemoveNode(curve_markup)
+        print(f"Cleaned up temporary curve")
+        
+        return tube_model
+        
+    except Exception as e:
+        print(f"Error creating tube from two points: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def create_tube_from_curve_with_color(curve_markup, tube_name, color):
+    """
+    Create a tube model from a curve markup with specified color
+    """
+    try:
+        print(f"Creating tube model from curve: {curve_markup.GetName()}")
+        
+        # Get the curve polydata
+        curve_polydata = curve_markup.GetCurveWorld()
+        if not curve_polydata:
+            print("Failed to get curve polydata")
+            return None
+            
+        if curve_polydata.GetNumberOfPoints() < 2:
+            print(f"Curve has insufficient points: {curve_polydata.GetNumberOfPoints()}")
+            return None
+        
+        print(f"Curve has {curve_polydata.GetNumberOfPoints()} points")
+        
+        # Create tube filter
+        import vtk
+        tube_filter = vtk.vtkTubeFilter()
+        tube_filter.SetInputData(curve_polydata)
+        tube_filter.SetRadius(2.0)  # 2mm radius
+        tube_filter.SetNumberOfSides(12)
+        tube_filter.CappingOn()
+        tube_filter.Update()
+        print("Tube filter created and updated")
+        
+        # Create model node
+        tube_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
+        tube_model.SetName(tube_name)
+        tube_model.SetAndObservePolyData(tube_filter.GetOutput())
+        print(f"Created model node: {tube_model.GetName()}")
+        
+        # Create display node and set color
+        tube_model.CreateDefaultDisplayNodes()
+        display_node = tube_model.GetDisplayNode()
+        if display_node:
+            display_node.SetColor(color)
+            display_node.SetOpacity(0.8)
+            display_node.SetVisibility(True)
+            print(f"Set display properties: color={color}, opacity=0.8")
+        else:
+            print("Failed to get display node")
+        
+        return tube_model
+        
+    except Exception as e:
+        print(f"Error creating tube from curve: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
         slicer.util.errorDisplay(f"Error in markup file selection: {str(e)}")
         return None
 
@@ -1345,30 +1612,13 @@ def create_threshold_segment_with_markup_only():
     want_markup = ask_user_for_markup_import()
     
     if want_markup:
-        # User wants to import markup - handle all imports (markup, volume, transform)
-        markup_node = import_markup_file()
-        if markup_node:
+        # User wants to import markup - handle all imports from source folder
+        markup_success = import_markup_file()
+        if markup_success:
             # Store markup workflow flag for later use
             slicer.modules.WorkflowUsingMarkup = True
-            slicer.modules.WorkflowMarkupNode = markup_node
             
-            # Also import straightened volume
-            straightened_volume = import_straightened_volume()
-            if straightened_volume:
-                slicer.modules.WorkflowStraightenedVolume = straightened_volume
-                slicer.util.infoDisplay("Straightened volume imported successfully.")
-            else:
-                slicer.util.infoDisplay("Straightened volume import cancelled or failed.")
-            
-            # Also import transform
-            transform_node = import_transform_file()
-            if transform_node:
-                slicer.modules.WorkflowTransform = transform_node
-                slicer.util.infoDisplay("Transform imported successfully.")
-            else:
-                slicer.util.infoDisplay("Transform import cancelled or failed.")
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Continuing with threshold segmentation workflow.")
+            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
         else:
             # Markup import failed, continue with normal workflow
             slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
@@ -1409,29 +1659,12 @@ def markup_workflow_after_crop():
         slicer.modules.WorkflowUsingImportedSegmentation = False
         
         # Import markup file
-        markup_node = import_markup_file()
-        if markup_node:
+        markup_success = import_markup_file()
+        if markup_success:
             # Store markup workflow flag for later use
             slicer.modules.WorkflowUsingMarkup = True
-            slicer.modules.WorkflowMarkupNode = markup_node
             
-            # Also import straightened volume
-            straightened_volume = import_straightened_volume()
-            if straightened_volume:
-                slicer.modules.WorkflowStraightenedVolume = straightened_volume
-                slicer.util.infoDisplay("Straightened volume imported successfully.")
-            else:
-                slicer.util.infoDisplay("Straightened volume import cancelled or failed.")
-            
-            # Also import transform
-            transform_node = import_transform_file()
-            if transform_node:
-                slicer.modules.WorkflowTransform = transform_node
-                slicer.util.infoDisplay("Transform imported successfully.")
-            else:
-                slicer.util.infoDisplay("Transform import cancelled or failed.")
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Continuing with threshold segmentation workflow.")
+            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
         else:
             # Markup import failed, continue with normal workflow
             slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
@@ -1827,30 +2060,13 @@ def create_threshold_segment():
     want_markup = ask_user_for_markup_import()
     
     if want_markup:
-        # User wants to import markup - handle all imports (markup, volume, transform)
-        markup_node = import_markup_file()
-        if markup_node:
+        # User wants to import markup - handle all imports from source folder
+        markup_success = import_markup_file()
+        if markup_success:
             # Store markup workflow flag for later use
             slicer.modules.WorkflowUsingMarkup = True
-            slicer.modules.WorkflowMarkupNode = markup_node
             
-            # Also import straightened volume
-            straightened_volume = import_straightened_volume()
-            if straightened_volume:
-                slicer.modules.WorkflowStraightenedVolume = straightened_volume
-                slicer.util.infoDisplay("Straightened volume imported successfully.")
-            else:
-                slicer.util.infoDisplay("Straightened volume import cancelled or failed.")
-            
-            # Also import transform
-            transform_node = import_transform_file()
-            if transform_node:
-                slicer.modules.WorkflowTransform = transform_node
-                slicer.util.infoDisplay("Transform imported successfully.")
-            else:
-                slicer.util.infoDisplay("Transform import cancelled or failed.")
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Continuing with threshold segmentation workflow.")
+            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
         else:
             # Markup import failed, continue with normal workflow
             slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
@@ -5958,6 +6174,16 @@ def check_crop_completion(original_volume_node):
                 if 'crop' in roi_node.GetName().lower():
                     slicer.mrmlScene.RemoveNode(roi_node)
                     pass
+            
+            # Disable the crop apply button from the Crop Volume module now that cropping is complete
+            try:
+                crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+                if crop_widget:
+                    disable_crop_apply_button(crop_widget)
+                    # Set flag to prevent button restoration
+                    slicer.modules.WorkflowCropCompleted = True
+            except Exception as e:
+                pass
             
             # Switch to 3D-only view after cropping is complete
             qt.QTimer.singleShot(500, set_3d_only_view)
@@ -12061,6 +12287,91 @@ def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
         pass
         return False
 
+def ensure_crop_button_disabled_if_completed():
+    """
+    Ensure crop apply button remains disabled if crop has been completed
+    """
+    try:
+        if hasattr(slicer.modules, 'WorkflowCropCompleted') and slicer.modules.WorkflowCropCompleted:
+            crop_widget = slicer.modules.cropvolume.widgetRepresentation()
+            if crop_widget:
+                disable_crop_apply_button(crop_widget)
+    except Exception as e:
+        pass
+
+def disable_crop_apply_button(crop_widget):
+    """
+    Disable and grey out the crop apply button once it has been used
+    """
+    try:
+        disabled_count = 0
+        
+        # Method 1: Disable the stored reference button
+        if hasattr(slicer.modules, 'CropLargeApplyButton'):
+            button = slicer.modules.CropLargeApplyButton
+            if button and button.parent():
+                # Disable the button
+                button.setEnabled(False)
+                
+                # Change text to indicate completion
+                button.setText("CROP APPLIED ✓")
+                
+                # Set grey styling
+                button.setStyleSheet("""
+                    QPushButton {
+                        background-color: #808080;
+                        color: #FFFFFF;
+                        border: 2px solid #606060;
+                        border-radius: 8px;
+                        font-size: 14px;
+                        font-weight: bold;
+                        padding: 10px 20px;
+                        min-height: 40px;
+                        min-width: 150px;
+                    }
+                """)
+                
+                disabled_count += 1
+        
+        # Method 2: Search for and disable any "APPLY CROP" buttons in the crop widget
+        if crop_widget:
+            all_buttons = crop_widget.findChildren(qt.QPushButton)
+            for button in all_buttons:
+                try:
+                    button_text = button.text if hasattr(button, 'text') else ""
+                    if button_text and ("APPLY CROP" in button_text or "Apply" in button_text):
+                        # Disable the button
+                        button.setEnabled(False)
+                        
+                        # Change text to indicate completion
+                        if "APPLY CROP" in button_text:
+                            button.setText("CROP APPLIED ✓")
+                        else:
+                            button.setText("APPLIED ✓")
+                        
+                        # Set grey styling
+                        button.setStyleSheet("""
+                            QPushButton {
+                                background-color: #808080;
+                                color: #FFFFFF;
+                                border: 2px solid #606060;
+                                border-radius: 8px;
+                                font-size: 14px;
+                                font-weight: bold;
+                                padding: 8px 16px;
+                                min-height: 30px;
+                            }
+                        """)
+                        
+                        disabled_count += 1
+                except Exception as e:
+                    continue
+        
+        return disabled_count > 0
+        
+    except Exception as e:
+        return False
+
 def remove_original_crop_apply_button(crop_widget):
     """
     Remove or hide the original large green "APPLY CROP" button from the Crop Volume module
@@ -12436,6 +12747,11 @@ def restore_original_crop_apply_button():
     Restore the original large green "APPLY CROP" button to the Crop Volume module
     """
     try:
+        # Check if crop has been completed and ensure button stays disabled
+        if hasattr(slicer.modules, 'WorkflowCropCompleted') and slicer.modules.WorkflowCropCompleted:
+            ensure_crop_button_disabled_if_completed()
+            return
+            
         # Check if we're still in the Crop Volume module
         current_module = slicer.util.selectedModule()
         if current_module != "CropVolume":
@@ -12443,7 +12759,9 @@ def restore_original_crop_apply_button():
         if hasattr(slicer.modules, 'CropLargeApplyButton'):
             button = slicer.modules.CropLargeApplyButton
             if button and button.parent():
-                button.show()
+                # Only restore if not already disabled from completion
+                if button.isEnabled() or not button.text().endswith("✓"):
+                    button.show()
                 return
     except Exception as e:
         pass
@@ -13723,6 +14041,24 @@ def create_initial_custom_crop_interface():
         slicer.modules.CustomCropWidget = crop_widget
         slicer.modules.CustomCropButton = crop_button
         
+        # Check if crop has already been completed and disable button if so
+        if hasattr(slicer.modules, 'WorkflowCroppedVolume') and slicer.modules.WorkflowCroppedVolume:
+            crop_button.setEnabled(False)
+            crop_button.setText("CROP APPLIED ✓")
+            crop_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #808080; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    font-size: 13px;
+                    min-height: 45px;
+                    margin: 5px;
+                }
+            """)
+        
         return crop_widget
         
     except Exception as e:
@@ -13747,6 +14083,26 @@ def execute_initial_custom_crop():
         if cropped_volume:
             # Store the cropped volume reference
             slicer.modules.WorkflowCroppedVolume = cropped_volume
+            
+            # Disable the crop button now that it has been used
+            if hasattr(slicer.modules, 'CustomCropButton'):
+                crop_button = slicer.modules.CustomCropButton
+                if crop_button:
+                    crop_button.setEnabled(False)
+                    crop_button.setText("CROP APPLIED ✓")
+                    crop_button.setStyleSheet("""
+                        QPushButton { 
+                            background-color: #808080; 
+                            color: white; 
+                            border: none; 
+                            padding: 12px; 
+                            font-weight: bold;
+                            border-radius: 6px;
+                            font-size: 13px;
+                            min-height: 45px;
+                            margin: 5px;
+                        }
+                    """)
             
             # Delete the ROI after cropping is complete
             roiCollection = slicer.mrmlScene.GetNodesByName("CropROI")
@@ -14077,6 +14433,24 @@ def create_custom_crop_interface():
         slicer.modules.CustomScissorsButton = scissors_button
         slicer.modules.CustomContinueButton = continue_button
         
+        # Check if crop has already been completed and disable button if so
+        if hasattr(slicer.modules, 'WorkflowCroppedVolume') and slicer.modules.WorkflowCroppedVolume:
+            crop_button.setEnabled(False)
+            crop_button.setText("CROP APPLIED ✓")
+            crop_button.setStyleSheet("""
+                QPushButton { 
+                    background-color: #808080; 
+                    color: white; 
+                    border: none; 
+                    padding: 12px; 
+                    font-weight: bold;
+                    border-radius: 6px;
+                    font-size: 13px;
+                    min-height: 45px;
+                    margin: 5px;
+                }
+            """)
+        
         
         return crop_widget
         
@@ -14104,6 +14478,26 @@ def execute_custom_crop():
         if cropped_volume:
             # Store the cropped volume reference
             slicer.modules.WorkflowCroppedVolume = cropped_volume
+            
+            # Disable the crop button now that it has been used
+            if hasattr(slicer.modules, 'CustomCropButton'):
+                crop_button = slicer.modules.CustomCropButton
+                if crop_button:
+                    crop_button.setEnabled(False)
+                    crop_button.setText("CROP APPLIED ✓")
+                    crop_button.setStyleSheet("""
+                        QPushButton { 
+                            background-color: #808080; 
+                            color: white; 
+                            border: none; 
+                            padding: 12px; 
+                            font-weight: bold;
+                            border-radius: 6px;
+                            font-size: 13px;
+                            min-height: 45px;
+                            margin: 5px;
+                        }
+                    """)
             
             # Delete the ROI after cropping is complete
             roiCollection = slicer.mrmlScene.GetNodesByName("CropROI")
