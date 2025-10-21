@@ -577,17 +577,14 @@ def process_markup_folder_and_create_tubes(folder_path):
     import json
     
     try:
-        print(f"Processing folder: {folder_path}")
         
         # Find all markup files in the folder
         markup_files = {}
         transform_file = None
         pre_lesion_file = None
         post_lesion_file = None
-        
-        print("Scanning folder for markup files...")
+
         for filename in os.listdir(folder_path):
-            print(f"Found file: {filename}")
             file_path = os.path.join(folder_path, filename)
             
             if filename.endswith('.mrk.json'):
@@ -597,80 +594,64 @@ def process_markup_folder_and_create_tubes(folder_path):
                     if slice_num not in markup_files:
                         markup_files[slice_num] = {}
                     markup_files[slice_num]['start'] = file_path
-                    print(f"Found start markup for slice {slice_num}")
                 elif 'Circle_end-slice-' in filename:
                     slice_num = filename.split('end-slice-')[1].split('.')[0]
                     if slice_num not in markup_files:
                         markup_files[slice_num] = {}
                     markup_files[slice_num]['end'] = file_path
-                    print(f"Found end markup for slice {slice_num}")
                 elif 'Circle_pre-lesion' in filename:
                     pre_lesion_file = file_path
-                    print(f"Found pre-lesion circle: {filename}")
                 elif 'Circle_post-lesion' in filename:
                     post_lesion_file = file_path
-                    print(f"Found post-lesion circle: {filename}")
             elif filename.endswith('.tfm') or filename.endswith('.h5'):
                 # Found transform file
                 transform_file = file_path
-                print(f"Found transform file: {filename}")
         
-        print(f"Found markup files for slices: {list(markup_files.keys())}")
         
         if not markup_files:
-            print("No markup files found in the selected folder.")
             slicer.util.errorDisplay("No markup files found in the selected folder.")
             return False
         
         # Load pre and post lesion circles if they exist
         if pre_lesion_file:
             try:
-                print("Loading pre-lesion circle...")
                 pre_lesion_markup = slicer.util.loadMarkups(pre_lesion_file)
                 if pre_lesion_markup:
                     pre_lesion_markup.SetName("Circle_pre-lesion")
-                    print("Pre-lesion circle loaded successfully")
             except Exception as e:
-                print(f"Error loading pre-lesion circle: {e}")
+                pass
         
         if post_lesion_file:
             try:
-                print("Loading post-lesion circle...")
                 post_lesion_markup = slicer.util.loadMarkups(post_lesion_file)
                 if post_lesion_markup:
                     post_lesion_markup.SetName("Circle_post-lesion")
-                    print("Post-lesion circle loaded successfully")
             except Exception as e:
-                print(f"Error loading post-lesion circle: {e}")
+                pass
         
         # Load the "Straightened Volume" if it exists
         straightened_volume_path = None
         for filename in os.listdir(folder_path):
             if 'Straightened Volume' in filename and (filename.endswith('.nrrd') or filename.endswith('.nii')):
                 straightened_volume_path = os.path.join(folder_path, filename)
-                print(f"Found straightened volume: {filename}")
                 break
         
         if straightened_volume_path:
             try:
-                print("Loading straightened volume...")
                 straightened_volume = slicer.util.loadVolume(straightened_volume_path)
                 if straightened_volume:
                     slicer.modules.WorkflowStraightenedVolume = straightened_volume
-                    print("Straightened volume loaded successfully")
             except Exception as e:
-                print(f"Error loading straightened volume: {e}")
+                pass
         
         # Load transform file if found
         if transform_file:
             try:
-                print("Loading transform file...")
                 transform_node = slicer.util.loadTransform(transform_file)
                 if transform_node:
                     slicer.modules.WorkflowTransform = transform_node
-                    print("Transform loaded successfully")
             except Exception as e:
-                print(f"Error loading transform: {e}")
+                pass
         
         # Create tube masks from markup file pairs
         created_tubes = []
@@ -685,26 +666,18 @@ def process_markup_folder_and_create_tubes(folder_path):
             (0.5, 0.0, 1.0),  # Purple
         ]
         
-        # Process each slice pair
-        print("Processing markup file pairs...")
         for slice_num in sorted(markup_files.keys(), key=int):
-            print(f"Processing slice {slice_num}")
             slice_data = markup_files[slice_num]
             
             if 'start' in slice_data and 'end' in slice_data:
-                print(f"Found complete pair for slice {slice_num}")
                 # Load both markup files and extract first points
                 start_point = load_first_point_from_markup(slice_data['start'])
                 end_point = load_first_point_from_markup(slice_data['end'])
-                
-                print(f"Start point: {start_point}")
-                print(f"End point: {end_point}")
-                
+
                 if start_point and end_point:
                     # Create tube mask from these two points
                     tube_index = int(slice_num) - 1
                     color_index = tube_index % len(tube_colors)
-                    print(f"Creating tube for slice {slice_num} with color {tube_colors[color_index]}")
                     tube_model = create_tube_from_two_points(
                         start_point, end_point, 
                         f"TubeMask_slice_{slice_num}", 
@@ -713,13 +686,7 @@ def process_markup_folder_and_create_tubes(folder_path):
                     
                     if tube_model:
                         created_tubes.append(tube_model)
-                        print(f"Tube created successfully for slice {slice_num}")
-                    else:
-                        print(f"Failed to create tube for slice {slice_num}")
-                else:
-                    print(f"Failed to extract points for slice {slice_num}")
-            else:
-                print(f"Incomplete pair for slice {slice_num} - missing start or end file")
+
         
         print(f"Created {len(created_tubes)} tubes total")
         
@@ -728,11 +695,9 @@ def process_markup_folder_and_create_tubes(folder_path):
             slicer.modules.WorkflowUsingMarkup = True
             return True
         else:
-            print("No tubes were created")
             return False
             
     except Exception as e:
-        print(f"Exception in process_markup_folder_and_create_tubes: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -747,29 +712,18 @@ def load_first_point_from_markup(markup_file_path):
         print(f"Loading markup file: {markup_file_path}")
         with open(markup_file_path, 'r') as f:
             markup_data = json.load(f)
-        
-        print(f"Markup file loaded successfully")
-        print(f"Keys in markup data: {list(markup_data.keys())}")
+
         
         # Extract the first control point
         if 'markups' in markup_data and len(markup_data['markups']) > 0:
             markup = markup_data['markups'][0]
-            print(f"Found markup with keys: {list(markup.keys())}")
             
             if 'controlPoints' in markup and len(markup['controlPoints']) > 0:
                 first_point = markup['controlPoints'][0]
-                print(f"Found control point with keys: {list(first_point.keys())}")
                 
                 if 'position' in first_point:
                     position = first_point['position']
-                    print(f"Extracted position: {position}")
                     return position
-                else:
-                    print("No 'position' key found in control point")
-            else:
-                print("No control points found in markup")
-        else:
-            print("No markups found in markup data")
         
         return None
         
