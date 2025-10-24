@@ -71,16 +71,9 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
-        # Hide data probe whenever any module is opened
         self.setupDataProbeAutoHide()
-        
-        # Hide the Slicer logo
         self.hideLogo()
-        
-        # Hide help and acknowledgments section
         self.hideHelpAndAcknowledgments()
-        
-        # Collapse the left module panel when this workflow is opened
         self.collapseLeftPanelForWorkflow()
 
         if not hasattr(self.ui, 'startWorkflowButton'):
@@ -112,9 +105,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     moduleManager.activeModuleChanged.connect(self.hideDataProbe)
             except:
                 pass
-            
-            # Also set up a timer as a fallback to ensure data probe stays hidden
-            # and help sections are removed
+
             if hasattr(qt, 'QTimer'):
                 self.dataProbeHideTimer = qt.QTimer()
                 self.dataProbeHideTimer.timeout.connect(self.hideDataProbe)
@@ -185,7 +176,6 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if statusBar:
                     statusBar.hide()
         except Exception as e:
-            # If hiding status bar fails, log it but don't break the workflow
             pass
 
     def showStatusBar(self) -> None:
@@ -198,37 +188,24 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if statusBar:
                     statusBar.show()
         except Exception as e:
-            # If showing status bar fails, log it but don't break the workflow
             pass
 
     def setDarkBackground(self) -> None:
         """Set the 3D view background to dark/black."""
         try:
-            # Call the function from workflow_moduals to set dark background
             import Moduals.workflow_moduals as workflow_mod
             workflow_mod.set_3d_view_background_black()
         except Exception as e:
-            # If setting dark background fails, log it but don't break the workflow
             pass
 
     def enter(self) -> None:
         """Called each time the user opens this module."""
-        # Make sure parameter node exists and observed
+
         self.initializeParameterNode()
-        
-        # Hide the status bar by default when entering the workflow module
         self.hideStatusBar()
-        
-        # Hide the Slicer logo when entering the workflow module
         self.hideLogo()
-        
-        # Hide help and acknowledgments section
         self.hideHelpAndAcknowledgments()
-        
-        # Set 3D view background to dark by default when entering the workflow module
         self.setDarkBackground()
-        
-        # Check for source_slicer.txt file and auto-load DICOM if found
         self.checkForSourceSlicerFile()
 
     def exit(self) -> None:
@@ -341,7 +318,7 @@ class workflowLogic(ScriptedLoadableModuleLogic):
 
 
 class workflowTest(ScriptedLoadableModuleTest):
-    """Simple test for the Hello World module."""
+    """Simple test for main module logic."""
 
     def setUp(self):
         """Do whatever is needed to reset the state."""
@@ -353,10 +330,10 @@ class workflowTest(ScriptedLoadableModuleTest):
         self.test_workflow1()
 
     def test_workflow1(self):
-        """Test the Hello World functionality."""
+        """Test the main module logic."""
         self.delayDisplay("Starting the test")
 
-        # Test the module logic
+        
         logic = workflowLogic()
         logic.startWorkflow()
 
