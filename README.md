@@ -363,6 +363,5 @@ For urgent clinical workflow issues:
 **Last Updated**: September 2025  
 **Version**: 1.0.0  
 **Clinical Compatibility**: 3D Slicer 5.6.1 - 5.8.1+  
-**Medical Disclaimer**: Research Use Only - Not for Clinical Diagnosis
 
 For technical documentation, visit the [3D Slicer Extensions Documentation](https://www.slicer.org/wiki/Documentation/Nightly/Extensions)
