@@ -14633,22 +14633,16 @@ def ensure_crop_roi_exists():
             
             return existing_roi
         
-        # Create new ROI if none exists
-        
-        # Get the current volume to base ROI size on
         inputVolume = find_working_volume()
         if not inputVolume:
             return None
         
-        # Create ROI node
         roiNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsROINode", "CropROI")
         roiNode.CreateDefaultDisplayNodes()
         
-        # Set ROI to encompass the volume
         bounds = [0.0] * 6
         inputVolume.GetBounds(bounds)
-        
-        # Set ROI center and size
+
         center = [(bounds[1] + bounds[0]) / 2.0, 
                   (bounds[3] + bounds[2]) / 2.0, 
                   (bounds[5] + bounds[4]) / 2.0]
@@ -14657,18 +14651,15 @@ def ensure_crop_roi_exists():
                 bounds[3] - bounds[2], 
                 bounds[5] - bounds[4]]
         
-        # Make ROI slightly smaller than full volume (80% of original size)
         size = [s * 0.8 for s in size]
         
         roiNode.SetXYZ(center)
         roiNode.SetRadiusXYZ(size[0]/2, size[1]/2, size[2]/2)
         
-        # Make ROI visible and interactive with enhanced visibility
         displayNode = roiNode.GetDisplayNode()
         if displayNode:
             displayNode.SetVisibility(True)
             displayNode.SetHandlesInteractive(True)
-            # Make ROI more visible with better colors and opacity
             displayNode.SetSelectedColor(1.0, 1.0, 0.0)  # Yellow when selected
             displayNode.SetColor(0.0, 1.0, 1.0)  # Cyan when not selected  
             displayNode.SetOpacity(0.8)  # Semi-transparent
@@ -14676,15 +14667,13 @@ def ensure_crop_roi_exists():
             displayNode.SetOutlineVisibility(True)
             displayNode.SetFillVisibility(True)
         
-        # Ensure ROI is selected and active for immediate interaction
+
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             selectionNode.SetActivePlaceNodeID(roiNode.GetID())
-        
         return roiNode
         
     except Exception as e:
-        pass
         return None
 
 
@@ -14694,18 +14683,13 @@ def setup_crop_display_layout():
     This ensures consistent behavior between first and subsequent croppings.
     """
     try:
-        
-        # Use the same three-up view as the original workflow
         success = set_three_up_view()
-        
         if success:
-            # Ensure the current volume is properly displayed in all views
             vol = find_working_volume()
             if vol:
                 set_volume_visible_in_slice_views(vol)
             
         else:
-            # Fallback to standard layout
             lm = slicer.app.layoutManager()
             if lm:
                 layout_node = lm.layoutLogic().GetLayoutNode()
@@ -14714,7 +14698,6 @@ def setup_crop_display_layout():
         return success
         
     except Exception as e:
-        pass
         return False
 
 def toggle_scissors_tool(activated=None):
@@ -14724,68 +14707,53 @@ def toggle_scissors_tool(activated=None):
         activated (bool, optional): True to activate, False to deactivate, None to toggle
     """
     try:
-        # Initialize scissors state if not exists
         if not hasattr(slicer.modules, 'ScissorsToolActive'):
             slicer.modules.ScissorsToolActive = False
         
         current_state = slicer.modules.ScissorsToolActive
-        
-        # Determine target state
         if activated is not None:
             target_state = activated
         else:
-            # Toggle current state
             target_state = not current_state
         
-        # Only act if state is changing
         if target_state != current_state:
             if target_state:
-                # Activate scissors tool
                 success = select_scissors_tool()
                 
                 if success:
                     slicer.modules.ScissorsToolActive = True
                     
-                    # Update button to show active state
                     if hasattr(slicer.modules, 'CustomScissorsButton'):
                         button = slicer.modules.CustomScissorsButton
                         if hasattr(button, 'setChecked'):
                             button.setChecked(True)
-                        button.setText("🔴 Scissors ON")
-                    
-                    # Also update WorkflowScissorsButton if it exists
+                        button.setText("Scissors ON")
+
                     if hasattr(slicer.modules, 'WorkflowScissorsButton'):
                         button = slicer.modules.WorkflowScissorsButton
                         if hasattr(button, 'setChecked'):
                             button.setChecked(True)
             else:
-                # Deactivate scissors tool
                 slicer.modules.ScissorsToolActive = False
-                
-                # Actually deactivate the scissors tool in the segment editor
+
                 if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
                     segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
                     segmentEditorWidget.setActiveEffectByName("")  # Clear active effect
-                
-                # Switch back to default interaction mode
+
                 interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
                 if interactionNode:
                     interactionNode.SetCurrentInteractionMode(interactionNode.ViewTransform)
-                
-                # Update button to show inactive state
+
                 if hasattr(slicer.modules, 'CustomScissorsButton'):
                     button = slicer.modules.CustomScissorsButton
                     if hasattr(button, 'setChecked'):
                         button.setChecked(False)
                     button.setText("Toggle Scissors Tool")
-                
-                # Also update WorkflowScissorsButton if it exists
+
                 if hasattr(slicer.modules, 'WorkflowScissorsButton'):
                     button = slicer.modules.WorkflowScissorsButton
                     if hasattr(button, 'setChecked'):
                         button.setChecked(False)
-
-            
     except Exception as e:
         pass
 
@@ -14795,13 +14763,8 @@ def finish_custom_crop_workflow():
     This is called by the "FINISH SEGMENTATION - CONTINUE" button.
     """
     try:
-        
-        # Clean up the custom crop interface
         cleanup_custom_crop_interface()
-        
-        # Continue with the normal workflow (same as scissors workflow)
         on_continue_from_scissors()
-        
         
     except Exception as e:
         pass
@@ -14812,20 +14775,17 @@ def cleanup_custom_crop_interface():
     Clean up the custom crop interface widgets
     """
     try:
-        # Clean up custom crop widget
+
         if hasattr(slicer.modules, 'CustomCropWidget'):
             widget = slicer.modules.CustomCropWidget
             if widget:
                 widget.close()
                 widget.deleteLater()
             delattr(slicer.modules, 'CustomCropWidget')
-        
-        # Clean up button references
+
         for attr_name in ['CustomCropButton', 'CustomScissorsButton', 'CustomContinueButton']:
             if hasattr(slicer.modules, attr_name):
                 delattr(slicer.modules, attr_name)
-        
-        
     except Exception as e:
         pass
 
@@ -14835,23 +14795,19 @@ def use_custom_crop_instead_of_module():
     Call this when the crop module GUI becomes distorted during recropping.
     """
     try:
-        
-        # First try to close/hide any existing crop module GUI
+
         try:
             collapse_crop_volume_gui()
         except Exception:
             pass
-        
-        # Create the custom crop interface
+
         custom_interface = create_custom_crop_interface()
         
         if custom_interface:
             return True
-        else:
-            return False
+        return False
             
     except Exception as e:
-        pass
         return False
 
 
@@ -14866,10 +14822,7 @@ def force_custom_crop_interface():
     """
     try:
         success = use_custom_crop_instead_of_module()
-        
-            
         return success
         
     except Exception as e:
-        pass
         return False
