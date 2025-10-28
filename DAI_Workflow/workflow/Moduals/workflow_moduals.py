@@ -51,6 +51,14 @@ try:
 except:
     pass
 
+# Set up scene save observer after functions are defined
+def setup_module_observers():
+    """Set up observers after all functions are defined"""
+    try:
+        setup_scene_save_observer()
+    except:
+        pass
+
 # Console testing functions
 def test_panel_collapse():
     """Console function to test panel collapse"""
@@ -9224,6 +9232,210 @@ def disable_all_placement_tools():
     except Exception as e:
         pass
 
+def save_scene_location_to_user_home(scene_path):
+    """
+    Save the current scene location to a file in the user's home directory.
+    
+    Args:
+        scene_path (str): The path where the scene was saved
+    """
+    try:
+        import os
+        import datetime
+        
+        # Get user home directory
+        home_dir = os.path.expanduser("~")
+        location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
+        
+        # Get current timestamp
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Prepare the entry
+        entry = f"{timestamp} - {scene_path}\n"
+        
+        # Append to the file (create if it doesn't exist)
+        with open(location_file, "a", encoding="utf-8") as f:
+            f.write(entry)
+            
+        print(f"Scene location saved to: {location_file}")
+        
+    except Exception as e:
+        print(f"Could not save scene location to user home: {str(e)}")
+
+def show_saved_scene_locations():
+    """
+    Display all saved scene locations from the user's home directory.
+    Console function to view the history of saved scenes.
+    """
+    try:
+        import os
+        
+        # Get user home directory
+        home_dir = os.path.expanduser("~")
+        location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
+        
+        if not os.path.exists(location_file):
+            print("No saved scene locations found.")
+            print(f"Location file would be: {location_file}")
+            return
+        
+        print(f"Saved scene locations from: {location_file}")
+        print("=" * 60)
+        
+        with open(location_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        if not lines:
+            print("No scene locations recorded yet.")
+        else:
+            for i, line in enumerate(lines, 1):
+                print(f"{i:2d}. {line.strip()}")
+                
+        print("=" * 60)
+        print(f"Total scenes recorded: {len(lines)}")
+        
+    except Exception as e:
+        print(f"Could not read scene locations: {str(e)}")
+
+def clear_saved_scene_locations():
+    """
+    Clear all saved scene locations from the user's home directory.
+    Console function to reset the scene location history.
+    """
+    try:
+        import os
+        
+        # Get user home directory
+        home_dir = os.path.expanduser("~")
+        location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
+        
+        if os.path.exists(location_file):
+            os.remove(location_file)
+            print(f"Cleared scene location history: {location_file}")
+        else:
+            print("No scene location history file found to clear.")
+            
+    except Exception as e:
+        print(f"Could not clear scene location history: {str(e)}")
+
+def get_current_scene_location():
+    """
+    Get the current scene file location.
+    Console function to check where the current scene is saved.
+    """
+    try:
+        scene_path = slicer.mrmlScene.GetURL()
+        
+        if scene_path:
+            # Convert file:// URL to local path if needed
+            if scene_path.startswith("file://"):
+                scene_path = scene_path[7:]  # Remove "file://" prefix
+            print(f"Current scene location: {scene_path}")
+            return scene_path
+        else:
+            print("Current scene has not been saved yet (no file location).")
+            return None
+            
+    except Exception as e:
+        print(f"Could not get current scene location: {str(e)}")
+        return None
+
+def setup_scene_save_observer():
+    """
+    Set up an observer to automatically track scene saves regardless of how they're initiated.
+    This monitors both manual saves and programmatic saves.
+    """
+    try:
+        # Remove any existing observer first
+        if hasattr(slicer.modules, 'SceneSaveObserverTag') and slicer.modules.SceneSaveObserverTag:
+            slicer.mrmlScene.RemoveObserver(slicer.modules.SceneSaveObserverTag)
+        
+        # Add observer for scene save events
+        observer_tag = slicer.mrmlScene.AddObserver(slicer.mrmlScene.EndSaveEvent, on_scene_saved)
+        slicer.modules.SceneSaveObserverTag = observer_tag
+        
+        print("Scene save observer has been set up - all scene saves will now be tracked.")
+        
+    except Exception as e:
+        print(f"Could not set up scene save observer: {str(e)}")
+
+def on_scene_saved(caller, event):
+    """
+    Called whenever the scene is saved. Automatically logs the save location.
+    """
+    try:
+        # Small delay to ensure the URL is updated
+        qt.QTimer.singleShot(100, lambda: track_scene_save_location())
+        
+    except Exception as e:
+        print(f"Error in scene save callback: {str(e)}")
+
+def track_scene_save_location():
+    """
+    Track the current scene save location after a save event.
+    """
+    try:
+        scene_path = slicer.mrmlScene.GetURL()
+        
+        if scene_path:
+            # Convert file:// URL to local path if needed
+            if scene_path.startswith("file://"):
+                scene_path = scene_path[7:]  # Remove "file://" prefix
+            
+            # Only save if it's a valid file path (not empty or just whitespace)
+            if scene_path and scene_path.strip():
+                save_scene_location_to_user_home(scene_path)
+            else:
+                print("Scene save detected but no valid file path found")
+        else:
+            print("Scene save detected but no URL available")
+            
+    except Exception as e:
+        print(f"Could not track scene save location: {str(e)}")
+
+def remove_scene_save_observer():
+    """
+    Remove the scene save observer.
+    Console function to stop automatic scene save tracking.
+    """
+    try:
+        if hasattr(slicer.modules, 'SceneSaveObserverTag') and slicer.modules.SceneSaveObserverTag:
+            slicer.mrmlScene.RemoveObserver(slicer.modules.SceneSaveObserverTag)
+            slicer.modules.SceneSaveObserverTag = None
+            print("Scene save observer has been removed.")
+        else:
+            print("No scene save observer was active.")
+            
+    except Exception as e:
+        print(f"Could not remove scene save observer: {str(e)}")
+
+def enable_scene_save_tracking():
+    """
+    Manually enable scene save tracking.
+    Console function to activate automatic scene save location tracking.
+    """
+    try:
+        setup_scene_save_observer()
+        print("Scene save tracking is now enabled.")
+        print("All scene saves will be automatically logged to:")
+        import os
+        home_dir = os.path.expanduser("~")
+        location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
+        print(f"  {location_file}")
+    except Exception as e:
+        print(f"Could not enable scene save tracking: {str(e)}")
+
+def disable_scene_save_tracking():
+    """
+    Manually disable scene save tracking.
+    Console function to deactivate automatic scene save location tracking.
+    """
+    try:
+        remove_scene_save_observer()
+        print("Scene save tracking is now disabled.")
+    except Exception as e:
+        print(f"Could not disable scene save tracking: {str(e)}")
+
 def export_project_and_continue():
     """
     Save the Slicer project using normal save functionality and continue to workflow2.py
@@ -9274,7 +9486,18 @@ def export_project_and_continue():
         success = slicer.app.ioManager().openSaveDataDialog()
         
         if success:
-            pass
+            # Get the scene file path after successful save
+            try:
+                scene_path = slicer.mrmlScene.GetURL()
+                if scene_path:
+                    # Convert file:// URL to local path if needed
+                    if scene_path.startswith("file://"):
+                        scene_path = scene_path[7:]  # Remove "file://" prefix
+                    save_scene_location_to_user_home(scene_path)
+                else:
+                    print("Warning: Could not determine scene save location")
+            except Exception as e:
+                print(f"Error saving scene location: {str(e)}")
             
             # Deselect placement tools and return to normal interaction mode
             pass
@@ -14826,3 +15049,9 @@ def force_custom_crop_interface():
         
     except Exception as e:
         return False
+
+# Initialize scene save observer when module is fully loaded
+try:
+    setup_module_observers()
+except:
+    pass
