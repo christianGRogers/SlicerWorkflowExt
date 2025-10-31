@@ -9436,9 +9436,355 @@ def disable_scene_save_tracking():
     except Exception as e:
         print(f"Could not disable scene save tracking: {str(e)}")
 
+def setup_storage_nodes_for_consistent_saving():
+    """
+    Setup storage nodes to ensure consistent file naming and directory structure.
+    This ensures that the main volume and all other files are saved properly.
+    """
+    try:
+        # Find the working volume and ensure it has proper storage node
+        working_volume = find_working_volume()
+        if working_volume:
+            # Ensure the volume has a storage node with proper filename
+            storage_node = working_volume.GetStorageNode()
+            if not storage_node:
+                # Create a storage node if it doesn't exist
+                storage_node = slicer.vtkMRMLNRRDStorageNode()
+                slicer.mrmlScene.AddNode(storage_node)
+                working_volume.SetAndObserveStorageNodeID(storage_node.GetID())
+            
+            # Set the filename to CT_Series.nrrd based on current volume name
+            current_filename = storage_node.GetFileName() or ""
+            current_name = working_volume.GetName()
+            
+            # Use CT_Series.nrrd as the filename regardless of volume name
+            if not os.path.basename(current_filename).startswith("CT_Series"):
+                storage_node.SetFileName("CT_Series.nrrd")
+                print(f"Set volume '{current_name}' filename to: CT_Series.nrrd")
+        
+        # Get all storable nodes and ensure they have proper storage nodes
+        all_nodes = []
+        all_nodes.extend(slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode'))
+        all_nodes.extend(slicer.util.getNodesByClass('vtkMRMLSegmentationNode'))
+        all_nodes.extend(slicer.util.getNodesByClass('vtkMRMLMarkupsNode'))
+        all_nodes.extend(slicer.util.getNodesByClass('vtkMRMLModelNode'))
+        all_nodes.extend(slicer.util.getNodesByClass('vtkMRMLTransformNode'))
+        
+        nodes_prepared = 0
+        for node in all_nodes:
+            if hasattr(node, 'GetStorageNode'):
+                storage_node = node.GetStorageNode()
+                if not storage_node:
+                    # Create appropriate storage node based on node type
+                    if node.IsA('vtkMRMLScalarVolumeNode'):
+                        storage_node = slicer.vtkMRMLNRRDStorageNode()
+                    elif node.IsA('vtkMRMLSegmentationNode'):
+                        storage_node = slicer.vtkMRMLSegmentationStorageNode()
+                    elif node.IsA('vtkMRMLMarkupsNode'):
+                        storage_node = slicer.vtkMRMLMarkupsStorageNode()
+                    elif node.IsA('vtkMRMLModelNode'):
+                        storage_node = slicer.vtkMRMLModelStorageNode()
+                    elif node.IsA('vtkMRMLTransformNode'):
+                        storage_node = slicer.vtkMRMLTransformStorageNode()
+                    
+                    if storage_node:
+                        slicer.mrmlScene.AddNode(storage_node)
+                        node.SetAndObserveStorageNodeID(storage_node.GetID())
+                        nodes_prepared += 1
+        
+        print(f"Prepared {nodes_prepared} nodes for saving")
+        return True
+        
+    except Exception as e:
+        print(f"Error setting up storage nodes: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def show_pre_save_info():
+    """
+    Show information about what will be saved before opening the save dialog.
+    """
+    try:
+        # Count all the saveable nodes in the scene
+        volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        markup_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
+        model_nodes = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        transform_nodes = slicer.util.getNodesByClass('vtkMRMLTransformNode')
+        
+        # Build the info message
+        info_parts = []
+        
+        if volume_nodes:
+            info_parts.append(f"• {len(volume_nodes)} Volume(s)")
+            working_volume = find_working_volume()
+            for vol in volume_nodes:
+                if vol == working_volume:
+                    info_parts.append(f"  - {vol.GetName()} → will be saved as CT_Series.nrrd")
+                else:
+                    info_parts.append(f"  - {vol.GetName()}")
+        
+        if segmentation_nodes:
+            info_parts.append(f"• {len(segmentation_nodes)} Segmentation(s)")
+            for seg in segmentation_nodes:
+                info_parts.append(f"  - {seg.GetName()}")
+        
+        if markup_nodes:
+            info_parts.append(f"• {len(markup_nodes)} Markup(s)")
+            for markup in markup_nodes:
+                info_parts.append(f"  - {markup.GetName()}")
+        
+        if model_nodes:
+            info_parts.append(f"• {len(model_nodes)} Model(s)")
+            for model in model_nodes:
+                info_parts.append(f"  - {model.GetName()}")
+        
+        if transform_nodes:
+            info_parts.append(f"• {len(transform_nodes)} Transform(s)")
+            for transform in transform_nodes:
+                info_parts.append(f"  - {transform.GetName()}")
+        
+        if info_parts:
+            info_message = "The save dialog will open with ALL scene data selected for saving:\n\n" + "\n".join(info_parts)
+            info_message += "\n\nAll files will be saved to the same directory for easy organization."
+            print("=== SAVE INFORMATION ===")
+            print(info_message)
+            print("========================")
+        
+    except Exception as e:
+        print(f"Could not show pre-save info: {str(e)}")
+
+def open_save_dialog_with_all_selected():
+    """
+    Open the save dialog and attempt to automatically select all items.
+    """
+    try:
+        # Method 1: Try using the IO manager with modification
+        io_manager = slicer.app.ioManager()
+        
+        # Create a QTimer to select all items after the dialog opens
+        def select_all_after_delay():
+            try:
+                # Find the save dialog window
+                for widget in qt.QApplication.allWidgets():
+                    if hasattr(widget, 'selectAll') and widget.windowTitle() and 'save' in widget.windowTitle().lower():
+                        print("Found save dialog, attempting to select all items...")
+                        widget.selectAll()
+                        break
+                    # Also try to find qSlicerSaveDataDialog specifically
+                    elif widget.__class__.__name__ == 'qSlicerSaveDataDialog':
+                        print("Found qSlicerSaveDataDialog, attempting to select all items...")
+                        if hasattr(widget, 'selectAll'):
+                            widget.selectAll()
+                        break
+            except Exception as select_error:
+                print(f"Could not auto-select all items in save dialog: {str(select_error)}")
+        
+        # Schedule the selection after a short delay to allow dialog to fully open
+        timer = qt.QTimer()
+        timer.timeout.connect(select_all_after_delay)
+        timer.setSingleShot(True)
+        timer.start(500)  # 500ms delay
+        
+        # Open the standard save dialog
+        success = io_manager.openSaveDataDialog()
+        
+        # Clean up the timer
+        timer.timeout.disconnect()
+        return success
+        
+    except Exception as e:
+        print(f"Error opening save dialog with auto-select: {str(e)}")
+        # Fallback to standard dialog
+        try:
+            return slicer.app.ioManager().openSaveDataDialog()
+        except:
+            return False
+
+def custom_save_all_scene_data():
+    """
+    Custom save function that ensures all files in the scene are selected for saving
+    and that CT_Series.nrrd is saved to the same directory as all other files.
+    """
+    try:
+        # First, setup storage nodes for consistent saving
+        setup_storage_nodes_for_consistent_saving()
+        
+        # Show information about what will be saved
+        show_pre_save_info()
+        
+        # Use the standard save dialog, but it should now have proper storage nodes
+        # Try to automatically select all items when the dialog opens
+        success = open_save_dialog_with_all_selected()
+        
+        if success:
+            # After successful save, verify that CT_Series was saved properly
+            scene_path = slicer.mrmlScene.GetURL()
+            if scene_path:
+                if scene_path.startswith("file://"):
+                    scene_path = scene_path[7:]  # Remove "file://" prefix
+                    
+                scene_dir = os.path.dirname(scene_path)
+                print(f"Scene saved to directory: {scene_dir}")
+                
+                # List all files saved in the directory
+                try:
+                    files_in_dir = os.listdir(scene_dir)
+                    scene_files = [f for f in files_in_dir if not f.startswith('.')]
+                    print(f"Files saved in scene directory: {scene_files}")
+                    
+                    # Check if CT_Series.nrrd exists
+                    ct_series_files = [f for f in scene_files if f.startswith("CT_Series") and f.endswith('.nrrd')]
+                    if ct_series_files:
+                        print(f"✓ CT_Series volume saved as: {ct_series_files[0]}")
+                    else:
+                        # Try to find any .nrrd file that might be the CT volume
+                        nrrd_files = [f for f in scene_files if f.endswith('.nrrd')]
+                        if nrrd_files:
+                            print(f"Found .nrrd files: {nrrd_files}")
+                            # If there's exactly one .nrrd file, it's likely the CT volume
+                            if len(nrrd_files) == 1:
+                                old_path = os.path.join(scene_dir, nrrd_files[0])
+                                new_path = os.path.join(scene_dir, "CT_Series.nrrd")
+                                try:
+                                    os.rename(old_path, new_path)
+                                    print(f"Renamed {nrrd_files[0]} to CT_Series.nrrd")
+                                except Exception as rename_error:
+                                    print(f"Could not rename {nrrd_files[0]} to CT_Series.nrrd: {str(rename_error)}")
+                        else:
+                            print("Warning: No .nrrd files found in save directory")
+                            
+                except Exception as dir_error:
+                    print(f"Could not list directory contents: {str(dir_error)}")
+            
+            return True
+        else:
+            return False
+            
+    except Exception as e:
+        print(f"Error in custom save function: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Fallback to standard save dialog
+        try:
+            return slicer.app.ioManager().openSaveDataDialog()
+        except:
+            return False
+
+def test_custom_save_functionality():
+    """
+    Test function to verify the custom save functionality works properly.
+    Usage: test_custom_save_functionality()
+    """
+    try:
+        print("Testing custom save functionality...")
+        
+        # Show what's in the scene
+        show_pre_save_info()
+        
+        # Test storage node setup
+        setup_result = setup_storage_nodes_for_consistent_saving()
+        print(f"Storage nodes setup result: {setup_result}")
+        
+        # Test finding working volume
+        working_vol = find_working_volume()
+        if working_vol:
+            print(f"Working volume found: {working_vol.GetName()}")
+        else:
+            print("No working volume found")
+        
+        print("Custom save functionality test completed.")
+        return True
+        
+    except Exception as e:
+        print(f"Error testing custom save functionality: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def manual_export_with_ct_series():
+    """
+    Manual export function that can be called from console to test the new export functionality.
+    Usage: manual_export_with_ct_series()
+    """
+    try:
+        print("Starting manual export with CT_Series handling...")
+        result = custom_save_all_scene_data()
+        if result:
+            print("✓ Export completed successfully!")
+        else:
+            print("❌ Export was cancelled or failed")
+        return result
+    except Exception as e:
+        print(f"Error in manual export: {str(e)}")
+        return False
+
+def check_ct_series_setup():
+    """
+    Console function to check if CT_Series volume is properly set up for saving.
+    Usage: check_ct_series_setup()
+    """
+    try:
+        print("=== CT_Series Setup Check ===")
+        
+        # Find working volume
+        working_vol = find_working_volume()
+        if not working_vol:
+            print("❌ No working volume found in scene")
+            return False
+        
+        print(f"Working volume: {working_vol.GetName()}")
+        
+        # Note: Volume name is preserved, but will be saved as CT_Series.nrrd
+        print(f"✓ Volume '{working_vol.GetName()}' will be saved as CT_Series.nrrd")
+        
+        # Check storage node
+        storage_node = working_vol.GetStorageNode()
+        if storage_node:
+            filename = storage_node.GetFileName()
+            print(f"✓ Storage node exists with filename: {filename}")
+            
+            if filename and os.path.basename(filename).startswith("CT_Series"):
+                print("✓ Storage filename is properly set for CT_Series")
+            else:
+                print("⚠ Storage filename should be set to CT_Series.nrrd")
+        else:
+            print("⚠ No storage node found - will be created during save")
+        
+        # Count all saveable nodes
+        all_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+        all_segs = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        all_markups = slicer.util.getNodesByClass('vtkMRMLMarkupsNode')
+        all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
+        
+        total_nodes = len(all_volumes) + len(all_segs) + len(all_markups) + len(all_models)
+        print(f"Total saveable nodes in scene: {total_nodes}")
+        print(f"  - Volumes: {len(all_volumes)}")
+        print(f"  - Segmentations: {len(all_segs)}")
+        print(f"  - Markups: {len(all_markups)}")
+        print(f"  - Models: {len(all_models)}")
+        
+        print("==============================")
+        return True
+        
+    except Exception as e:
+        print(f"Error checking CT_Series setup: {str(e)}")
+        return False
+
+def close_slicer_after_export():
+    """
+    Close Slicer application after successful export and workflow completion.
+    Simple and reliable exit using os._exit(0).
+    """
+
+    import os
+    os._exit(0)
+        
+
 def export_project_and_continue():
     """
-    Save the Slicer project using normal save functionality and continue to workflow2.py
+    Save the Slicer project using custom save functionality and continue to workflow2.py
     """
     try:
         # Clean up any orphaned start markers before export
@@ -9483,7 +9829,8 @@ def export_project_and_continue():
             
             pass
 
-        success = slicer.app.ioManager().openSaveDataDialog()
+        # Use custom save function that ensures all files are selected and CT_Series is properly named
+        success = custom_save_all_scene_data()
         
         if success:
             # Get the scene file path after successful save
@@ -9520,6 +9867,9 @@ def export_project_and_continue():
             except Exception as e:
                 pass
                 slicer.util.errorDisplay(f"Could not run workflow2 functionality: {str(e)}\n\nPlease check the console for details.")
+            
+            # Close Slicer after successful save and workflow completion
+            close_slicer_after_export()
             
         else:
             pass

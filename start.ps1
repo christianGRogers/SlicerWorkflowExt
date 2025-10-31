@@ -17,7 +17,8 @@ $filesToClean = @(
     $invesaliusLockFile,
     (Join-Path $scriptDirectory "trigger_slicer.txt"),
     (Join-Path $scriptDirectory "trigger_invesalius.txt"),
-    (Join-Path $scriptDirectory "trigger_external.txt")
+    (Join-Path $scriptDirectory "trigger_external.txt"),
+    (Join-Path $scriptDirectory "slicer_exit_lock.txt")
 )
 
 foreach ($file in $filesToClean) {
@@ -131,18 +132,59 @@ function Execute-Slicer {
         Write-Host "Launching Slicer..." -ForegroundColor Green
 
         $slicerPath = "D:\slicer.org\Slicer 5.8.1\Slicer.exe"
+        $slicerExitLockFile = Join-Path $scriptDirectory "slicer_exit_lock.txt"
         
         if (Test-Path $slicerPath) {
             Write-Host "Starting Slicer from executable: $slicerPath --no-splash" -ForegroundColor Green
-            Start-Process -FilePath $slicerPath -ArgumentList "--no-splash" -Wait
+            
+            # Start Slicer and wait for it to complete
+            $slicerProcess = Start-Process -FilePath $slicerPath -ArgumentList "--no-splash" -PassThru
+            $slicerProcess.WaitForExit()
+            
+            # Get exit information
+            $exitCode = $slicerProcess.ExitCode
+            $exitTime = Get-Date
+            
             Write-Host "Slicer execution completed." -ForegroundColor Green
+            Write-Host "  Exit Code: $exitCode" -ForegroundColor Gray
+            Write-Host "  Exit Time: $($exitTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor Gray
+            
+            # Create lock file to notify listeners that Slicer has exited
+            $lockContent = @(
+                "SLICER_EXITED",
+                $exitCode,
+                $exitTime.ToString('yyyy-MM-dd HH:mm:ss'),
+                $slicerProcess.Id
+            )
+            $lockContent | Out-File -FilePath $slicerExitLockFile -Encoding UTF8
+            Write-Host "Created exit notification lock file: $slicerExitLockFile" -ForegroundColor Cyan
+            
         } else {
             Write-Host "Slicer not found at: $slicerPath" -ForegroundColor Red
             Write-Host "Please verify that Slicer is installed at the specified location." -ForegroundColor Yellow
+            
+            # Create lock file indicating Slicer was not found
+            $lockContent = @(
+                "SLICER_NOT_FOUND",
+                -1,
+                (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'),
+                0
+            )
+            $lockContent | Out-File -FilePath $slicerExitLockFile -Encoding UTF8
         }
     }
     catch {
         Write-Host "Error executing Slicer: $($_.Exception.Message)" -ForegroundColor Red
+        
+        # Create lock file indicating an error occurred
+        $lockContent = @(
+            "SLICER_ERROR",
+            -1,
+            (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'),
+            0,
+            $_.Exception.Message
+        )
+        $lockContent | Out-File -FilePath $slicerExitLockFile -Encoding UTF8
     }
 }
 
