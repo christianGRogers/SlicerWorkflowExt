@@ -9772,6 +9772,16 @@ def check_ct_series_setup():
         print(f"Error checking CT_Series setup: {str(e)}")
         return False
 
+def close_slicer_after_export():
+    """
+    Close Slicer application after successful export and workflow completion.
+    Simple and reliable exit using os._exit(0).
+    """
+
+    import os
+    os._exit(0)
+        
+
 def export_project_and_continue():
     """
     Save the Slicer project using custom save functionality and continue to workflow2.py
@@ -9857,6 +9867,9 @@ def export_project_and_continue():
             except Exception as e:
                 pass
                 slicer.util.errorDisplay(f"Could not run workflow2 functionality: {str(e)}\n\nPlease check the console for details.")
+            
+            # Close Slicer after successful save and workflow completion
+            close_slicer_after_export()
             
         else:
             pass
