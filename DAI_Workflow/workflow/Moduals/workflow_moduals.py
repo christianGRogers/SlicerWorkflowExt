@@ -9711,10 +9711,6 @@ def manual_export_with_ct_series():
     try:
         print("Starting manual export with CT_Series handling...")
         result = custom_save_all_scene_data()
-        if result:
-            print("✓ Export completed successfully!")
-        else:
-            print("❌ Export was cancelled or failed")
         return result
     except Exception as e:
         print(f"Error in manual export: {str(e)}")
