@@ -1,24 +1,29 @@
+# Standard library imports
+import math
+import os
+import time
+
+# Third-party imports
+import numpy as np
+import vtk
+
+# Slicer imports
 import slicer
 import qt
-import vtk
-import math
-import numpy as np
-import time
-import os
 
 # Import DICOM utilities with error handling
 try:
     import DICOMLib
     from DICOMLib.DICOMUtils import TemporaryDICOMDatabase
     DICOM_UTILS_AVAILABLE = True
-except ImportError:
-    pass
+except ImportError as e:
+    print(f"Warning: DICOMLib not available: {e}")
     DICOM_UTILS_AVAILABLE = False
 
 try:
     import ctk
-except ImportError:
-    pass
+except ImportError as e:
+    print(f"Warning: ctk not available: {e}")
     ctk = None
 
 """
@@ -26,7 +31,7 @@ Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
 
 Christian Rogers - So Lab - Lawson - UWO (2025)
 
-I apoligise in advance for the code you are about to read but there was a bit of a time crunch
+I apologize in advance for the code you are about to read but there was a bit of a time crunch
 
 UPDATE: Programmatic Segment Editor Integration
 - Replaced GUI-based Segment Editor with programmatic API
@@ -42,75 +47,24 @@ def initialize_workflow_ui():
     try:
         # Use QTimer to ensure this runs after the UI is fully loaded
         qt.QTimer.singleShot(1000, force_collapse_left_panel_on_startup)
-    except:
-        pass
+    except Exception as e:
+        print(f"Warning: Could not initialize workflow UI: {e}")
 
 # Call initialization when module is imported
 try:
     initialize_workflow_ui()
-except:
-    pass
+except Exception as e:
+    print(f"Warning: Could not call initialize_workflow_ui: {e}")
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
     """Set up observers after all functions are defined"""
     try:
         setup_scene_save_observer()
-    except:
-        pass
-
-# Console testing functions
-def test_panel_collapse():
-    """Console function to test panel collapse"""
-    result = collapse_left_module_panel()
-    if result:
-        pass
-    else:
-        pass
-    return result
-
-def test_panel_expand():
-    """Console function to test panel expand"""
-    result = expand_left_module_panel()
-    if result:
-        pass
-    else:
-        pass
-    return result
-
-def debug_panel_widgets():
-    """Console function to debug what panel widgets exist"""
-    try:
-        main_window = slicer.util.mainWindow()
-        if not main_window:
-            return
-            
-        # Find all dock widgets
-        try:
-            dock_widgets = main_window.findChildren(qt.QDockWidget)
-            for i, widget in enumerate(dock_widgets):
-                name = widget.objectName()
-                visible = widget.isVisible()
-        except Exception as e:
-            pass
-        
-        # Find all widgets with 'panel' or 'module' in name
-        try:
-            all_widgets = main_window.findChildren(qt.QWidget)
-            panel_widgets = []
-            for w in all_widgets:
-                widget_name = w.objectName()
-                if widget_name and ('panel' in widget_name.lower() or 'module' in widget_name.lower()):
-                    panel_widgets.append(w)
-                    
-            for i, widget in enumerate(panel_widgets):
-                name = widget.objectName()
-                visible = widget.isVisible()
-        except Exception as e:
-            pass
-            
     except Exception as e:
-        pass
+        print(f"Warning: Could not set up scene save observer: {e}")
+
+
 
 
 
@@ -128,8 +82,7 @@ def find_working_volume():
             cropped_volume = slicer.modules.WorkflowCroppedVolume
             if cropped_volume and not cropped_volume.IsA('vtkObject'):  # Check if node still exists
                 return cropped_volume
-            else:
-                pass
+            # Reference exists but node is invalid, continue to other strategies
         
         volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
         
@@ -168,7 +121,7 @@ def find_working_volume():
                     if active_volume and active_volume.IsA("vtkMRMLScalarVolumeNode"):
                         return active_volume
         except Exception as e:
-            pass
+            print(f"Warning: Could not get active volume from selection node: {e}")
         
         # Strategy 4: Fallback to first volume, but warn user
         first_volume = volume_nodes[0]
@@ -196,7 +149,7 @@ def force_collapse_left_panel_on_startup():
                     widget.hide()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not hide dock widgets: {e}")
         
         # Method 2: Try specific known panel names
         try:
@@ -207,7 +160,7 @@ def force_collapse_left_panel_on_startup():
                     panel.hide()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not hide known panel widgets: {e}")
         
         # Method 3: Try to find all QWidget children and hide panel-related ones
         try:
@@ -218,12 +171,12 @@ def force_collapse_left_panel_on_startup():
                     widget.hide()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not hide panel-related widgets: {e}")
         
         return success
         
     except Exception as e:
-        pass
+        print(f"Error in force_collapse_left_panel_on_startup: {e}")
         return False
 
 def collapse_left_module_panel():
@@ -246,7 +199,7 @@ def collapse_left_module_panel():
                     widget.hide()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not hide dock widgets in collapse_left_module_panel: {e}")
         
         # Method 2: Try specific panel names
         try:
@@ -257,12 +210,12 @@ def collapse_left_module_panel():
                     panel.hide()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not hide specific panels in collapse_left_module_panel: {e}")
         
         return success
         
     except Exception as e:
-        pass
+        print(f"Error in collapse_left_module_panel: {e}")
         return False
 
 def expand_left_module_panel():
@@ -285,7 +238,7 @@ def expand_left_module_panel():
                     widget.show()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not show dock widgets in expand_left_module_panel: {e}")
         
         # Method 2: Try specific panel names
         try:
@@ -296,12 +249,12 @@ def expand_left_module_panel():
                     panel.show()
                     success = True
         except Exception as e:
-            pass
+            print(f"Warning: Could not show specific panels in expand_left_module_panel: {e}")
         
         return success
         
     except Exception as e:
-        pass
+        print(f"Error in expand_left_module_panel: {e}")
         return False
 
 def get_volume_slice_thickness(volume_node):
@@ -9727,7 +9680,6 @@ def check_ct_series_setup():
         # Find working volume
         working_vol = find_working_volume()
         if not working_vol:
-            print("❌ No working volume found in scene")
             return False
         
         print(f"Working volume: {working_vol.GetName()}")
