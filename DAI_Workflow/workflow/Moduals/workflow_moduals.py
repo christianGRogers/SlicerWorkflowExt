@@ -14988,16 +14988,13 @@ def execute_custom_crop():
             
             # Set dark background
             set_3d_view_background_black()
-            
-            
+
             # Continue with the normal workflow - threshold segmentation immediately
             qt.QTimer.singleShot(500, lambda: continue_workflow_after_custom_crop())
-            
-        else:
-            pass
+        
             
     except Exception as e:
-        pass
+        print(f"Error in execute_custom_crop: {e}")
 
 
 def continue_workflow_after_custom_crop():
@@ -15006,38 +15003,15 @@ def continue_workflow_after_custom_crop():
     This ensures the same behavior as the original workflow.
     """
     try:
-        
-        # Find the cropped volume
+
         volume_node = find_working_volume()
         if not volume_node:
             return
-            
-        # Show markup import dialog now that ROI is set
-        ask_user_for_markup_import()
-        
-        # Don't continue immediately - wait for user response from dialog
-        # The workflow will continue through either:
-        # - create_threshold_segment_with_markup_only() if markup imported
-        # - continue_workflow_without_markup() if no markup imported
-        return
-        
-        threshold_value_low, threshold_value_high = threshold_values
-        
-        # Create segmentation from threshold
-        segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
-        
-        if segmentation_node:
-            # Show segmentation in 3D and load into segment editor (same as original)
-            show_segmentation_in_3d(segmentation_node)
-            load_into_segment_editor(segmentation_node, volume_node)
-            
-            # Update the custom crop interface to show it's ready for scissors/continue
-            update_crop_interface_for_segmentation_phase()
 
+        ask_user_for_markup_import()
             
     except Exception as e:
-        pass
-
+        print(f"Error in continue_workflow_after_custom_crop: {e}")
 
 def update_crop_interface_for_segmentation_phase():
     """
@@ -15128,7 +15102,7 @@ def update_crop_interface_for_segmentation_phase():
         
         
     except Exception as e:
-        pass
+        print(f"Error in update_crop_interface_for_segmentation_phase: {e}")
 
 
 def ensure_crop_roi_exists():
@@ -15195,6 +15169,7 @@ def ensure_crop_roi_exists():
         return roiNode
         
     except Exception as e:
+        print(f"Error in ensure_crop_roi_exists: {e}")
         return None
 
 
@@ -15215,10 +15190,10 @@ def setup_crop_display_layout():
             if lm:
                 layout_node = lm.layoutLogic().GetLayoutNode()
                 layout_node.SetViewArrangement(slicer.vtkMRMLLayoutNode.SlicerLayoutConventionalView)
-        
         return success
         
     except Exception as e:
+        print(f"Error in setup_crop_display_layout: {e}")
         return False
 
 def toggle_scissors_tool(activated=None):
@@ -15276,7 +15251,7 @@ def toggle_scissors_tool(activated=None):
                     if hasattr(button, 'setChecked'):
                         button.setChecked(False)
     except Exception as e:
-        pass
+        print(f"Error in toggle_scissors_tool: {e}")
 
 def finish_custom_crop_workflow():
     """
@@ -15288,7 +15263,7 @@ def finish_custom_crop_workflow():
         on_continue_from_scissors()
         
     except Exception as e:
-        pass
+        print(f"Error in finish_custom_crop_workflow: {e}")
 
 
 def cleanup_custom_crop_interface():
@@ -15308,7 +15283,7 @@ def cleanup_custom_crop_interface():
             if hasattr(slicer.modules, attr_name):
                 delattr(slicer.modules, attr_name)
     except Exception as e:
-        pass
+        print(f"Error in cleanup_custom_crop_interface: {e}")
 
 def use_custom_crop_instead_of_module():
     """
@@ -15319,16 +15294,15 @@ def use_custom_crop_instead_of_module():
 
         try:
             collapse_crop_volume_gui()
-        except Exception:
-            pass
-
+        except Exception as e:
+            print(f"Warning: Could not collapse crop volume GUI: {e}")
         custom_interface = create_custom_crop_interface()
-        
         if custom_interface:
             return True
         return False
             
     except Exception as e:
+        print(f"Error in use_custom_crop_instead_of_module: {e}")
         return False
 
 
@@ -15346,10 +15320,11 @@ def force_custom_crop_interface():
         return success
         
     except Exception as e:
+        print(f"Error in force_custom_crop_interface: {e}")
         return False
 
 # Initialize scene save observer when module is fully loaded
 try:
     setup_module_observers()
-except:
-    pass
+except Exception as e:
+    print(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
