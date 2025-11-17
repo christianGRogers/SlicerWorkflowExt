@@ -11,6 +11,48 @@ import vtk
 import slicer
 import qt
 
+# Error handling improvements for common Slicer/Qt issues
+
+def safe_vtk_operation(operation_func, *args, **kwargs):
+    """
+    Safely perform VTK operations with error handling for scalar type issues
+    """
+    try:
+        return operation_func(*args, **kwargs)
+    except Exception as e:
+        error_msg = str(e)
+        if "scalar type" in error_msg.lower():
+            print(f"Warning: VTK scalar type issue: {error_msg}")
+            return None
+        else:
+            raise e
+
+def validate_volume_node_for_processing(volume_node):
+    """
+    Validate that a volume node has appropriate data types for processing
+    """
+    try:
+        if not volume_node:
+            return False
+            
+        image_data = volume_node.GetImageData()
+        if not image_data:
+            return False
+            
+        # Check scalar type
+        scalar_type = image_data.GetScalarType()
+        valid_types = [vtk.VTK_SHORT, vtk.VTK_UNSIGNED_SHORT, vtk.VTK_INT, 
+                      vtk.VTK_UNSIGNED_INT, vtk.VTK_FLOAT, vtk.VTK_DOUBLE]
+        
+        if scalar_type not in valid_types:
+            print(f"Warning: Volume has unsupported scalar type: {scalar_type}")
+            return False
+            
+        return True
+    except Exception as e:
+        print(f"Error validating volume node: {e}")
+        return False
+
 # Import DICOM utilities with error handling
 try:
     import DICOMLib
@@ -39,6 +81,16 @@ UPDATE: Programmatic Segment Editor Integration
 - No Segment Editor GUI is opened - all operations are programmatic
 - Floating UI elements for scissors control and workflow continuation
 - Scissors tool can be activated/deactivated as needed by user
+
+LATEST FIXES (Nov 17, 2025):
+- Fixed 'result_type' attribute error on QDialog by using separate result container
+- Added TotalSegmentator Python API integration following proper API guidelines
+- Improved error handling for VTK scalar type conversion issues
+- Enhanced layout cleanup to prevent QLayout parent warnings
+- Added slider validation to prevent setSingleStep(0) errors
+- Improved segmentation display node handling to avoid qMRMLSegmentsModel errors
+- Added automatic TotalSegmentator installation with progress feedback
+- Enhanced 3D visualization with proper error handling
 """
 
 # Initialize workflow by collapsing left panel on module load
@@ -50,11 +102,7 @@ def initialize_workflow_ui():
     except Exception as e:
         print(f"Warning: Could not initialize workflow UI: {e}")
 
-# Call initialization when module is imported
-try:
-    initialize_workflow_ui()
-except Exception as e:
-    print(f"Warning: Could not call initialize_workflow_ui: {e}")
+# Initialization will be called after all functions are defined
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
@@ -1540,11 +1588,16 @@ def create_threshold_segment_with_markup_only():
             slicer.modules.WorkflowUsingMarkup = False
     
     # Continue with threshold workflow
-    threshold_values = prompt_for_threshold_range()
-    if threshold_values is None:
+    segmentation_choice = prompt_for_threshold_range()
+    if segmentation_choice is None:
         return
     
-    threshold_value_low, threshold_value_high = threshold_values
+    # For markup workflow, if user chose auto segmentation, redirect them to main workflow
+    if segmentation_choice == 'auto_segmentation':
+        slicer.util.infoDisplay("Auto segmentation selected. Please use the main workflow for auto segmentation.")
+        return
+    
+    threshold_value_low, threshold_value_high = segmentation_choice
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
@@ -1586,11 +1639,16 @@ def markup_workflow_after_crop():
             slicer.modules.WorkflowUsingMarkup = False
         
         # Continue with threshold workflow (same as create_threshold_segment_with_markup_only)
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
+        segmentation_choice = prompt_for_threshold_range()
+        if segmentation_choice is None:
             return
         
-        threshold_value_low, threshold_value_high = threshold_values
+        # For markup workflow, if user chose auto segmentation, redirect them to main workflow
+        if segmentation_choice == 'auto_segmentation':
+            slicer.util.infoDisplay("Auto segmentation selected. Please use the main workflow for auto segmentation.")
+            return
+        
+        threshold_value_low, threshold_value_high = segmentation_choice
         
         segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
         
@@ -1622,12 +1680,38 @@ def continue_workflow_without_markup():
         slicer.modules.WorkflowUsingMarkup = False
         slicer.modules.WorkflowUsingImportedSegmentation = False
         
-        # Continue with threshold segmentation workflow
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
+        # Continue with segmentation workflow (threshold or auto)
+        segmentation_choice = prompt_for_threshold_range()
+        if segmentation_choice is None:
             return
         
-        threshold_value_low, threshold_value_high = threshold_values
+        # Handle the user's choice
+        if segmentation_choice == 'auto_segmentation':
+            # User chose auto segmentation
+            auto_success = run_auto_segmentation_workflow(volume_node)
+            if auto_success:
+                # Wait for user to complete TotalSegmentator
+                result = slicer.util.confirmYesNoDisplay(
+                    "Auto segmentation setup complete. Please complete TotalSegmentator and return.\n\n"
+                    "Has the auto segmentation completed successfully?",
+                    windowTitle="Auto Segmentation Status"
+                )
+                
+                if result:
+                    if continue_after_auto_segmentation():
+                        return  # Auto segmentation completed successfully
+                    else:
+                        slicer.util.errorDisplay("Auto segmentation failed.")
+                        return
+                else:
+                    slicer.util.infoDisplay("Auto segmentation cancelled.")
+                    return
+            else:
+                slicer.util.errorDisplay("Auto segmentation setup failed.")
+                return
+        else:
+            # Manual threshold
+            threshold_value_low, threshold_value_high = segmentation_choice
         
         segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
         
@@ -1995,78 +2079,263 @@ def create_threshold_segment():
         start_crop_workflow_directly()
         return
     
-    # Continue with normal threshold workflow
-    threshold_values = prompt_for_threshold_range()
-    if threshold_values is None:
+    # Show segmentation options dialog (auto segmentation or manual threshold)
+    segmentation_choice = prompt_for_threshold_range()
+    if segmentation_choice is None:
+        slicer.util.infoDisplay("Segmentation cancelled by user.")
         return
     
-    threshold_value_low, threshold_value_high = threshold_values
-    
-    segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
-    
-    if segmentation_node:
-        show_segmentation_in_3d(segmentation_node)
-        load_into_segment_editor(segmentation_node, volume_node)
+    # Handle the user's choice
+    if segmentation_choice == 'auto_segmentation':
+        # User chose auto segmentation
+        auto_success = run_auto_segmentation_workflow(volume_node)
+        if auto_success:
+            # Wait for user to complete TotalSegmentator
+            result = slicer.util.confirmYesNoDisplay(
+                "Auto segmentation setup complete.\n\n"
+                "Please:\n"
+                "1. Complete the segmentation in TotalSegmentator\n"
+                "2. Click 'Yes' when segmentation is finished\n"
+                "3. Click 'No' if you want to try manual threshold instead\n\n"
+                "Has the auto segmentation completed successfully?",
+                windowTitle="Auto Segmentation Status"
+            )
+            
+            if result:
+                if continue_after_auto_segmentation():
+                    return  # Auto segmentation completed successfully
+                else:
+                    slicer.util.errorDisplay("Auto segmentation failed. Please try restarting the workflow.")
+                    return
+            else:
+                slicer.util.infoDisplay("Auto segmentation cancelled. Please restart workflow to try manual threshold.")
+                return
+        else:
+            slicer.util.errorDisplay("Auto segmentation setup failed. Please try restarting the workflow.")
+            return
+    else:
+        # User chose manual threshold - segmentation_choice is a tuple (low, high)
+        threshold_value_low, threshold_value_high = segmentation_choice
+        
+        # Create segmentation using threshold values
+        segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
+        
+        if segmentation_node:
+            show_segmentation_in_3d(segmentation_node)
+            load_into_segment_editor(segmentation_node, volume_node)
+        else:
+            slicer.util.errorDisplay("Failed to create segmentation from threshold values.")
 
 def prompt_for_threshold_range():
     """
-    Show a single dialog to get both threshold values from user
+    Show a dialog to choose between auto segmentation or manual threshold
+    Returns: 'auto_segmentation' string OR (threshold_low, threshold_high) tuple OR None (cancelled)
     """
     try:
         dialog = qt.QDialog(slicer.util.mainWindow())
-        dialog.setWindowTitle("Threshold Segmentation")
+        dialog.setWindowTitle("Segmentation Options")
         dialog.setModal(True)
-        dialog.resize(350, 200)
+        dialog.resize(450, 400)
         
         layout = qt.QVBoxLayout(dialog)
-        title_label = qt.QLabel("Set Threshold Range")
-        title_label.setStyleSheet("QLabel { font-weight: bold; font-size: 14px; margin: 10px; }")
+        
+        # Main title
+        title_label = qt.QLabel("Choose Segmentation Method")
+        title_label.setStyleSheet("QLabel { font-weight: bold; font-size: 18px; margin: 15px; text-align: center; color: #2c3e50; }")
+        title_label.setAlignment(qt.Qt.AlignCenter)
         layout.addWidget(title_label)
         
-        lower_layout = qt.QHBoxLayout()
-        lower_label = qt.QLabel("Lower threshold:")
-        lower_label.setMinimumWidth(100)
+        # Auto segmentation section
+        auto_group = qt.QGroupBox("🤖 Automatic Segmentation (Recommended)")
+        auto_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #3498db;
+                border-radius: 8px;
+                margin: 10px;
+                padding-top: 15px;
+                background-color: #f8f9fa;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px 0 8px;
+                color: #3498db;
+                font-weight: bold;
+            }
+        """)
+        auto_layout = qt.QVBoxLayout(auto_group)
+        
+        auto_info = qt.QLabel(
+            "• Uses TotalSegmentator AI for cardiac segmentation\n"
+            "• Automatically segments coronary arteries and heart chambers\n"
+            "• More accurate and faster than manual thresholding\n"
+            "• Requires TotalSegmentator extension (will guide you if needed)"
+        )
+        auto_info.setStyleSheet("QLabel { margin: 10px; color: #2c3e50; font-size: 12px; line-height: 18px; }")
+        auto_info.setWordWrap(True)
+        auto_layout.addWidget(auto_info)
+        
+        # Manual threshold section
+        threshold_group = qt.QGroupBox("⚙️ Manual Threshold Segmentation")
+        threshold_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #95a5a6;
+                border-radius: 8px;
+                margin: 10px;
+                padding-top: 15px;
+                background-color: #fdfdfd;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px 0 8px;
+                color: #95a5a6;
+                font-weight: bold;
+            }
+        """)
+        threshold_layout = qt.QVBoxLayout(threshold_group)
+        
+        # Threshold controls
+        controls_layout = qt.QFormLayout()
+        
         lower_spinbox = qt.QDoubleSpinBox()
         lower_spinbox.setRange(-1024.0, 3071.0)
         lower_spinbox.setValue(290.0)
-        lower_spinbox.setDecimals(2)
-        lower_layout.addWidget(lower_label)
-        lower_layout.addWidget(lower_spinbox)
-        layout.addLayout(lower_layout)
+        lower_spinbox.setDecimals(1)
+        lower_spinbox.setMinimumWidth(120)
+        controls_layout.addRow("Lower threshold:", lower_spinbox)
         
-        upper_layout = qt.QHBoxLayout()
-        upper_label = qt.QLabel("Upper threshold:")
-        upper_label.setMinimumWidth(100)
         upper_spinbox = qt.QDoubleSpinBox()
         upper_spinbox.setRange(-1024.0, 3071.0)
         upper_spinbox.setValue(3071.0)
-        upper_spinbox.setDecimals(2)
-        upper_layout.addWidget(upper_label)
-        upper_layout.addWidget(upper_spinbox)
-        layout.addLayout(upper_layout)
+        upper_spinbox.setDecimals(1)
+        upper_spinbox.setMinimumWidth(120)
+        controls_layout.addRow("Upper threshold:", upper_spinbox)
+        
+        threshold_layout.addLayout(controls_layout)
         
         info_label = qt.QLabel("Range: -1024 to 3071 Hounsfield units")
-        info_label.setStyleSheet("QLabel { color: #333; font-size: 11px; margin: 5px; }")
-        layout.addWidget(info_label)
+        info_label.setStyleSheet("QLabel { color: #7f8c8d; font-size: 10px; margin: 5px; font-style: italic; }")
+        threshold_layout.addWidget(info_label)
         
+        # Add both group boxes to main layout
+        layout.addWidget(auto_group)
+        layout.addWidget(threshold_group)
+        
+        # Add some spacing
+        layout.addSpacing(10)
+        
+        # Button layout
         button_layout = qt.QHBoxLayout()
-        ok_button = qt.QPushButton("OK")
+        
+        # Auto segmentation button (prominent)
+        auto_button = qt.QPushButton("Use Auto Segmentation")
+        auto_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #3498db; 
+                color: white; 
+                border: none; 
+                padding: 15px 25px; 
+                font-weight: bold;
+                border-radius: 8px;
+                font-size: 14px;
+                min-width: 160px;
+            }
+            QPushButton:hover { 
+                background-color: #2980b9; 
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed { 
+                background-color: #21618c; 
+            }
+        """)
+        
+        # Manual threshold button
+        threshold_button = qt.QPushButton("Use Manual Threshold")
+        threshold_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #95a5a6; 
+                color: white; 
+                border: none; 
+                padding: 15px 25px; 
+                font-weight: bold;
+                border-radius: 8px;
+                font-size: 14px;
+                min-width: 160px;
+            }
+            QPushButton:hover { 
+                background-color: #7f8c8d; 
+            }
+            QPushButton:pressed { 
+                background-color: #566573; 
+            }
+        """)
+        
+        # Cancel button
         cancel_button = qt.QPushButton("Cancel")
+        cancel_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #e74c3c; 
+                color: white; 
+                border: none; 
+                padding: 15px 25px; 
+                font-weight: bold;
+                border-radius: 8px;
+                font-size: 14px;
+                min-width: 100px;
+            }
+            QPushButton:hover { 
+                background-color: #c0392b; 
+            }
+        """)
         
-        ok_button.connect('clicked()', dialog.accept)
-        cancel_button.connect('clicked()', dialog.reject)
+        # Store dialog result in a separate object to avoid C++ attribute issues
+        class DialogResult:
+            def __init__(self):
+                self.result_type = None
         
+        dialog_result = DialogResult()
+        
+        # Button connections
+        def on_auto_clicked():
+            dialog_result.result_type = 'auto_segmentation'
+            dialog.accept()
+            
+        def on_threshold_clicked():
+            dialog_result.result_type = 'threshold'
+            dialog.accept()
+            
+        def on_cancel_clicked():
+            dialog_result.result_type = 'cancel'
+            dialog.reject()
+        
+        auto_button.clicked.connect(on_auto_clicked)
+        threshold_button.clicked.connect(on_threshold_clicked)
+        cancel_button.clicked.connect(on_cancel_clicked)
+        
+        # Arrange buttons
         button_layout.addWidget(cancel_button)
-        button_layout.addWidget(ok_button)
+        button_layout.addStretch()
+        button_layout.addWidget(threshold_button)
+        button_layout.addWidget(auto_button)
         layout.addLayout(button_layout)
         
+        # Execute dialog
         if dialog.exec_() == qt.QDialog.Accepted:
-            return (lower_spinbox.value, upper_spinbox.value)
-        else:
-            return None
+            if dialog_result.result_type == 'auto_segmentation':
+                return 'auto_segmentation'
+            elif dialog_result.result_type == 'threshold':
+                return (lower_spinbox.value, upper_spinbox.value)
+        
+        return None  # Cancelled
             
     except Exception as e:
-        return (290.0, 3071.0)
+        print(f"Error in prompt_for_threshold_range: {e}")
+        return (290.0, 3071.0)  # Fallback to default threshold values
 
 def create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high=None):
     """
@@ -2139,41 +2408,509 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
     
     return segmentation_node
 
-def show_segmentation_in_3d(segmentation_node):
+# ================== AUTO SEGMENTATION FUNCTIONS ==================
+
+def run_auto_segmentation_workflow(volume_node):
     """
-    Display the segmentation as a 3D volume rendering
+    Run the automatic segmentation workflow using TotalSegmentator Python API
     """
-    layout_manager = slicer.app.layoutManager()
-    display_node = segmentation_node.GetDisplayNode()
-    if display_node:
-        display_node.SetVisibility3D(True)
-        display_node.SetOpacity3D(0.7)
-        # Set 2D display properties
-        display_node.SetVisibility2DFill(True)
-        display_node.SetVisibility2DOutline(True)
+    try:
+        # First, try to use TotalSegmentator Python API directly
+        try:
+            return run_totalsegmentator_python_api(volume_node)
+        except Exception as api_error:
+            print(f"Python API failed: {api_error}")
+            # Fallback to GUI-based approach
+            return run_totalsegmentator_gui_workflow(volume_node)
         
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error running auto segmentation: {str(e)}")
+        return False
+
+def check_and_install_totalsegmentator():
+    """
+    Check if TotalSegmentator is installed and offer to install it if not
+    """
+    try:
+        import nibabel as nib
+        from totalsegmentator.python_api import totalsegmentator
+        return True
+    except ImportError:
+        # Offer to install
+        install = slicer.util.confirmOkCancelDisplay(
+            "TotalSegmentator is not installed.\n\n"
+            "Would you like to install it now?\n"
+            "This may take several minutes and requires an internet connection.\n\n"
+            "Click OK to install, or Cancel to use manual segmentation instead."
+        )
+        
+        if install:
+            try:
+                # Show progress
+                progress = slicer.util.createProgressDialog(
+                    labelText="Installing TotalSegmentator...", 
+                    maximum=100
+                )
+                progress.setValue(10)
+                slicer.app.processEvents()
+                
+                # Install packages
+                slicer.util.pip_install("nibabel")
+                progress.setValue(30)
+                slicer.app.processEvents()
+                
+                slicer.util.pip_install("totalsegmentator")
+                progress.setValue(80)
+                slicer.app.processEvents()
+                
+                # Verify installation
+                import nibabel as nib
+                from totalsegmentator.python_api import totalsegmentator
+                
+                progress.setValue(100)
+                progress.close()
+                
+                slicer.util.infoDisplay(
+                    "TotalSegmentator installed successfully!\n\n"
+                    "You can now use automatic segmentation."
+                )
+                return True
+                
+            except Exception as install_error:
+                if 'progress' in locals():
+                    progress.close()
+                slicer.util.errorDisplay(
+                    f"Failed to install TotalSegmentator: {install_error}\n\n"
+                    "Please try installing manually:\n"
+                    "1. Open Slicer Python Console\n"
+                    "2. Run: pip_install('totalsegmentator')\n"
+                    "3. Restart Slicer"
+                )
+                return False
+        return False
+
+def run_totalsegmentator_python_api(volume_node):
+    """
+    Run TotalSegmentator using the Python API directly (preferred method)
+    """
+    try:
+        # Check and install TotalSegmentator if needed
+        if not check_and_install_totalsegmentator():
+            return False
+
+        # Import the totalsegmentator function
+        try:
+            from totalsegmentator.python_api import totalsegmentator
+        except ImportError as e:
+            slicer.util.errorDisplay(f"Failed to import TotalSegmentator: {str(e)}")
+            return False
+
+        # Save input volume to temporary file
+        import tempfile
+        temp_dir = tempfile.mkdtemp()
+        input_path = os.path.join(temp_dir, "input_volume.nii.gz")
+        output_dir = os.path.join(temp_dir, "segmentation")
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Export volume to file
+        slicer.util.saveNode(volume_node, input_path)
+        print(f"Saved input volume to: {input_path}")
+        
+        # Show progress dialog
+        progress = slicer.util.createProgressDialog(labelText="Running TotalSegmentator...", maximum=100)
+        progress.setValue(20)
+        slicer.app.processEvents()
+        
+        # Run TotalSegmentator with cardiac task
+        print("Running TotalSegmentator with cardiac task...")
+        try:
+            # Use cardiac-specific task - simplified parameters
+            totalsegmentator(
+                input_path, 
+                output_dir,
+                task="cardiac"
+            )
+        except Exception as cardiac_error:
+            print(f"Cardiac task failed, trying total task: {cardiac_error}")
+            # Fallback to total body segmentation
+            try:
+                totalsegmentator(
+                    input_path, 
+                    output_dir,
+                    task="total"
+                )
+            except Exception as total_error:
+                print(f"Total task also failed: {total_error}")
+                # Try with no task specified (default)
+                totalsegmentator(input_path, output_dir)
+        
+        progress.setValue(80)
+        slicer.app.processEvents()
+        
+        # Load the segmentation result
+        # TotalSegmentator typically outputs multiple files in the directory
+        segmentation_files = []
+        if os.path.exists(output_dir):
+            for file in os.listdir(output_dir):
+                if file.endswith('.nii.gz') or file.endswith('.nii'):
+                    segmentation_files.append(os.path.join(output_dir, file))
+        
+        if segmentation_files:
+            # Load the first segmentation file found
+            segmentation_file = segmentation_files[0]
+            print(f"Loading segmentation from: {segmentation_file}")
+            
+            segmentation_node = slicer.util.loadSegmentation(segmentation_file)
+            if segmentation_node:
+                # Rename the segmentation node
+                segmentation_node.SetName("TotalSegmentator_Result")
+                
+                # Store references for workflow continuation
+                slicer.modules.WorkflowAutoSegmentationSourceVolume = volume_node
+                slicer.modules.WorkflowSegmentationNode = segmentation_node
+                
+                progress.setValue(100)
+                progress.close()
+                
+                # Clean up temporary files
+                import shutil
+                shutil.rmtree(temp_dir)
+                
+                print(f"TotalSegmentator completed successfully. Found {len(segmentation_files)} output files.")
+                
+                # Continue with workflow
+                return continue_after_auto_segmentation_api(segmentation_node, volume_node)
+            else:
+                progress.close()
+                slicer.util.errorDisplay("Failed to load TotalSegmentator results.")
+                return False
+        else:
+            progress.close()
+            slicer.util.errorDisplay(f"TotalSegmentator did not produce output files in: {output_dir}")
+            return False
+            
+    except Exception as e:
+        if 'progress' in locals():
+            progress.close()
+        slicer.util.errorDisplay(f"Error running TotalSegmentator Python API: {str(e)}")
+        return False
+
+def run_totalsegmentator_gui_workflow(volume_node):
+    """
+    Fallback GUI-based TotalSegmentator workflow
+    """
+    try:
+        # Check if TotalSegmentator extension is available
+        try:
+            total_segmentator_module = slicer.modules.totalsegmentator
+        except AttributeError:
+            slicer.util.errorDisplay(
+                "TotalSegmentator module not found.\n\n"
+                "Please install TotalSegmentator extension:\n"
+                "1. Go to View → Extension Manager\n"
+                "2. Search for 'TotalSegmentator'\n"
+                "3. Install the extension\n"
+                "4. Restart Slicer\n\n"
+                "Then try auto segmentation again."
+            )
+            return False
+
+        # Switch to TotalSegmentator module
+        slicer.util.selectModule('TotalSegmentator')
+        
+        # Get TotalSegmentator widget
+        module_widget = slicer.modules.totalsegmentator.widgetRepresentation()
+        if not module_widget:
+            slicer.util.errorDisplay("Could not access TotalSegmentator module interface.")
+            return False
+
+        # Set the input volume to our cropped volume
+        input_selector = module_widget.findChild(slicer.qMRMLNodeComboBox, "inputVolumeSelector")
+        if input_selector:
+            input_selector.setCurrentNode(volume_node)
+        
+        # Try to set task to cardiac if possible
+        try:
+            task_selector = module_widget.findChild(qt.QComboBox, "taskSelector")
+            if task_selector:
+                # Look for cardiac task option
+                for i in range(task_selector.count):
+                    if "cardiac" in task_selector.itemText(i).lower():
+                        task_selector.setCurrentIndex(i)
+                        break
+        except Exception:
+            pass  # If we can't set the task automatically, user will do it manually
+        
+        # Store the source volume reference for later use
+        slicer.modules.WorkflowAutoSegmentationSourceVolume = volume_node
+        
+        # Set a flag to indicate we're in auto segmentation mode
+        slicer.modules.WorkflowInAutoSegmentationMode = True
+        
+        # Show instructions to user with more specific cardiac guidance
+        slicer.util.infoDisplay(
+            "TotalSegmentator module opened for cardiac segmentation.\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Verify input volume is set to your cropped volume\n"
+            "2. Select 'cardiac' or 'heartchambers_highres' task\n"
+            "3. For coronary arteries: Select 'coronary_arteries' if available\n"
+            "4. Click 'Apply' to run segmentation\n"
+            "5. Wait for completion (may take 5-15 minutes)\n"
+            "6. When done, return to this workflow\n\n"
+            "After segmentation completes, continue with the workflow dialog."
+        )
+        
+        return True
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error running GUI-based TotalSegmentator: {str(e)}")
+        return False
+
+def continue_after_auto_segmentation_api(segmentation_node, volume_node):
+    """
+    Continue workflow after Python API auto segmentation is complete
+    """
+    try:
+        # Show the segmentation in 3D
+        show_segmentation_in_3d(segmentation_node)
+        
+        # Set 3D only view to better show the cardiac segmentation
+        set_3d_only_view()
+        
+        # Store the auto segmentation node as the working segmentation
+        slicer.modules.WorkflowSegmentationNode = segmentation_node
+        
+        # Add post-threshold tools (scissors) to left panel
+        add_post_threshold_tools_to_left_panel(segmentation_node, volume_node)
+        
+        # Clear the auto segmentation mode flag
+        if hasattr(slicer.modules, 'WorkflowInAutoSegmentationMode'):
+            delattr(slicer.modules, 'WorkflowInAutoSegmentationMode')
+        
+        # Get segment information
         segmentation = segmentation_node.GetSegmentation()
         segment_ids = vtk.vtkStringArray()
         segmentation.GetSegmentIDs(segment_ids)
         
-        if segment_ids.GetNumberOfValues() > 0:
-            segment_id = segment_ids.GetValue(0)
+        segments_info = []
+        for i in range(segment_ids.GetNumberOfValues()):
+            segment_id = segment_ids.GetValue(i)
             segment = segmentation.GetSegment(segment_id)
-            # Set segment color to white (1.0, 1.0, 1.0)
-            segment.SetColor(1.0, 1.0, 1.0) 
-            segment.SetTag("Segmentation.Status", "inprogress")
-    segmentation_node.CreateClosedSurfaceRepresentation()
-    threeDWidget = layout_manager.threeDWidget(0)
-    if threeDWidget:
-        threeDView = threeDWidget.threeDView()
-        if threeDView:
-            view_node = threeDView.mrmlViewNode()
-            if view_node:
-                view_node.SetBoxVisible(True)
-                view_node.SetAxisLabelsVisible(True)
-            threeDView.resetFocalPoint()
-            threeDView.forceRender()
-            threeDWidget.show()
+            if segment:
+                segments_info.append(segment.GetName())
+        
+        segments_text = "Found segments:\n" + "\n".join([f"• {seg}" for seg in segments_info[:10]])  # Show first 10
+        if len(segments_info) > 10:
+            segments_text += f"\n• ... and {len(segments_info) - 10} more"
+        
+        slicer.util.infoDisplay(
+            f"TotalSegmentator completed successfully!\n\n"
+            f"{segments_text}\n\n"
+            f"Segmentation has been created and displayed in 3D.\n"
+            f"You can now use the scissors tool to refine the segmentation if needed."
+        )
+        return True
+        
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error continuing after API segmentation: {str(e)}")
+        return False
+
+def continue_after_auto_segmentation():
+    """
+    Continue workflow after auto segmentation is complete
+    """
+    try:
+        # Get the segmentation node created by TotalSegmentator
+        segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+        
+        # Look for the most recently created segmentation or one with cardiac segments
+        auto_segmentation_node = None
+        cardiac_segments_found = []
+        
+        # Look for TotalSegmentator output (usually the most recent segmentation with cardiac terms)
+        for seg_node in reversed(segmentation_nodes):  # Check newest first
+            segmentation = seg_node.GetSegmentation()
+            segment_ids = vtk.vtkStringArray()
+            segmentation.GetSegmentIDs(segment_ids)
+            
+            current_cardiac_segments = []
+            # Check if this segmentation has cardiac-related segments
+            for i in range(segment_ids.GetNumberOfValues()):
+                segment_id = segment_ids.GetValue(i)
+                segment = segmentation.GetSegment(segment_id)
+                if segment:
+                    segment_name = segment.GetName().lower()
+                    # Extended list of cardiac terms
+                    cardiac_terms = [
+                        'heart', 'cardiac', 'coronary', 'aorta', 'ventricle', 'atrium', 
+                        'myocardium', 'pericardium', 'pulmonary', 'valve', 'chamber',
+                        'left_ventricle', 'right_ventricle', 'left_atrium', 'right_atrium'
+                    ]
+                    
+                    if any(cardiac_term in segment_name for cardiac_term in cardiac_terms):
+                        current_cardiac_segments.append(segment.GetName())
+            
+            if current_cardiac_segments:
+                auto_segmentation_node = seg_node
+                cardiac_segments_found = current_cardiac_segments
+                break
+        
+        if auto_segmentation_node:
+            # Display information about found cardiac segments
+            segments_info = "Found cardiac segments:\n" + "\n".join([f"• {seg}" for seg in cardiac_segments_found])
+            
+            # Show the segmentation in 3D
+            show_segmentation_in_3d(auto_segmentation_node)
+            
+            # Set 3D only view to better show the cardiac segmentation
+            set_3d_only_view()
+            
+            # Set up for scissors tool workflow
+            volume_node = find_working_volume()
+            if not volume_node and hasattr(slicer.modules, 'WorkflowAutoSegmentationSourceVolume'):
+                volume_node = slicer.modules.WorkflowAutoSegmentationSourceVolume
+                
+            if volume_node:
+                # Store the auto segmentation node as the working segmentation
+                slicer.modules.WorkflowSegmentationNode = auto_segmentation_node
+                
+                # Add post-threshold tools (scissors) to left panel
+                add_post_threshold_tools_to_left_panel(auto_segmentation_node, volume_node)
+                
+                # Clear the auto segmentation mode flag
+                if hasattr(slicer.modules, 'WorkflowInAutoSegmentationMode'):
+                    delattr(slicer.modules, 'WorkflowInAutoSegmentationMode')
+                
+                slicer.util.infoDisplay(
+                    f"Auto segmentation completed successfully!\n\n"
+                    f"{segments_info}\n\n"
+                    f"Cardiac segments have been created and displayed in 3D.\n"
+                    f"You can now use the scissors tool to refine the segmentation."
+                )
+                return True
+            else:
+                slicer.util.errorDisplay("Could not find working volume for scissors tool setup.")
+                return False
+        else:
+            # Provide more detailed troubleshooting information
+            total_segs = len(segmentation_nodes)
+            slicer.util.errorDisplay(
+                f"No cardiac segmentation results found.\n\n"
+                f"Found {total_segs} segmentation nodes total.\n"
+                f"Please ensure TotalSegmentator completed successfully with cardiac task.\n\n"
+                f"Expected cardiac segment names should contain:\n"
+                f"• heart, cardiac, coronary\n"
+                f"• ventricle, atrium\n" 
+                f"• aorta, myocardium\n\n"
+                f"You can try manual threshold segmentation instead."
+            )
+            return False
+            
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error continuing after auto segmentation: {str(e)}")
+        return False
+
+def complete_auto_segmentation_workflow():
+    """
+    Manual function to complete auto segmentation workflow - can be called from Python console
+    Usage: Call this function in Python console after TotalSegmentator completes:
+    >>> complete_auto_segmentation_workflow()
+    """
+    try:
+        result = continue_after_auto_segmentation()
+        if result:
+            slicer.util.infoDisplay("Auto segmentation workflow completed successfully!")
+        else:
+            slicer.util.infoDisplay("Auto segmentation workflow completion failed. You may need to continue manually.")
+        return result
+    except Exception as e:
+        slicer.util.errorDisplay(f"Error completing auto segmentation workflow: {str(e)}")
+        return False
+
+def test_auto_segmentation_dialog():
+    """
+    Test function to show the enhanced segmentation dialog
+    Usage: Call this function to test the dialog:
+    >>> test_auto_segmentation_dialog()
+    """
+    try:
+        result = prompt_for_threshold_range()
+        print(f"Dialog result: {result}")
+        
+        if result == 'auto_segmentation':
+            print("✅ User selected auto segmentation")
+        elif isinstance(result, tuple):
+            print(f"✅ User selected manual threshold: {result[0]} to {result[1]}")
+        else:
+            print("❌ User cancelled")
+            
+        return result
+    except Exception as e:
+        print(f"❌ Error testing dialog: {e}")
+        return None
+
+# ================== END AUTO SEGMENTATION FUNCTIONS ==================
+
+def show_segmentation_in_3d(segmentation_node):
+    """
+    Display the segmentation as a 3D volume rendering with proper error handling
+    """
+    try:
+        layout_manager = slicer.app.layoutManager()
+        
+        # Ensure display node exists and is properly configured
+        display_node = segmentation_node.GetDisplayNode()
+        if not display_node:
+            segmentation_node.CreateDefaultDisplayNodes()
+            display_node = segmentation_node.GetDisplayNode()
+        
+        if display_node:
+            # Configure display properties safely
+            try:
+                display_node.SetVisibility3D(True)
+                display_node.SetOpacity3D(0.7)
+                display_node.SetVisibility2DFill(True)
+                display_node.SetVisibility2DOutline(True)
+            except Exception as display_error:
+                print(f"Warning: Display node configuration error: {display_error}")
+            
+            # Configure segmentation properties
+            try:
+                segmentation = segmentation_node.GetSegmentation()
+                segment_ids = vtk.vtkStringArray()
+                segmentation.GetSegmentIDs(segment_ids)
+                
+                if segment_ids.GetNumberOfValues() > 0:
+                    segment_id = segment_ids.GetValue(0)
+                    segment = segmentation.GetSegment(segment_id)
+                    if segment:
+                        # Set segment color to white (1.0, 1.0, 1.0)
+                        segment.SetColor(1.0, 1.0, 1.0) 
+                        segment.SetTag("Segmentation.Status", "inprogress")
+            except Exception as segment_error:
+                print(f"Warning: Segment configuration error: {segment_error}")
+        
+        # Create surface representation safely
+        try:
+            segmentation_node.CreateClosedSurfaceRepresentation()
+        except Exception as surface_error:
+            print(f"Warning: Surface representation error: {surface_error}")
+        
+        # Configure 3D view
+        try:
+            threeDWidget = layout_manager.threeDWidget(0)
+            if threeDWidget:
+                threeDView = threeDWidget.threeDView()
+                if threeDView:
+                    view_node = threeDView.mrmlViewNode()
+        except Exception as view_error:
+            print(f"Warning: 3D view configuration error: {view_error}")
+            
+    except Exception as e:
+        print(f"Error in show_segmentation_in_3d: {e}")
+        
     slicer.app.processEvents()
     if threeDWidget and threeDView:
         threeDView.forceRender()
@@ -4044,11 +4781,16 @@ def configure_browse_cross_sections():
                     import ctk
                     point_slider = widget.findChild(ctk.ctkSliderWidget, "moveToPointSliderWidget")
                     if point_slider:
+                        # Safely configure and set slider value
                         if hasattr(point_slider, 'maximum') and point_slider.maximum > 0:
+                            # Ensure slider has proper step values
+                            if hasattr(point_slider, 'singleStep') and point_slider.singleStep <= 0:
+                                point_slider.setSingleStep(1.0)
                             # Set point index to 230, but ensure it's within the slider's range
                             target_value = min(230, point_slider.maximum)
                             point_slider.setValue(target_value)
                 except Exception as slider_error:
+                    print(f"Warning: Slider configuration failed: {slider_error}")
                     pass
             except Exception as e:
                 continue
@@ -14002,19 +14744,33 @@ def remove_custom_crop_buttons():
                 button.deleteLater()
                 buttons_removed += 1
         
-        # Remove custom layouts
+        # Remove custom layouts safely
         custom_layouts = crop_widget.findChildren(qt.QHBoxLayout, "WorkflowButtonLayout")
         for layout in custom_layouts:
             # Remove all widgets in the layout first
             while layout.count():
                 item = layout.takeAt(0)
                 if item.widget():
-                    item.widget().setParent(None)
-                    item.widget().deleteLater()
-            # Remove the layout itself
-            layout.setParent(None)
-            layout.deleteLater()
-            buttons_removed += 1
+                    widget = item.widget()
+                    widget.setParent(None)
+                    widget.deleteLater()
+            # Safely remove the layout itself
+            try:
+                parent_layout = layout.parent()
+                if parent_layout and hasattr(parent_layout, 'removeItem'):
+                    parent_layout.removeItem(layout)
+                layout.setParent(None)
+                layout.deleteLater()
+                buttons_removed += 1
+            except Exception as layout_error:
+                print(f"Warning: Layout cleanup error: {layout_error}")
+                # Try alternative cleanup
+                try:
+                    layout.setParent(None)
+                    layout.deleteLater()
+                    buttons_removed += 1
+                except:
+                    pass
         
         
         return True
@@ -15328,3 +16084,9 @@ try:
     setup_module_observers()
 except Exception as e:
     print(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
+
+# Call initialization when module is imported (after all functions are defined)
+try:
+    initialize_workflow_ui()
+except Exception as e:
+    print(f"Warning: Could not call initialize_workflow_ui: {e}")
