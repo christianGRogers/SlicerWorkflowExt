@@ -9860,14 +9860,17 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
                 )
                 return
         
-        # Create the editing dialog as non-modal so users can interact with 3D view
-        edit_dialog = qt.QDialog(slicer.util.mainWindow())
-        edit_dialog.setWindowTitle("Verify and Edit Centerline")
-        edit_dialog.setModal(False)  # Allow interaction with 3D view
-        edit_dialog.resize(600, 450)
-        edit_dialog.setWindowFlags(qt.Qt.Dialog | qt.Qt.WindowTitleHint | qt.Qt.WindowCloseButtonHint | qt.Qt.WindowStaysOnTopHint)
+        # Create the editing panel as a docked side panel
+        main_window = slicer.util.mainWindow()
+        edit_dialog = qt.QDockWidget("Verify and Edit Centerline", main_window)
+        edit_dialog.setFeatures(qt.QDockWidget.DockWidgetMovable | qt.QDockWidget.DockWidgetFloatable | qt.QDockWidget.DockWidgetClosable)
+        edit_dialog.setAllowedAreas(qt.Qt.LeftDockWidgetArea | qt.Qt.RightDockWidgetArea)
         
-        layout = qt.QVBoxLayout(edit_dialog)
+        # Create the main widget for the dock
+        dock_widget = qt.QWidget()
+        edit_dialog.setWidget(dock_widget)
+        
+        layout = qt.QVBoxLayout(dock_widget)
         
         # Title and instructions
         title_label = qt.QLabel("Centerline Verification and Editing")
@@ -9876,16 +9879,14 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         layout.addWidget(title_label)
         
         instructions_text = (
-            "The centerline curve is now visible and editable in the 3D view.\n"
-            "This dialog will stay open while you edit - you can interact with the views!\n\n"
-            "Instructions for editing:\n"
-            "• Click and drag any control point in the 3D view to adjust its position\n"
-            "• Use the slice views to verify the centerline follows the vessel path\n"
-            "• Right-click on the curve and select 'Add Point' to add new points\n"
-            "• Right-click on a point and select 'Delete Point' to remove points\n"
-            "• Use the Markups module controls in the left panel for advanced editing\n\n"
-            "⚠️ Important: Use the 'Close Editor' button below (not the X) for proper cleanup.\n"
-            "After editing, choose your next action below:"
+            "Red slice view maximized for optimal centerline editing.\n\n"
+            "Editing controls:\n"
+            "• Drag control points to move them\n"
+            "• Right-click curve → 'Add Point'\n"
+            "• Right-click point → 'Delete Point'\n"
+            "• Scroll to navigate through slices\n"
+            "• Use left panel Markups controls\n\n"
+            "Choose your next action:"
         )
         
         instructions_label = qt.QLabel(instructions_text)
@@ -9911,7 +9912,7 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
             info_text += f"Curve length: {curve_length:.2f} mm"
             
             info_label = qt.QLabel(info_text)
-            info_label.setStyleSheet("QLabel { color: #666; margin: 10px; font-size: 11px; font-family: monospace; background-color: #f8f9fa; padding: 8px; border-radius: 4px; }")
+            info_label.setStyleSheet("QLabel { color: #666; margin: 5px; font-size: 10px; font-family: monospace; background-color: #f8f9fa; padding: 6px; border-radius: 4px; }")
             layout.addWidget(info_label)
         
         layout.addSpacing(15)
@@ -9921,18 +9922,18 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         button_layout2 = qt.QHBoxLayout()
         
         # Extract new centerline button
-        extract_new_button = qt.QPushButton("Extract New Centerline")
+        extract_new_button = qt.QPushButton("Extract New\nCenterline")
         extract_new_button.setStyleSheet("""
             QPushButton { 
                 background-color: #ffc107; 
                 color: #212529; 
                 border: none; 
-                padding: 12px 20px; 
+                padding: 10px 8px; 
                 font-weight: bold;
                 border-radius: 6px;
-                margin: 5px;
-                font-size: 13px;
-                min-width: 200px;
+                margin: 3px;
+                font-size: 12px;
+                min-height: 50px;
             }
             QPushButton:hover { 
                 background-color: #e0a800; 
@@ -9945,18 +9946,18 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         button_layout1.addWidget(extract_new_button)
         
         # Continue to CPR button
-        continue_cpr_button = qt.QPushButton("Continue to Analysis")
+        continue_cpr_button = qt.QPushButton("Continue to\nAnalysis")
         continue_cpr_button.setStyleSheet("""
             QPushButton { 
                 background-color: #28a745; 
                 color: white; 
                 border: none; 
-                padding: 12px 20px; 
+                padding: 10px 8px; 
                 font-weight: bold;
                 border-radius: 6px;
-                margin: 5px;
-                font-size: 13px;
-                min-width: 200px;
+                margin: 3px;
+                font-size: 12px;
+                min-height: 50px;
             }
             QPushButton:hover { 
                 background-color: #218838; 
@@ -9969,18 +9970,18 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         button_layout1.addWidget(continue_cpr_button)
         
         # Reset centerline button
-        reset_button = qt.QPushButton("Reset to Original Centerline")
+        reset_button = qt.QPushButton("Reset to Original")
         reset_button.setStyleSheet("""
             QPushButton { 
                 background-color: #6c757d; 
                 color: white; 
                 border: none; 
-                padding: 12px 20px; 
+                padding: 8px 8px; 
                 font-weight: bold;
                 border-radius: 6px;
-                margin: 5px;
-                font-size: 13px;
-                min-width: 415px;
+                margin: 3px;
+                font-size: 11px;
+                min-height: 35px;
             }
             QPushButton:hover { 
                 background-color: #5a6268; 
@@ -10003,12 +10004,12 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
                 background-color: #dc3545; 
                 color: white; 
                 border: none; 
-                padding: 8px 16px; 
+                padding: 8px 8px; 
                 font-weight: bold;
                 border-radius: 6px;
-                margin: 5px;
-                font-size: 12px;
-                min-width: 120px;
+                margin: 3px;
+                font-size: 11px;
+                min-height: 35px;
             }
             QPushButton:hover { 
                 background-color: #c82333; 
@@ -10018,9 +10019,7 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
             }
         """)
         close_button.connect('clicked()', lambda: on_close_centerline_editor(edit_dialog, centerline_curve))
-        close_layout.addStretch()
         close_layout.addWidget(close_button)
-        close_layout.addStretch()
         
         layout.addLayout(close_layout)
         layout.addStretch()
@@ -10031,8 +10030,13 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         # Enable editing on the centerline curve
         enable_centerline_editing(centerline_curve)
         
-        # Show the dialog as non-blocking so user can interact with 3D view
+        # Dock the panel to the right side and show it
+        main_window.addDockWidget(qt.Qt.RightDockWidgetArea, edit_dialog)
         edit_dialog.show()
+        
+        # Make the dock widget compact
+        edit_dialog.setMinimumWidth(300)
+        edit_dialog.setMaximumWidth(400)
         
         # Store reference to dialog for cleanup
         slicer.modules.CenterlineEditDialog = edit_dialog
@@ -10056,13 +10060,38 @@ def enable_centerline_editing(centerline_curve):
         if not centerline_curve:
             return
         
-        # Make the curve visible and editable
+        # Store current layout for restoration later
+        layout_manager = slicer.app.layoutManager()
+        if layout_manager:
+            current_layout = layout_manager.layout
+            slicer.modules.CenterlineEditingOriginalLayout = current_layout
+        
+        # Switch to cross-sectional view layout for better editing
+        switch_to_crosssectional_fullscreen()
+        
+        # Make the curve visible and editable with all control points visible
         display_node = centerline_curve.GetDisplayNode()
         if display_node:
             display_node.SetVisibility(True)
             display_node.SetPropertiesLabelVisibility(True)
             display_node.SetPointLabelsVisibility(True)
-            display_node.SetTextScale(2.0)
+            display_node.SetTextScale(3.0)  # Larger text for better visibility
+            display_node.SetGlyphScale(3.0)  # Larger control points for easier interaction
+            display_node.SetSelectedColor(1.0, 0.0, 0.0)  # Red for selected points
+            display_node.SetActiveColor(0.0, 1.0, 0.0)  # Green for active points
+            display_node.SetColor(0.0, 0.8, 1.0)  # Cyan for normal points
+            display_node.SetOpacity(1.0)  # Full opacity
+            display_node.SetLineThickness(0.3)  # Thicker line for better visibility
+            
+            # Set glyph type to sphere for better visibility
+            try:
+                display_node.SetGlyphType(slicer.vtkMRMLMarkupsDisplayNode.Sphere3D)
+            except:
+                pass  # Continue if glyph type setting fails
+            
+        # Ensure all control points are visible
+        for i in range(centerline_curve.GetNumberOfControlPoints()):
+            centerline_curve.SetNthControlPointVisibility(i, True)
             
         # Enable interaction and place mode
         centerline_curve.SetLocked(False)
@@ -10101,33 +10130,33 @@ def enable_centerline_editing(centerline_curve):
         # Show information message
         slicer.util.infoDisplay(
             "Centerline editing mode enabled!\n\n"
-            "The editing dialog is now open and you can freely interact with the 3D view.\n\n"
+            "✓ View switched to maximized Red slice for optimal editing\n"
+            "✓ All control points are now large, visible, and editable\n"
+            "✓ The editing panel is docked on the right side\n\n"
             "Edit the centerline by:\n"
             "• Clicking and dragging control points to move them\n"
             "• Right-clicking on the curve to add new points\n"
             "• Right-clicking on points to delete them\n"
-            "• Using the Markups module controls in the left panel\n\n"
-            "When finished editing, use the buttons in the editing dialog to continue."
+            "• Using the Markups module controls in the left panel\n"
+            "• Scrolling through slices to verify positioning\n\n"
+            "When finished editing, use the buttons in the side panel.\n"
+            "The view will automatically switch to 3D fullscreen when you continue."
         )
         
     except Exception as e:
         raise  # Re-raise the exception so it gets caught by the calling function
 
 
-def on_extract_new_centerline_from_edit(dialog, original_curve):
+def on_extract_new_centerline_from_edit(dock_widget, original_curve):
     """
     Called when user wants to extract a new centerline after editing
     """
     try:
-        # Close and cleanup the dialog
-        dialog.close()
-        dialog.setParent(None)
+        # Close and cleanup the dock widget
         cleanup_centerline_edit_dialog()
         
-        # Clear active markups selection to exit editing mode
-        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
-        if selection_node:
-            selection_node.SetReferenceActivePlaceNodeID(None)
+        # Exit editing mode and return to appropriate view
+        disable_centerline_editing(original_curve)
         
         # Clear existing centerlines
         clear_existing_centerlines()
@@ -10150,28 +10179,16 @@ def on_extract_new_centerline_from_edit(dialog, original_curve):
         pass
 
 
-def on_continue_to_cpr_from_edit(dialog, centerline_model, centerline_curve):
+def on_continue_to_cpr_from_edit(dock_widget, centerline_model, centerline_curve):
     """
     Called when user wants to continue to CPR analysis with the edited centerline
     """
     try:
-        # Close and cleanup the dialog
-        dialog.close()
-        dialog.setParent(None)
+        # Close and cleanup the dock widget
         cleanup_centerline_edit_dialog()
         
-        # Disable editing mode
-        if centerline_curve:
-            centerline_curve.SetLocked(True)
-            display_node = centerline_curve.GetDisplayNode()
-            if display_node:
-                display_node.SetPropertiesLabelVisibility(False)
-                display_node.SetPointLabelsVisibility(False)
-        
-        # Clear active markups selection to exit editing mode
-        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
-        if selection_node:
-            selection_node.SetReferenceActivePlaceNodeID(None)
+        # Disable editing mode and switch to 3D fullscreen
+        disable_centerline_editing(centerline_curve)
         
         # Continue to CPR with the edited centerline
         switch_to_cpr_module(centerline_model, centerline_curve)
@@ -10247,10 +10264,16 @@ def backup_centerline_points(centerline_curve):
 
 def cleanup_centerline_edit_dialog():
     """
-    Clean up the centerline edit dialog reference
+    Clean up the centerline edit dialog reference and remove dock widget
     """
     try:
         if hasattr(slicer.modules, 'CenterlineEditDialog'):
+            dock_widget = slicer.modules.CenterlineEditDialog
+            if dock_widget:
+                main_window = slicer.util.mainWindow()
+                if main_window:
+                    main_window.removeDockWidget(dock_widget)
+                dock_widget.setParent(None)
             delattr(slicer.modules, 'CenterlineEditDialog')
     except Exception as e:
         pass
@@ -10308,20 +10331,18 @@ def on_reset_centerline_to_original_in_edit(centerline_curve, info_label):
         pass
 
 
-def on_close_centerline_editor(dialog, centerline_curve):
+def on_close_centerline_editor(dock_widget, centerline_curve):
     """
     Called when user clicks the close editor button
     """
     try:
-        # Exit editing mode
+        # Exit editing mode and return to 3D fullscreen
         disable_centerline_editing(centerline_curve)
         
-        # Close and cleanup dialog
-        dialog.close()
-        dialog.setParent(None)
+        # Close and cleanup dock widget
         cleanup_centerline_edit_dialog()
         
-        slicer.util.infoDisplay("Centerline editor closed. You can now continue with your workflow.")
+        slicer.util.infoDisplay("Centerline editor closed. Returned to 3D view. You can now continue with your workflow.")
         
     except Exception as e:
         pass
@@ -10332,7 +10353,7 @@ def on_close_centerline_editor(dialog, centerline_curve):
 
 def disable_centerline_editing(centerline_curve):
     """
-    Disable editing mode for the centerline curve
+    Disable editing mode for the centerline curve and switch to 3D fullscreen view
     """
     try:
         if centerline_curve:
@@ -10342,12 +10363,113 @@ def disable_centerline_editing(centerline_curve):
             if display_node:
                 display_node.SetPropertiesLabelVisibility(False)
                 display_node.SetPointLabelsVisibility(False)
+                
+            # Hide all control points
+            for i in range(centerline_curve.GetNumberOfControlPoints()):
+                centerline_curve.SetNthControlPointVisibility(i, False)
         
         # Clear active markups selection to exit editing mode
         selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selection_node:
             selection_node.SetReferenceActivePlaceNodeID(None)
+            
+        # Switch to 3D fullscreen view
+        switch_to_3d_fullscreen()
         
+    except Exception as e:
+        pass
+
+
+def switch_to_crosssectional_fullscreen():
+    """
+    Switch to Red slice view maximized for centerline editing
+    """
+    try:
+        layout_manager = slicer.app.layoutManager()
+        if not layout_manager:
+            return
+            
+        # Set to Red slice view only for maximum editing space
+        layout_manager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutOneUpRedSliceView)
+        
+        # Allow the layout to update
+        slicer.app.processEvents()
+        
+        # Fit Red slice view to window and center on centerline
+        try:
+            slice_widget = layout_manager.sliceWidget('Red')
+            if slice_widget:
+                slice_view = slice_widget.sliceView()
+                if slice_view:
+                    slice_view.fitToWindow()
+                    
+                # Reset the field of view for better centerline visibility
+                slice_logic = slice_widget.sliceLogic()
+                if slice_logic:
+                    slice_logic.FitSliceToAll()
+                    
+                # Set slice view to axial orientation for best centerline editing
+                slice_node = slice_logic.GetSliceNode()
+                if slice_node:
+                    slice_node.SetOrientationToAxial()
+                    
+        except Exception as slice_error:
+            pass  # Continue even if slice setup fails
+                
+    except Exception as e:
+        pass  # Continue even if layout switch fails
+
+
+def switch_to_3d_fullscreen():
+    """
+    Switch to 3D fullscreen view for analysis
+    """
+    try:
+        layout_manager = slicer.app.layoutManager()
+        if not layout_manager:
+            return
+            
+        # Switch to 3D only layout
+        layout_manager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutOneUp3DView)
+        
+        # Allow the layout to update
+        slicer.app.processEvents()
+        
+        # Fit 3D view to window and reset camera
+        try:
+            threeDWidget = layout_manager.threeDWidget(0)
+            if threeDWidget:
+                threeDView = threeDWidget.threeDView()
+                if threeDView:
+                    threeDView.resetFocalPoint()
+                    # Also reset camera to show all content
+                    threeDView.resetCamera()
+        except Exception as view_error:
+            pass  # Continue even if 3D view setup fails
+                    
+        # Restore original layout if it was stored (after showing 3D briefly)
+        if hasattr(slicer.modules, 'CenterlineEditingOriginalLayout'):
+            # Use a timer to restore original layout after user sees 3D view
+            qt.QTimer.singleShot(3000, restore_original_layout)
+                    
+    except Exception as e:
+        pass  # Continue even if layout switch fails
+
+
+def restore_original_layout():
+    """
+    Restore the original layout that was active before centerline editing
+    """
+    try:
+        if hasattr(slicer.modules, 'CenterlineEditingOriginalLayout'):
+            layout_manager = slicer.app.layoutManager()
+            if layout_manager:
+                original_layout = slicer.modules.CenterlineEditingOriginalLayout
+                layout_manager.setLayout(original_layout)
+            
+            # Clean up the stored layout
+            delattr(slicer.modules, 'CenterlineEditingOriginalLayout')
+            
     except Exception as e:
         pass
 
