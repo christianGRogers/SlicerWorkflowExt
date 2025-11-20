@@ -6336,6 +6336,10 @@ def check_centerline_completion():
         if new_centerline_model or new_centerline_curve:
             pass
             
+            # Backup the original centerline for potential reset functionality
+            if new_centerline_curve and new_centerline_curve.GetNumberOfControlPoints() > 0:
+                backup_centerline_points(new_centerline_curve)
+            
             # Check if a dialog has already been shown for this extraction cycle
             if hasattr(slicer.modules, 'CenterlineDialogShown') and slicer.modules.CenterlineDialogShown:
                 pass
@@ -9568,7 +9572,7 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         dialog = qt.QDialog(slicer.util.mainWindow())
         dialog.setWindowTitle("Centerline Extraction Complete")
         dialog.setModal(True)
-        dialog.resize(500, 350)
+        dialog.resize(500, 400)
         dialog.setWindowFlags(qt.Qt.Dialog | qt.Qt.WindowTitleHint | qt.Qt.WindowCloseButtonHint)
         layout = qt.QVBoxLayout(dialog)
         title_label = qt.QLabel("Centerline Extraction Completed Successfully!")
@@ -9607,10 +9611,11 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         instruction_label.setStyleSheet("QLabel { color: #555; margin: 10px; font-size: 12px; font-weight: bold; }")
         layout.addWidget(instruction_label)
         
-        # Create three rows of buttons
+        # Create four rows of buttons
         first_row_layout = qt.QHBoxLayout()
         second_row_layout = qt.QHBoxLayout()
         third_row_layout = qt.QHBoxLayout()
+        fourth_row_layout = qt.QHBoxLayout()
         
         retry_button = qt.QPushButton("Retry Centerline Extraction")
         retry_button.setStyleSheet("""
@@ -9658,6 +9663,30 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         add_centerline_button.connect('clicked()', lambda: on_add_more_centerlines(dialog))
         first_row_layout.addWidget(add_centerline_button)
         
+        # Add the new Verify and Edit Centerline button
+        verify_edit_button = qt.QPushButton("Verify & Edit Centerline")
+        verify_edit_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #fd7e14; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 380px;
+            }
+            QPushButton:hover { 
+                background-color: #e8590c; 
+            }
+            QPushButton:pressed { 
+                background-color: #dc5200; 
+            }
+        """)
+        verify_edit_button.connect('clicked()', lambda: on_verify_edit_centerline(dialog, centerline_model, centerline_curve))
+        second_row_layout.addWidget(verify_edit_button)
+        
         restart_crop_button = qt.QPushButton("Restart Cropping")
         restart_crop_button.setStyleSheet("""
             QPushButton { 
@@ -9679,7 +9708,7 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
             }
         """)
         restart_crop_button.connect('clicked()', lambda: on_restart_cropping(dialog, centerline_model, centerline_curve))
-        second_row_layout.addWidget(restart_crop_button)
+        third_row_layout.addWidget(restart_crop_button)
         
         continue_button = qt.QPushButton("Continue to Analysis")
         continue_button.setStyleSheet("""
@@ -9702,11 +9731,12 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
             }
         """)
         continue_button.connect('clicked()', lambda: on_continue_to_cpr(dialog, centerline_model, centerline_curve))
-        third_row_layout.addWidget(continue_button)
+        fourth_row_layout.addWidget(continue_button)
         
         layout.addLayout(first_row_layout)
         layout.addLayout(second_row_layout)
         layout.addLayout(third_row_layout)
+        layout.addLayout(fourth_row_layout)
         layout.addStretch()
         dialog.exec_()
         
@@ -9781,6 +9811,580 @@ def on_add_more_centerlines(dialog):
     except Exception as e:
         pass
         
+
+def on_verify_edit_centerline(dialog, centerline_model=None, centerline_curve=None):
+    """
+    Called when user chooses to verify and edit the centerline points.
+    Opens an editing interface to allow manual adjustment of centerline points.
+    """
+    try:
+        # Stop ALL centerline monitoring systems to prevent double dialogs
+        stop_all_centerline_monitoring()
+        
+        # Reset the dialog flag to allow future dialogs
+        if hasattr(slicer.modules, 'CenterlineDialogShown'):
+            slicer.modules.CenterlineDialogShown = False
+        
+        dialog.close()
+        dialog.setParent(None)
+        
+        # Show the centerline editing dialog
+        show_centerline_editing_dialog(centerline_model, centerline_curve)
+        
+    except Exception as e:
+        pass
+        # Fallback - go to CPR module if editing fails
+        switch_to_cpr_module(centerline_model, centerline_curve)
+
+
+def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None):
+    """
+    Show a dialog for editing centerline points with options to extract new centerline or continue to CPR
+    """
+    try:
+        # Find the most recent centerline curve if none provided
+        if not centerline_curve:
+            centerline_curve = find_recent_centerline_curve()
+            
+        # Also check for all available centerline curves as fallback
+        if not centerline_curve:
+            all_curves = find_all_centerline_curves()
+            # Try to find any centerline curve in the scene as fallback
+            if all_curves:
+                centerline_curve = all_curves[-1]  # Use the last one
+            else:
+                qt.QMessageBox.warning(
+                    slicer.util.mainWindow(),
+                    "No Centerline Found",
+                    "No centerline curve found to edit. Please extract a centerline first."
+                )
+                return
+        
+        # Create the editing dialog as non-modal so users can interact with 3D view
+        edit_dialog = qt.QDialog(slicer.util.mainWindow())
+        edit_dialog.setWindowTitle("Verify and Edit Centerline")
+        edit_dialog.setModal(False)  # Allow interaction with 3D view
+        edit_dialog.resize(600, 450)
+        edit_dialog.setWindowFlags(qt.Qt.Dialog | qt.Qt.WindowTitleHint | qt.Qt.WindowCloseButtonHint | qt.Qt.WindowStaysOnTopHint)
+        
+        layout = qt.QVBoxLayout(edit_dialog)
+        
+        # Title and instructions
+        title_label = qt.QLabel("Centerline Verification and Editing")
+        title_label.setStyleSheet("QLabel { font-weight: bold; color: #dc3545; margin: 10px; font-size: 16px; }")
+        title_label.setAlignment(qt.Qt.AlignCenter)
+        layout.addWidget(title_label)
+        
+        instructions_text = (
+            "The centerline curve is now visible and editable in the 3D view.\n"
+            "This dialog will stay open while you edit - you can interact with the views!\n\n"
+            "Instructions for editing:\n"
+            "• Click and drag any control point in the 3D view to adjust its position\n"
+            "• Use the slice views to verify the centerline follows the vessel path\n"
+            "• Right-click on the curve and select 'Add Point' to add new points\n"
+            "• Right-click on a point and select 'Delete Point' to remove points\n"
+            "• Use the Markups module controls in the left panel for advanced editing\n\n"
+            "⚠️ Important: Use the 'Close Editor' button below (not the X) for proper cleanup.\n"
+            "After editing, choose your next action below:"
+        )
+        
+        instructions_label = qt.QLabel(instructions_text)
+        instructions_label.setStyleSheet("QLabel { color: #333; margin: 10px; font-size: 12px; line-height: 18px; }")
+        instructions_label.setWordWrap(True)
+        layout.addWidget(instructions_label)
+        
+        # Info about the current centerline
+        if centerline_curve:
+            num_points = centerline_curve.GetNumberOfControlPoints()
+            
+            # Safely get curve length
+            try:
+                if hasattr(centerline_curve, 'GetCurveLengthWorld'):
+                    curve_length = centerline_curve.GetCurveLengthWorld()
+                else:
+                    curve_length = centerline_curve.GetCurveLength()
+            except:
+                curve_length = 0.0
+            
+            info_text = f"Current centerline: {centerline_curve.GetName()}\n"
+            info_text += f"Control points: {num_points}\n"
+            info_text += f"Curve length: {curve_length:.2f} mm"
+            
+            info_label = qt.QLabel(info_text)
+            info_label.setStyleSheet("QLabel { color: #666; margin: 10px; font-size: 11px; font-family: monospace; background-color: #f8f9fa; padding: 8px; border-radius: 4px; }")
+            layout.addWidget(info_label)
+        
+        layout.addSpacing(15)
+        
+        # Action buttons
+        button_layout1 = qt.QHBoxLayout()
+        button_layout2 = qt.QHBoxLayout()
+        
+        # Extract new centerline button
+        extract_new_button = qt.QPushButton("Extract New Centerline")
+        extract_new_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #ffc107; 
+                color: #212529; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 200px;
+            }
+            QPushButton:hover { 
+                background-color: #e0a800; 
+            }
+            QPushButton:pressed { 
+                background-color: #d39e00; 
+            }
+        """)
+        extract_new_button.connect('clicked()', lambda: on_extract_new_centerline_from_edit(edit_dialog, centerline_curve))
+        button_layout1.addWidget(extract_new_button)
+        
+        # Continue to CPR button
+        continue_cpr_button = qt.QPushButton("Continue to Analysis")
+        continue_cpr_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #28a745; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 200px;
+            }
+            QPushButton:hover { 
+                background-color: #218838; 
+            }
+            QPushButton:pressed { 
+                background-color: #1e7e34; 
+            }
+        """)
+        continue_cpr_button.connect('clicked()', lambda: on_continue_to_cpr_from_edit(edit_dialog, centerline_model, centerline_curve))
+        button_layout1.addWidget(continue_cpr_button)
+        
+        # Reset centerline button
+        reset_button = qt.QPushButton("Reset to Original Centerline")
+        reset_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #6c757d; 
+                color: white; 
+                border: none; 
+                padding: 12px 20px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-width: 415px;
+            }
+            QPushButton:hover { 
+                background-color: #5a6268; 
+            }
+            QPushButton:pressed { 
+                background-color: #545b62; 
+            }
+        """)
+        reset_button.connect('clicked()', lambda: on_reset_centerline_to_original_in_edit(centerline_curve, info_label))
+        button_layout2.addWidget(reset_button)
+        
+        layout.addLayout(button_layout1)
+        layout.addLayout(button_layout2)
+        
+        # Add close button
+        close_layout = qt.QHBoxLayout()
+        close_button = qt.QPushButton("Close Editor")
+        close_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #dc3545; 
+                color: white; 
+                border: none; 
+                padding: 8px 16px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 12px;
+                min-width: 120px;
+            }
+            QPushButton:hover { 
+                background-color: #c82333; 
+            }
+            QPushButton:pressed { 
+                background-color: #bd2130; 
+            }
+        """)
+        close_button.connect('clicked()', lambda: on_close_centerline_editor(edit_dialog, centerline_curve))
+        close_layout.addStretch()
+        close_layout.addWidget(close_button)
+        close_layout.addStretch()
+        
+        layout.addLayout(close_layout)
+        layout.addStretch()
+        
+        # Note: Skip custom closeEvent handling to avoid Qt slot override issues
+        # The close button and user actions will handle cleanup properly
+        
+        # Enable editing on the centerline curve
+        enable_centerline_editing(centerline_curve)
+        
+        # Show the dialog as non-blocking so user can interact with 3D view
+        edit_dialog.show()
+        
+        # Store reference to dialog for cleanup
+        slicer.modules.CenterlineEditDialog = edit_dialog
+        
+    except Exception as e:
+        # Show error message and continue
+        error_msg = f"Failed to open centerline editing interface.\n\nError: {str(e)}\n\nContinuing to analysis..."
+        qt.QMessageBox.critical(
+            slicer.util.mainWindow(),
+            "Editing Error",
+            error_msg
+        )
+        switch_to_cpr_module(centerline_model, centerline_curve)
+
+
+def enable_centerline_editing(centerline_curve):
+    """
+    Enable interactive editing of the centerline curve points
+    """
+    try:
+        if not centerline_curve:
+            return
+        
+        # Make the curve visible and editable
+        display_node = centerline_curve.GetDisplayNode()
+        if display_node:
+            display_node.SetVisibility(True)
+            display_node.SetPropertiesLabelVisibility(True)
+            display_node.SetPointLabelsVisibility(True)
+            display_node.SetTextScale(2.0)
+            
+        # Enable interaction and place mode
+        centerline_curve.SetLocked(False)
+        
+        # Set the curve as the active markups node for editing
+        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selection_node:
+            selection_node.SetReferenceActivePlaceNodeID(centerline_curve.GetID())
+        
+        # Switch to markups module to show editing controls
+        try:
+            slicer.util.selectModule("Markups")
+        except Exception as module_error:
+            pass  # Continue even if module switch fails
+        
+        # Center the view on the centerline
+        if centerline_curve.GetNumberOfControlPoints() > 0:
+            try:
+                # Get the center point of the curve
+                bounds = [0, 0, 0, 0, 0, 0]
+                centerline_curve.GetBounds(bounds)
+                center = [(bounds[0] + bounds[1]) / 2, 
+                         (bounds[2] + bounds[3]) / 2, 
+                         (bounds[4] + bounds[5]) / 2]
+                
+                # Center all views on the centerline
+                for viewNode in slicer.util.getNodesByClass('vtkMRMLAbstractViewNode'):
+                    if viewNode.IsA('vtkMRMLSliceNode'):
+                        try:
+                            viewNode.JumpSliceByOffsetting(center[0], center[1], center[2])
+                        except:
+                            pass  # Continue if view centering fails
+            except:
+                pass  # Continue if bounds calculation fails
+        
+        # Show information message
+        slicer.util.infoDisplay(
+            "Centerline editing mode enabled!\n\n"
+            "The editing dialog is now open and you can freely interact with the 3D view.\n\n"
+            "Edit the centerline by:\n"
+            "• Clicking and dragging control points to move them\n"
+            "• Right-clicking on the curve to add new points\n"
+            "• Right-clicking on points to delete them\n"
+            "• Using the Markups module controls in the left panel\n\n"
+            "When finished editing, use the buttons in the editing dialog to continue."
+        )
+        
+    except Exception as e:
+        raise  # Re-raise the exception so it gets caught by the calling function
+
+
+def on_extract_new_centerline_from_edit(dialog, original_curve):
+    """
+    Called when user wants to extract a new centerline after editing
+    """
+    try:
+        # Close and cleanup the dialog
+        dialog.close()
+        dialog.setParent(None)
+        cleanup_centerline_edit_dialog()
+        
+        # Clear active markups selection to exit editing mode
+        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selection_node:
+            selection_node.SetReferenceActivePlaceNodeID(None)
+        
+        # Clear existing centerlines
+        clear_existing_centerlines()
+        
+        # Return to centerline extraction module
+        open_centerline_module()
+        
+        # Return to centerline extraction
+        slicer.util.infoDisplay(
+            "Returning to centerline extraction.\n\n"
+            "You can now adjust your endpoints or segmentation if needed,\n"
+            "then click 'Apply' again to extract a new centerline.\n\n"
+            "The edited centerline has been removed."
+        )
+        
+        # Set up monitoring for new centerline completion
+        setup_centerline_completion_monitor()
+        
+    except Exception as e:
+        pass
+
+
+def on_continue_to_cpr_from_edit(dialog, centerline_model, centerline_curve):
+    """
+    Called when user wants to continue to CPR analysis with the edited centerline
+    """
+    try:
+        # Close and cleanup the dialog
+        dialog.close()
+        dialog.setParent(None)
+        cleanup_centerline_edit_dialog()
+        
+        # Disable editing mode
+        if centerline_curve:
+            centerline_curve.SetLocked(True)
+            display_node = centerline_curve.GetDisplayNode()
+            if display_node:
+                display_node.SetPropertiesLabelVisibility(False)
+                display_node.SetPointLabelsVisibility(False)
+        
+        # Clear active markups selection to exit editing mode
+        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selection_node:
+            selection_node.SetReferenceActivePlaceNodeID(None)
+        
+        # Continue to CPR with the edited centerline
+        switch_to_cpr_module(centerline_model, centerline_curve)
+        
+        # Show circles on the centerline for analysis
+        draw_circles_on_centerline()
+        
+    except Exception as e:
+        pass
+
+
+def on_reset_centerline_to_original(centerline_curve):
+    """
+    Called when user wants to reset the centerline to its original state
+    """
+    try:
+        if not centerline_curve:
+            return
+        
+        # Check if we have a backup of the original centerline
+        curve_id = centerline_curve.GetID()
+        backup_key = f"OriginalCenterlineBackup_{curve_id}"
+        
+        if hasattr(slicer.modules, backup_key):
+            original_points = getattr(slicer.modules, backup_key)
+            
+            # Clear current points
+            centerline_curve.RemoveAllControlPoints()
+            
+            # Restore original points
+            for point in original_points:
+                centerline_curve.AddControlPoint(point)
+                
+            slicer.util.infoDisplay("Centerline reset to original state.")
+        else:
+            qt.QMessageBox.information(
+                slicer.util.mainWindow(),
+                "Reset Not Available",
+                "Original centerline backup not found. Cannot reset to original state."
+            )
+    
+    except Exception as e:
+        pass
+
+
+def backup_centerline_points(centerline_curve):
+    """
+    Create a backup of the centerline control points for potential reset functionality
+    """
+    try:
+        if not centerline_curve or centerline_curve.GetNumberOfControlPoints() == 0:
+            return
+        
+        # Create a list to store the original points
+        original_points = []
+        
+        # Store each control point
+        for i in range(centerline_curve.GetNumberOfControlPoints()):
+            point = [0, 0, 0]
+            centerline_curve.GetNthControlPointPosition(i, point)
+            original_points.append(point[:])  # Make a copy of the point
+        
+        # Store the backup using the curve ID to make it specific to this centerline
+        curve_id = centerline_curve.GetID()
+        backup_key = f"OriginalCenterlineBackup_{curve_id}"
+        setattr(slicer.modules, backup_key, original_points)
+        
+        pass  # Backup created successfully
+        
+    except Exception as e:
+        pass
+
+
+def cleanup_centerline_edit_dialog():
+    """
+    Clean up the centerline edit dialog reference
+    """
+    try:
+        if hasattr(slicer.modules, 'CenterlineEditDialog'):
+            delattr(slicer.modules, 'CenterlineEditDialog')
+    except Exception as e:
+        pass
+
+
+def on_reset_centerline_to_original_in_edit(centerline_curve, info_label):
+    """
+    Called when user wants to reset the centerline to its original state during editing.
+    Updates the dialog with new information after reset.
+    """
+    try:
+        if not centerline_curve:
+            return
+        
+        # Check if we have a backup of the original centerline
+        curve_id = centerline_curve.GetID()
+        backup_key = f"OriginalCenterlineBackup_{curve_id}"
+        
+        if hasattr(slicer.modules, backup_key):
+            original_points = getattr(slicer.modules, backup_key)
+            
+            # Clear current points
+            centerline_curve.RemoveAllControlPoints()
+            
+            # Restore original points
+            for point in original_points:
+                centerline_curve.AddControlPoint(point)
+            
+            # Update the info label with new stats
+            num_points = centerline_curve.GetNumberOfControlPoints()
+            
+            # Safely get curve length
+            try:
+                if hasattr(centerline_curve, 'GetCurveLengthWorld'):
+                    curve_length = centerline_curve.GetCurveLengthWorld()
+                else:
+                    curve_length = centerline_curve.GetCurveLength()
+            except:
+                curve_length = 0.0
+            
+            info_text = f"Current centerline: {centerline_curve.GetName()}\n"
+            info_text += f"Control points: {num_points}\n"
+            info_text += f"Curve length: {curve_length:.2f} mm"
+            info_label.setText(info_text)
+                
+            slicer.util.infoDisplay("Centerline reset to original state.", windowTitle="Reset Complete")
+        else:
+            qt.QMessageBox.information(
+                slicer.util.mainWindow(),
+                "Reset Not Available",
+                "Original centerline backup not found. Cannot reset to original state."
+            )
+    
+    except Exception as e:
+        pass
+
+
+def on_close_centerline_editor(dialog, centerline_curve):
+    """
+    Called when user clicks the close editor button
+    """
+    try:
+        # Exit editing mode
+        disable_centerline_editing(centerline_curve)
+        
+        # Close and cleanup dialog
+        dialog.close()
+        dialog.setParent(None)
+        cleanup_centerline_edit_dialog()
+        
+        slicer.util.infoDisplay("Centerline editor closed. You can now continue with your workflow.")
+        
+    except Exception as e:
+        pass
+
+
+
+
+
+def disable_centerline_editing(centerline_curve):
+    """
+    Disable editing mode for the centerline curve
+    """
+    try:
+        if centerline_curve:
+            # Lock the curve and hide editing controls
+            centerline_curve.SetLocked(True)
+            display_node = centerline_curve.GetDisplayNode()
+            if display_node:
+                display_node.SetPropertiesLabelVisibility(False)
+                display_node.SetPointLabelsVisibility(False)
+        
+        # Clear active markups selection to exit editing mode
+        selection_node = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selection_node:
+            selection_node.SetReferenceActivePlaceNodeID(None)
+        
+    except Exception as e:
+        pass
+
+
+def debug_centerline_editing():
+    """
+    Debug function to test centerline editing - run this in Slicer console
+    """
+    try:
+        print("DEBUG: Starting centerline editing debug...")
+        
+        # Check for centerlines
+        all_curves = find_all_centerline_curves()
+        print(f"DEBUG: Found {len(all_curves)} centerline curves")
+        
+        for i, curve in enumerate(all_curves):
+            if curve:
+                print(f"  Curve {i}: {curve.GetName()}, Points: {curve.GetNumberOfControlPoints()}")
+            else:
+                print(f"  Curve {i}: None")
+        
+        if not all_curves:
+            print("DEBUG: No centerline curves found in scene")
+            return False
+        
+        # Try to open editing dialog with the first curve
+        curve = all_curves[0]
+        print(f"DEBUG: Attempting to open editing dialog with curve: {curve.GetName()}")
+        
+        show_centerline_editing_dialog(None, curve)
+        return True
+        
+    except Exception as e:
+        print(f"DEBUG: Error in debug_centerline_editing: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def on_restart_cropping(dialog, centerline_model=None, centerline_curve=None):
