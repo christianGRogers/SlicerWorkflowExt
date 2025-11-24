@@ -9900,6 +9900,8 @@ def show_centerline_completion_dialog(centerline_model=None, centerline_curve=No
         
         if total_centerlines > 1:
             summary_text = f"\nTotal centerlines in scene: {total_centerlines}"
+            if centerline_curve:
+                summary_text += f"\nAnalysis will use: {centerline_curve.GetName()}"
             summary_label = qt.QLabel(summary_text)
             summary_label.setStyleSheet("QLabel { color: #666; margin: 5px 10px; font-size: 11px; font-weight: bold; }")
             layout.addWidget(summary_label)
@@ -10184,7 +10186,10 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
             "• Right-click point → 'Delete Point'\n"
             "• Scroll to navigate through slices\n"
             "• Use left panel Markups controls\n\n"
-            "Choose your next action:"
+            "Choose your next action:\n"
+            "• Add Additional: Saves current edits, lets you add more centerlines\n"
+            "• Replace with New: Discards current centerline, starts fresh\n"
+            "• Continue to Analysis: Use current centerline for measurements"
         )
         
         instructions_label = qt.QLabel(instructions_text)
@@ -10192,7 +10197,7 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         instructions_label.setWordWrap(True)
         layout.addWidget(instructions_label)
         
-        # Info about the current centerline
+        # Info about the current centerline and scene status
         if centerline_curve:
             num_points = centerline_curve.GetNumberOfControlPoints()
             
@@ -10205,9 +10210,14 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
             except:
                 curve_length = 0.0
             
+            # Count total centerlines in scene
+            all_centerlines = find_all_centerline_curves()
+            total_centerlines = len(all_centerlines)
+            
             info_text = f"Current centerline: {centerline_curve.GetName()}\n"
             info_text += f"Control points: {num_points}\n"
-            info_text += f"Curve length: {curve_length:.2f} mm"
+            info_text += f"Curve length: {curve_length:.2f} mm\n"
+            info_text += f"Total centerlines in scene: {total_centerlines}"
             
             info_label = qt.QLabel(info_text)
             info_label.setStyleSheet("QLabel { color: #666; margin: 5px; font-size: 10px; font-family: monospace; background-color: #f8f9fa; padding: 6px; border-radius: 4px; }")
@@ -10219,8 +10229,32 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
         button_layout1 = qt.QHBoxLayout()
         button_layout2 = qt.QHBoxLayout()
         
-        # Extract new centerline button
-        extract_new_button = qt.QPushButton("Extract New\nCenterline")
+        # Add Additional Centerline button (saves current edits)
+        add_additional_button = qt.QPushButton("Add Additional\nCenterline")
+        add_additional_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #17a2b8; 
+                color: white; 
+                border: none; 
+                padding: 10px 8px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 3px;
+                font-size: 12px;
+                min-height: 50px;
+            }
+            QPushButton:hover { 
+                background-color: #138496; 
+            }
+            QPushButton:pressed { 
+                background-color: #117a8b; 
+            }
+        """)
+        add_additional_button.connect('clicked()', lambda: on_add_additional_centerline_from_edit(edit_dialog, centerline_curve))
+        button_layout1.addWidget(add_additional_button)
+        
+        # Extract new centerline button (replaces current)
+        extract_new_button = qt.QPushButton("Replace with New\nCenterline")
         extract_new_button.setStyleSheet("""
             QPushButton { 
                 background-color: #ffc107; 
@@ -10265,7 +10299,7 @@ def show_centerline_editing_dialog(centerline_model=None, centerline_curve=None)
             }
         """)
         continue_cpr_button.connect('clicked()', lambda: on_continue_to_cpr_from_edit(edit_dialog, centerline_model, centerline_curve))
-        button_layout1.addWidget(continue_cpr_button)
+        button_layout2.addWidget(continue_cpr_button)
         
         # Reset centerline button
         reset_button = qt.QPushButton("Reset to Original")
@@ -10477,6 +10511,42 @@ def on_extract_new_centerline_from_edit(dock_widget, original_curve):
         pass
 
 
+def on_add_additional_centerline_from_edit(dock_widget, original_curve):
+    """
+    Called when user wants to add additional centerlines while preserving the edited one
+    """
+    try:
+        # Save the current edited centerline with a specific name
+        save_edited_centerline_as_final(original_curve)
+        
+        # Close and cleanup the dock widget
+        cleanup_centerline_edit_dialog()
+        
+        # Exit editing mode and return to appropriate view
+        disable_centerline_editing(original_curve)
+        
+        # Return to centerline extraction module (don't clear existing centerlines)
+        open_centerline_module()
+        
+        # Inform user about the preserved centerline
+        slicer.util.infoDisplay(
+            "Edited centerline saved and preserved!\n\n"
+            "Your edited centerline has been saved and will remain in the scene.\n"
+            "You can now add additional centerlines if needed.\n\n"
+            "To add more centerlines:\n"
+            "• Place new endpoints on the volume\n"
+            "• Click 'Apply' to extract additional centerlines\n"
+            "• When finished, all centerlines will be available for analysis\n\n"
+            "The most recent centerline will be used by default for analysis."
+        )
+        
+        # Set up monitoring for new centerline completion
+        setup_centerline_completion_monitor()
+        
+    except Exception as e:
+        pass
+
+
 def on_continue_to_cpr_from_edit(dock_widget, centerline_model, centerline_curve):
     """
     Called when user wants to continue to CPR analysis with the edited centerline
@@ -10560,6 +10630,53 @@ def backup_centerline_points(centerline_curve):
         pass
 
 
+def save_edited_centerline_as_final(centerline_curve):
+    """
+    Save the current edited centerline with a descriptive name to preserve it
+    """
+    try:
+        if not centerline_curve or centerline_curve.GetNumberOfControlPoints() == 0:
+            return
+        
+        # Get current timestamp for unique naming
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%H%M%S")
+        
+        # Rename the centerline to indicate it's been edited and finalized
+        original_name = centerline_curve.GetName()
+        if "edited" not in original_name.lower():
+            new_name = f"{original_name}_Edited_{timestamp}"
+        else:
+            new_name = f"{original_name}_{timestamp}"
+        
+        centerline_curve.SetName(new_name)
+        
+        # Ensure the curve is visible and properly styled for preservation
+        display_node = centerline_curve.GetDisplayNode()
+        if display_node:
+            display_node.SetVisibility(True)
+            display_node.SetColor(0.0, 0.8, 0.2)  # Green color to indicate finalized
+            display_node.SetOpacity(0.8)
+            display_node.SetLineThickness(0.3)
+            
+        # Lock the curve to prevent accidental modifications
+        centerline_curve.SetLocked(True)
+        
+        # Hide control points since it's finalized
+        for i in range(centerline_curve.GetNumberOfControlPoints()):
+            centerline_curve.SetNthControlPointVisibility(i, False)
+            
+        # Store this as a preserved centerline for future reference
+        if not hasattr(slicer.modules, 'PreservedCenterlines'):
+            slicer.modules.PreservedCenterlines = []
+        slicer.modules.PreservedCenterlines.append(centerline_curve)
+        
+        pass  # Centerline saved successfully
+        
+    except Exception as e:
+        pass
+
+
 def cleanup_centerline_edit_dialog():
     """
     Clean up the centerline edit dialog reference and remove dock widget
@@ -10612,9 +10729,14 @@ def on_reset_centerline_to_original_in_edit(centerline_curve, info_label):
             except:
                 curve_length = 0.0
             
+            # Count total centerlines in scene
+            all_centerlines = find_all_centerline_curves()
+            total_centerlines = len(all_centerlines)
+            
             info_text = f"Current centerline: {centerline_curve.GetName()}\n"
             info_text += f"Control points: {num_points}\n"
-            info_text += f"Curve length: {curve_length:.2f} mm"
+            info_text += f"Curve length: {curve_length:.2f} mm\n"
+            info_text += f"Total centerlines in scene: {total_centerlines}"
             info_label.setText(info_text)
                 
             slicer.util.infoDisplay("Centerline reset to original state.", windowTitle="Reset Complete")
