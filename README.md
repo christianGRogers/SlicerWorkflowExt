@@ -4,6 +4,11 @@
   <img src="DAI_Workflow/DAI_Workflow.png" alt="DAI Workflow Logo" width="200"/>
 </div>
 
+## Documentation
+
+📖 **[Complete User Manual](DAI_Workflow_User_Manual.md)** - Step-by-step instructions for all workflow features  
+🔧 **[Technical Documentation](DAI_Workflow_Module_Documentation.md)** - Complete feature reference and developer guide
+
 ## Overview
 
 **DAI Workflow** is a comprehensive 3D Slicer extension designed for automated vessel processing and centerline extraction. Developed at the Lawson Research Institute and Western University (So Lab), this extension provides a guided workflow for medical image analysis, specifically targeting vessel segmentation, centerline extraction, and Curved Planar Reconstruction (CPR) visualization.
@@ -113,26 +118,14 @@ The workflow allows medical professionals to create high-resolution artery view 
 
 ## Medical Workflow Process
 
-### Phase 1: Volume Preparation
-1. **DICOM Loading**: Automatic or manual DICOM import with contrast detection
-2. **Volume Cropping**: Interactive ROI-based volume cropping for focused analysis
-3. **View Management**: Automatic three-up view (Red, Green, Yellow) for comprehensive visualization
+The DAI Workflow provides a complete 4-phase pipeline for vessel analysis:
 
-### Phase 2: Vessel Segmentation
-1. **Threshold Segmentation**: Automated vessel segmentation using contrast enhancement
-2. **Scissors Tool Integration**: Manual refinement capabilities for precise control
-3. **Programmatic Segment Editor**: Pure API integration without GUI overhead
+1. **Volume Preparation** - DICOM loading and ROI-based cropping
+2. **Vessel Segmentation** - Automated thresholding with manual refinement
+3. **Centerline Processing** - Advanced extraction algorithms with progress monitoring  
+4. **Analysis & Visualization** - CPR generation, measurements, and linear reformats
 
-### Phase 3: Centerline Processing
-1. **Centerline Extraction**: Advanced algorithms for vessel centerline computation
-2. **Multiple Centerline Support**: Handle complex vessel networks and bifurcations
-3. **Completion Monitoring**: Real-time progress tracking with user feedback
-
-### Phase 4: Analysis & Visualization
-1. **CPR Generation**: Curved planar reconstruction for vessel straightening
-2. **Lesion Point Extraction**: Automated detection of critical points
-3. **Radius Measurements**: Precise vessel diameter calculations
-4. **Linear Reformats**: Generated views for detailed medical analysis
+*For detailed step-by-step instructions, see the [User Manual](DAI_Workflow_User_Manual.md).*
 
 ## Project Structure
 
@@ -161,74 +154,21 @@ SlicerWorkflowExt/
 
 ## Advanced Features
 
-### UI Customization
-The extension automatically customizes the Slicer interface for medical workflow optimization:
+- **Automated UI Customization** - Interface optimization for medical workflows
+- **Smart View Management** - Context-aware layout switching (three-up, 3D-only)
+- **Medical Image Processing** - Advanced vessel analysis algorithms
+- **Comprehensive Testing** - 100+ validation functions for clinical accuracy
 
-```python
-# Hide unnecessary UI elements for focused medical analysis
-self.hideStatusBar()           # Remove status bar
-self.hideLogo()               # Hide Slicer logo
-self.hideDataProbe()          # Remove data probe
-self.hideHelpAndAcknowledgments()  # Clean module interface
-```
-
-### Smart View Management
-Automatic view switching optimized for medical imaging workflow:
-
-```python
-# Volume cropping phase - Multi-planar reconstruction
-set_three_up_view()           # Axial, Sagittal, Coronal views
-
-# Analysis phase - 3D vessel visualization  
-set_3d_only_view()           # 3D rendering with CPR
-```
-
-### Medical Image Processing
-Advanced algorithms for vessel analysis:
-
-```python
-# Centerline extraction with medical-grade precision
-test_centerline_monitoring()
-force_show_completion_dialog()
-debug_centerline_monitoring()
-
-# CPR generation for vessel straightening
-start_with_dicom_data()
-create_analysis_masks_manually()
-```
+*For complete feature documentation, see the [Technical Documentation](DAI_Workflow_Module_Documentation.md).*
 
 ## Testing Framework
 
-The extension includes a comprehensive testing suite designed for medical image processing validation:
+Comprehensive validation suite with 100+ test functions covering:
+- **Centerline Workflow Tests** - Extraction validation and monitoring
+- **Medical UI Tests** - Interface component verification  
+- **Debug & Verification** - Algorithm accuracy and performance testing
 
-### Centerline Workflow Tests
-- `test_centerline_completion_dialog()` - Validate centerline extraction completion
-- `test_multiple_centerlines_workflow()` - Test complex vessel networks
-- `test_specific_centerline_monitoring()` - Monitor extraction progress
-
-### Medical UI Tests
-- `test_hide_crop_ui()` - Validate volume cropping interface
-- `test_minimal_segment_editor_ui()` - Test segmentation tools
-- `test_hide_extract_centerline_ui()` - Verify centerline extraction UI
-
-### Debug & Verification
-- `debug_centerline_monitoring()` - Debug extraction algorithms
-- `debug_extract_centerline_widgets()` - UI component analysis
-- `list_available_functions()` - Complete test suite overview
-
-### Running Medical Validation Tests
-```python
-# Import medical workflow test functions
-from DAI_Workflow.workflow.Moduals import workflow_test_functions as test
-
-# Validate centerline extraction accuracy
-test.test_centerline_monitoring()
-test.verify_extract_centerline_point_list_autoselection()
-
-# Test medical image processing pipeline
-test.test_extract_centerline_verification()
-test.create_analysis_masks_manually()
-```
+*For detailed testing procedures, see the [Technical Documentation](DAI_Workflow_Module_Documentation.md).*
 
 ## Configuration for Medical Environments
 
@@ -249,71 +189,21 @@ Streamlined DICOM loading for clinical environments:
 .\start.ps1 -MonitorLocks
 ```
 
-## Troubleshooting Medical Workflows
+## Troubleshooting
 
-### Common Clinical Issues
+Common issues and solutions for clinical workflows are covered in detail in the [User Manual](DAI_Workflow_User_Manual.md), including:
+- DICOM loading and contrast detection
+- Centerline extraction for complex vessels
+- CPR visualization optimization
+- Performance tuning for large datasets
 
-**Issue**: DICOM contrast detection fails
-**Solution**: Verify CT protocol includes contrast phase timing
-```python
-test.create_contrast_mask()
-test.create_analysis_masks_manually()
-```
+## Clinical Applications & System Requirements
 
-**Issue**: Centerline extraction incomplete on complex vessels
-**Solution**: Use multiple centerline workflow for bifurcations
-```python
-test.test_multiple_centerlines_workflow()
-test.debug_centerline_monitoring()
-```
+**Supported Procedures:** Coronary, peripheral, carotid, and renal artery analysis  
+**Image Compatibility:** CT/MR angiography, multi-vendor DICOM support  
+**System Requirements:** Windows 10+, 16GB+ RAM, SSD storage recommended
 
-**Issue**: CPR visualization artifacts
-**Solution**: Verify vessel segmentation quality
-```python
-test.test_extract_centerline_verification()
-test.fix_centerline_issues()
-```
-
-### Medical Validation Commands
-```python
-# Validate medical image processing accuracy
-test.list_available_functions()
-test.test_extract_centerline_setup_with_verification()
-
-# Verify clinical measurement precision
-test.debug_point_list_transforms()
-test.verify_extract_centerline_point_list_autoselection()
-```
-
-## Clinical Applications
-
-### Supported Medical Procedures
-- **Coronary Artery Analysis** - CT angiography with contrast
-- **Peripheral Vessel Assessment** - Lower extremity arterial evaluation
-- **Carotid Artery Evaluation** - Neck vessel stenosis analysis
-- **Renal Artery Studies** - Kidney perfusion assessment
-
-### Medical Image Compatibility
-- **CT Angiography** with contrast enhancement
-- **DICOM Series** from major medical imaging vendors
-- **Multi-phase Studies** with arterial and venous phases
-- **High-resolution Reconstructions** (0.6mm slice thickness or better)
-
-## System Requirements for Medical Imaging
-
-### Minimum Clinical Workstation
-- **OS**: Windows 10 Pro (64-bit) - Medical Grade
-- **RAM**: 16 GB (for large DICOM series)
-- **Storage**: 100 GB SSD (for patient data caching)
-- **3D Slicer**: Version 5.8.1 (FDA cleared components)
-- **Display**: Dual monitor setup (3MP medical displays recommended)
-
-### Recommended Radiology Workstation  
-- **OS**: Windows 11 Pro (64-bit)
-- **RAM**: 32 GB or more
-- **Storage**: 500 GB NVMe SSD
-- **GPU**: Dedicated medical visualization card
-- **Network**: Gigabit connection to PACS
+*Complete specifications available in the [User Manual](DAI_Workflow_User_Manual.md).*
 
 ## Medical Compliance & Quality Assurance
 
@@ -343,20 +233,12 @@ This software is developed for research purposes at the Lawson Research Institut
 - **Medical Advisors**: So Lab Medical Team
 - **Special Thanks**: 3D Slicer medical imaging community
 
-## Support for Medical Users
+## Support & Documentation
 
-### Clinical Support
-- **Medical Workflow Questions**: Contact development team
-- **DICOM Integration Issues**: Provide hospital PACS specifications  
-- **Clinical Validation**: Reference test suite documentation
-- **Training Materials**: Available for medical professionals
-
-### Emergency Clinical Support
-For urgent clinical workflow issues:
-1. Use debug functions for immediate troubleshooting
-2. Check log files in extension directory  
-3. Contact development team with clinical context
-4. Provide anonymized DICOM samples if possible
+- **[User Manual](DAI_Workflow_User_Manual.md)** - Complete workflow instructions and troubleshooting
+- **[Technical Documentation](DAI_Workflow_Module_Documentation.md)** - Developer reference and feature catalog
+- **Clinical Support** - Contact development team for medical workflow questions
+- **Training Materials** - Available for medical professionals and institutions
 
 ---
 
