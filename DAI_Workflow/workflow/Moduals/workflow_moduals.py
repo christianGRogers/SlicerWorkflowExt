@@ -31,14 +31,6 @@ Slicer Guided Workflow for Vessel Centerline Extraction and CPR Visualization
 
 Christian Rogers - So Lab - Lawson - UWO (2025)
 
-I apologize in advance for the code you are about to read but there was a bit of a time crunch
-
-UPDATE: Programmatic Segment Editor Integration
-- Replaced GUI-based Segment Editor with programmatic API
-- Added scissors tool toggle button for user control
-- No Segment Editor GUI is opened - all operations are programmatic
-- Floating UI elements for scissors control and workflow continuation
-- Scissors tool can be activated/deactivated as needed by user
 """
 
 # Initialize workflow by collapsing left panel on module load
