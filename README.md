@@ -6,8 +6,8 @@
 
 ## Documentation
 
-📖 **[Complete User Manual](DAI_Workflow_User_Manual.md)** - Step-by-step instructions for all workflow features  
-🔧 **[Technical Documentation](DAI_Workflow_Module_Documentation.md)** - Complete feature reference and developer guide
+ **[Complete User Manual](DAI_Workflow_User_Manual.md)** - Step-by-step instructions for all workflow features  
+ **[Technical Documentation](DAI_Workflow_Module_Documentation.md)** - Complete feature reference and developer guide
 
 ## Overview
 
