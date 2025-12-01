@@ -440,35 +440,7 @@ def hide_cpr_slice_size_controls():
     except Exception as e:
         return False
 
-def ask_user_for_markup_import():
-    """
-    Ask the user if they want to import markup workflow files.
-    Now handles workflow continuation directly instead of just returning boolean.
-    """
-    try:
-        result = slicer.util.confirmYesNoDisplay(
-            "Would you like to import markup workflow files?\n\n"
-            "This will prompt you to import:\n"
-            "• Markup/point list file (.mrk.json, .fcsv, etc.)\n"
-            "• Straightened volume file (.nrrd, .nii, etc.)\n"
-            "• Transform file (.tfm, .h5, etc.)\n\n"
-            "• YES: Import all files, create curve models, and open Data module\n"
-            "• NO: Continue with normal segmentation workflow",
-            windowTitle="Import Markup Workflow Files"
-        )
-        
-        if result:
-            # User wants to import markup - use the full markup workflow function
-            # Call the function that handles markup import and continues workflow
-            markup_workflow_after_crop()
-        else:
-            # User declined markup import - continue with normal threshold workflow
-            continue_workflow_without_markup()
-            
-        return result
-    except Exception as e:
-        pass
-        return False
+# Removed ask_user_for_markup_import() function - skipping markup import popup
 
 def ask_user_for_segmentation_import():
     """
@@ -1515,28 +1487,11 @@ def create_threshold_segment_with_markup_only():
     slicer.modules.WorkflowUsingMarkup = False
     slicer.modules.WorkflowUsingImportedSegmentation = False
     
-    # Ask user if they want to import markup
-    want_markup = ask_user_for_markup_import()
-    
-    if want_markup:
-        # User wants to import markup - handle all imports from source folder
-        markup_success = import_markup_file()
-        if markup_success:
-            # Store markup workflow flag for later use
-            slicer.modules.WorkflowUsingMarkup = True
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
-        else:
-            # Markup import failed, continue with normal workflow
-            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
-            slicer.modules.WorkflowUsingMarkup = False
+    # Skip markup import popup - continue with normal workflow without markup
     
     # Continue with threshold workflow
-    threshold_values = prompt_for_threshold_range()
-    if threshold_values is None:
-        return
-    
-    threshold_value_low, threshold_value_high = threshold_values
+    # Use default threshold values instead of prompting user
+    threshold_value_low, threshold_value_high = 290.0, 3071.0
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
@@ -1578,11 +1533,8 @@ def markup_workflow_after_crop():
             slicer.modules.WorkflowUsingMarkup = False
         
         # Continue with threshold workflow (same as create_threshold_segment_with_markup_only)
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
-            return
-        
-        threshold_value_low, threshold_value_high = threshold_values
+        # Use default threshold values instead of prompting user
+        threshold_value_low, threshold_value_high = 290.0, 3071.0
         
         segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
         
@@ -1615,11 +1567,8 @@ def continue_workflow_without_markup():
         slicer.modules.WorkflowUsingImportedSegmentation = False
         
         # Continue with threshold segmentation workflow
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
-            return
-        
-        threshold_value_low, threshold_value_high = threshold_values
+        # Use default threshold values instead of prompting user
+        threshold_value_low, threshold_value_high = 290.0, 3071.0
         
         segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
         
@@ -1963,21 +1912,9 @@ def create_threshold_segment():
             # Segmentation import failed, continue with normal workflow
             slicer.util.infoDisplay("Segmentation import cancelled or failed. Continuing with normal workflow.")
     
-    # Ask user if they want to import markup
-    want_markup = ask_user_for_markup_import()
-    
-    if want_markup:
-        # User wants to import markup - handle all imports from source folder
-        markup_success = import_markup_file()
-        if markup_success:
-            # Store markup workflow flag for later use
-            slicer.modules.WorkflowUsingMarkup = True
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
-        else:
-            # Markup import failed, continue with normal workflow
-            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
-            slicer.modules.WorkflowUsingMarkup = False
+    # Skip markup import popup - continue with normal workflow without markup
+    want_markup = False
+    slicer.modules.WorkflowUsingMarkup = False
     
     # If neither segmentation nor markup is imported, continue with normal threshold workflow
     # But if user cancelled both and we were called from crop workflow, go to crop workflow
@@ -1988,11 +1925,8 @@ def create_threshold_segment():
         return
     
     # Continue with normal threshold workflow
-    threshold_values = prompt_for_threshold_range()
-    if threshold_values is None:
-        return
-    
-    threshold_value_low, threshold_value_high = threshold_values
+    # Use default threshold values instead of prompting user
+    threshold_value_low, threshold_value_high = 290.0, 3071.0
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
@@ -2000,65 +1934,7 @@ def create_threshold_segment():
         show_segmentation_in_3d(segmentation_node)
         load_into_segment_editor(segmentation_node, volume_node)
 
-def prompt_for_threshold_range():
-    """
-    Show a single dialog to get both threshold values from user
-    """
-    try:
-        dialog = qt.QDialog(slicer.util.mainWindow())
-        dialog.setWindowTitle("Threshold Segmentation")
-        dialog.setModal(True)
-        dialog.resize(350, 200)
-        
-        layout = qt.QVBoxLayout(dialog)
-        title_label = qt.QLabel("Set Threshold Range")
-        title_label.setStyleSheet("QLabel { font-weight: bold; font-size: 14px; margin: 10px; }")
-        layout.addWidget(title_label)
-        
-        lower_layout = qt.QHBoxLayout()
-        lower_label = qt.QLabel("Lower threshold:")
-        lower_label.setMinimumWidth(100)
-        lower_spinbox = qt.QDoubleSpinBox()
-        lower_spinbox.setRange(-1024.0, 3071.0)
-        lower_spinbox.setValue(290.0)
-        lower_spinbox.setDecimals(2)
-        lower_layout.addWidget(lower_label)
-        lower_layout.addWidget(lower_spinbox)
-        layout.addLayout(lower_layout)
-        
-        upper_layout = qt.QHBoxLayout()
-        upper_label = qt.QLabel("Upper threshold:")
-        upper_label.setMinimumWidth(100)
-        upper_spinbox = qt.QDoubleSpinBox()
-        upper_spinbox.setRange(-1024.0, 3071.0)
-        upper_spinbox.setValue(3071.0)
-        upper_spinbox.setDecimals(2)
-        upper_layout.addWidget(upper_label)
-        upper_layout.addWidget(upper_spinbox)
-        layout.addLayout(upper_layout)
-        
-        info_label = qt.QLabel("Range: -1024 to 3071 Hounsfield units")
-        info_label.setStyleSheet("QLabel { color: #333; font-size: 11px; margin: 5px; }")
-        layout.addWidget(info_label)
-        
-        button_layout = qt.QHBoxLayout()
-        ok_button = qt.QPushButton("OK")
-        cancel_button = qt.QPushButton("Cancel")
-        
-        ok_button.connect('clicked()', dialog.accept)
-        cancel_button.connect('clicked()', dialog.reject)
-        
-        button_layout.addWidget(cancel_button)
-        button_layout.addWidget(ok_button)
-        layout.addLayout(button_layout)
-        
-        if dialog.exec_() == qt.QDialog.Accepted:
-            return (lower_spinbox.value, upper_spinbox.value)
-        else:
-            return None
-            
-    except Exception as e:
-        return (290.0, 3071.0)
+# Removed prompt_for_threshold_range() function - using hardcoded values instead
 
 def create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high=None):
     """
@@ -13501,10 +13377,73 @@ def start_with_segment_editor_scissors():
             segment_id = segment_ids.GetValue(0)
             segmentEditorNode.SetSelectedSegmentID(segment_id)
         
-        # Create invisible segment editor widget for API access
+        # Create segment editor widget with proper keyboard shortcut support
         segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
         segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
         segmentEditorWidget.setMRMLSegmentEditorNode(segmentEditorNode)
+        
+        # Enable undo functionality in the segment editor widget
+        segmentEditorWidget.setUndoEnabled(True)
+        
+        # Make sure the widget can receive focus and keyboard events
+        segmentEditorWidget.setFocusPolicy(qt.Qt.StrongFocus)
+        
+        # Make the segment editor widget visible but small to ensure it can receive events
+        # This is a workaround to ensure keyboard shortcuts work
+        segmentEditorWidget.resize(1, 1)  # Make it tiny
+        segmentEditorWidget.show()
+        segmentEditorWidget.hide()  # Hide it but keep it in the widget hierarchy
+        
+        # Install keyboard shortcuts for Ctrl+Z functionality
+        try:
+            # Method 1: Install shortcuts on the main window
+            main_window = slicer.util.mainWindow()
+            if main_window:
+                # Create a shortcut for Ctrl+Z that calls the segment editor's undo
+                undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), main_window)
+                undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+                
+                # Create a shortcut for Ctrl+Y (redo) as well
+                redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), main_window)
+                redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+                
+                # Store shortcut references so they don't get garbage collected
+                slicer.modules.WorkflowUndoShortcut = undo_shortcut
+                slicer.modules.WorkflowRedoShortcut = redo_shortcut
+                
+                print("Installed global Ctrl+Z and Ctrl+Y shortcuts")
+            
+            # Method 2: Also try to install shortcuts directly on the segment editor widget
+            if segmentEditorWidget:
+                widget_undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), segmentEditorWidget)
+                widget_undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+                
+                widget_redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), segmentEditorWidget)
+                widget_redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+                
+                # Store these as well
+                slicer.modules.WorkflowWidgetUndoShortcut = widget_undo_shortcut
+                slicer.modules.WorkflowWidgetRedoShortcut = widget_redo_shortcut
+                
+                print("Installed widget-specific Ctrl+Z and Ctrl+Y shortcuts")
+                
+        except Exception as shortcut_error:
+            print(f"Warning: Could not install keyboard shortcuts: {shortcut_error}")
+        
+        # Configure segment editor for better undo support
+        try:
+            # Enable maximum undo levels for the segmentation
+            segmentation = segmentation_node.GetSegmentation()
+            if segmentation and hasattr(segmentation, 'SetMaximumNumberOfUndoStates'):
+                segmentation.SetMaximumNumberOfUndoStates(20)  # Allow plenty of undo levels
+            
+            # Enable scene undo as backup
+            slicer.mrmlScene.SetUndoOn()
+            slicer.mrmlScene.SetMaximumNumberOfUndoLevels(20)
+            
+            print("Configured undo system with 20 levels for both segmentation and scene")
+        except Exception as undo_config_error:
+            print(f"Warning: Could not configure undo system: {undo_config_error}")
         
         # Store references for scissors tool control
         slicer.modules.WorkflowSegmentEditorNode = segmentEditorNode
@@ -13520,6 +13459,257 @@ def start_with_segment_editor_scissors():
     except Exception as e:
         pass
         return False
+
+def handle_keyboard_undo(segmentEditorWidget=None):
+    """
+    Handle Ctrl+Z keyboard shortcut for undo in segment editor
+    """
+    try:
+        # Get the segment editor widget if not provided
+        if not segmentEditorWidget and hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if segmentEditorWidget:
+            # First try the segment editor's built-in undo
+            if hasattr(segmentEditorWidget, 'undo'):
+                segmentEditorWidget.undo()
+                print("Executed keyboard undo via segment editor")
+                return True
+            elif hasattr(segmentEditorWidget, 'undoEnabled') and segmentEditorWidget.undoEnabled:
+                # Alternative method to trigger undo
+                segmentEditorWidget.undoEnabled = True
+                if hasattr(segmentEditorWidget, 'undo'):
+                    segmentEditorWidget.undo()
+                    print("Executed keyboard undo via alternative method")
+                    return True
+        
+        # Fallback to scene undo system
+        print("Falling back to scene undo system for keyboard shortcut")
+        if slicer.mrmlScene.GetUndoFlag() and slicer.mrmlScene.GetNumberOfUndoLevels() > 0:
+            slicer.mrmlScene.Undo()
+            slicer.app.processEvents()  # Refresh views
+            return True
+        else:
+            print("No undo levels available")
+            return False
+        
+    except Exception as e:
+        print(f"Error in keyboard undo handler: {e}")
+        return False
+
+def handle_keyboard_redo(segmentEditorWidget=None):
+    """
+    Handle Ctrl+Y keyboard shortcut for redo in segment editor
+    """
+    try:
+        # Get the segment editor widget if not provided
+        if not segmentEditorWidget and hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if segmentEditorWidget:
+            # Try the segment editor's built-in redo
+            if hasattr(segmentEditorWidget, 'redo'):
+                segmentEditorWidget.redo()
+                print("Executed keyboard redo via segment editor")
+                return True
+        
+        # If no segment editor redo available, inform user
+        if hasattr(slicer, 'util') and hasattr(slicer.util, 'infoDisplay'):
+            slicer.util.infoDisplay("Redo functionality not available in workflow mode.", autoCloseMsec=2000)
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error in keyboard redo handler: {e}")
+        return False
+
+def test_keyboard_undo_functionality():
+    """
+    Test function to verify that Ctrl+Z keyboard shortcut is working properly
+    """
+    try:
+        print("=== Testing Keyboard Undo Functionality ===")
+        
+        # Check if shortcuts are installed
+        if hasattr(slicer.modules, 'WorkflowUndoShortcut'):
+            shortcut = slicer.modules.WorkflowUndoShortcut
+            print(f"✓ Ctrl+Z shortcut found: {shortcut}")
+            print(f"  Key sequence: {shortcut.key().toString()}")
+        else:
+            print("✗ No Ctrl+Z shortcut found")
+        
+        if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
+            shortcut = slicer.modules.WorkflowRedoShortcut
+            print(f"✓ Ctrl+Y shortcut found: {shortcut}")
+            print(f"  Key sequence: {shortcut.key().toString()}")
+        else:
+            print("✗ No Ctrl+Y shortcut found")
+        
+        # Check widget shortcuts
+        if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
+            shortcut = slicer.modules.WorkflowWidgetUndoShortcut
+            print(f"✓ Widget Ctrl+Z shortcut found: {shortcut}")
+        else:
+            print("✗ No widget Ctrl+Z shortcut found")
+        
+        if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
+            shortcut = slicer.modules.WorkflowWidgetRedoShortcut
+            print(f"✓ Widget Ctrl+Y shortcut found: {shortcut}")
+        else:
+            print("✗ No widget Ctrl+Y shortcut found")
+        
+        # Check segment editor widget
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            widget = slicer.modules.WorkflowSegmentEditorWidget
+            print(f"✓ Segment editor widget found: {type(widget)}")
+            
+            if hasattr(widget, 'undoEnabled'):
+                print(f"  Undo enabled: {widget.undoEnabled}")
+            
+            if hasattr(widget, 'undo'):
+                print("  ✓ Undo method available")
+            else:
+                print("  ✗ Undo method not available")
+                
+            if hasattr(widget, 'redo'):
+                print("  ✓ Redo method available")
+            else:
+                print("  ✗ Redo method not available")
+        else:
+            print("✗ No segment editor widget found")
+        
+        # Check segmentation undo settings
+        if hasattr(slicer.modules, 'WorkflowSegmentationNode'):
+            segmentation_node = slicer.modules.WorkflowSegmentationNode
+            if segmentation_node:
+                segmentation = segmentation_node.GetSegmentation()
+                if segmentation and hasattr(segmentation, 'GetMaximumNumberOfUndoStates'):
+                    undo_states = segmentation.GetMaximumNumberOfUndoStates()
+                    print(f"✓ Segmentation undo states: {undo_states}")
+                else:
+                    print("✗ Cannot check segmentation undo states")
+        
+        # Test manual keyboard undo function
+        print("\n--- Testing Manual Keyboard Undo ---")
+        result = handle_keyboard_undo()
+        print(f"Manual undo test result: {result}")
+        
+        print("\n=== Keyboard Undo Test Complete ===")
+        print("If Ctrl+Z still doesn't work, try:")
+        print("1. Make sure you're clicking in a slice view first to give it focus")
+        print("2. Try pressing Ctrl+Z while the mouse is over a slice view")
+        print("3. Check that the segment editor widget has focus")
+        
+    except Exception as e:
+        print(f"Error during keyboard undo test: {e}")
+        import traceback
+        traceback.print_exc()
+
+def force_enable_keyboard_undo():
+    """
+    Force enable Ctrl+Z keyboard undo functionality for the workflow
+    Call this function if Ctrl+Z is not working
+    """
+    try:
+        print("Force enabling keyboard undo functionality...")
+        
+        # Get the segment editor widget
+        segmentEditorWidget = None
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if not segmentEditorWidget:
+            print("✗ No segment editor widget found. Please start the scissors tool first.")
+            return False
+        
+        # Clear existing shortcuts
+        for shortcut_attr in ['WorkflowUndoShortcut', 'WorkflowRedoShortcut', 'WorkflowWidgetUndoShortcut', 'WorkflowWidgetRedoShortcut']:
+            if hasattr(slicer.modules, shortcut_attr):
+                try:
+                    shortcut = getattr(slicer.modules, shortcut_attr)
+                    shortcut.setParent(None)
+                    delattr(slicer.modules, shortcut_attr)
+                except Exception:
+                    pass
+        
+        # Re-install shortcuts with fresh references
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            # Global shortcuts
+            undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), main_window)
+            undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+            slicer.modules.WorkflowUndoShortcut = undo_shortcut
+            
+            redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), main_window)
+            redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+            slicer.modules.WorkflowRedoShortcut = redo_shortcut
+            
+            print("✓ Installed global keyboard shortcuts")
+        
+        # Widget shortcuts
+        if segmentEditorWidget:
+            widget_undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), segmentEditorWidget)
+            widget_undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+            slicer.modules.WorkflowWidgetUndoShortcut = widget_undo_shortcut
+            
+            widget_redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), segmentEditorWidget)
+            widget_redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+            slicer.modules.WorkflowWidgetRedoShortcut = widget_redo_shortcut
+            
+            print("✓ Installed widget-specific keyboard shortcuts")
+        
+        # Try to activate the segment editor widget to give it focus
+        if segmentEditorWidget:
+            segmentEditorWidget.setFocus()
+            segmentEditorWidget.activateWindow()
+        
+        print("✓ Keyboard undo functionality has been re-enabled")
+        print("Try pressing Ctrl+Z now. If it still doesn't work, make sure:")
+        print("  1. You have made some changes to the segmentation first")
+        print("  2. The mouse cursor is over a slice view when you press Ctrl+Z")
+        print("  3. You are using the scissors tool from this workflow")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error enabling keyboard undo: {e}")
+        return False
+
+def show_keyboard_undo_help():
+    """
+    Show help information for using keyboard undo functionality
+    """
+    try:
+        print("\n" + "="*60)
+        print("           KEYBOARD UNDO FUNCTIONALITY HELP")
+        print("="*60)
+        print("The workflow now supports Ctrl+Z for undo functionality!")
+        print()
+        print("HOW TO USE:")
+        print("1. Use the scissors tool to make segmentation changes")
+        print("2. Press Ctrl+Z to undo the last change")
+        print("3. Press Ctrl+Y to redo (if available)")
+        print()
+        print("TROUBLESHOOTING:")
+        print("If Ctrl+Z doesn't work, try these steps:")
+        print("• Call force_enable_keyboard_undo() to re-enable shortcuts")
+        print("• Make sure you click in a slice view first to give it focus")
+        print("• Ensure you've made at least one change before trying to undo")
+        print("• Try pressing Ctrl+Z while mouse is over a slice view")
+        print()
+        print("TESTING FUNCTIONS:")
+        print("• test_keyboard_undo_functionality() - Run diagnostics")
+        print("• force_enable_keyboard_undo() - Re-enable if not working")
+        print("• handle_keyboard_undo() - Manually trigger undo")
+        print()
+        print("The system uses multiple fallback methods:")
+        print("1. Segment editor built-in undo (preferred)")
+        print("2. Scene-based undo system (fallback)")
+        print("3. Both global and widget-specific shortcuts")
+        print("="*60 + "\n")
+        
+    except Exception as e:
+        print(f"Error showing help: {e}")
 
 def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
     """
@@ -14047,6 +14237,44 @@ def cleanup_scissors_tool_ui():
             widget = slicer.modules.WorkflowSegmentEditorWidget
             widget.setParent(None)
             del slicer.modules.WorkflowSegmentEditorWidget
+        
+        # Clean up keyboard shortcuts
+        if hasattr(slicer.modules, 'WorkflowUndoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowUndoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowUndoShortcut
+                print("Cleaned up Ctrl+Z shortcut")
+            except Exception:
+                pass
+        
+        if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowRedoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowRedoShortcut
+                print("Cleaned up Ctrl+Y shortcut")
+            except Exception:
+                pass
+        
+        # Clean up widget-specific shortcuts
+        if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowWidgetUndoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowWidgetUndoShortcut
+                print("Cleaned up widget Ctrl+Z shortcut")
+            except Exception:
+                pass
+        
+        if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowWidgetRedoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowWidgetRedoShortcut
+                print("Cleaned up widget Ctrl+Y shortcut")
+            except Exception:
+                pass
         
         for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
             if hasattr(slicer.modules, attr):
@@ -15848,7 +16076,8 @@ def continue_workflow_after_custom_crop():
         if not volume_node:
             return
 
-        ask_user_for_markup_import()
+        # Skip markup import popup - continue with normal threshold workflow
+        continue_workflow_without_markup()
             
     except Exception as e:
         print(f"Error in continue_workflow_after_custom_crop: {e}")
