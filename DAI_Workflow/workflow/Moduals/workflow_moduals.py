@@ -440,35 +440,7 @@ def hide_cpr_slice_size_controls():
     except Exception as e:
         return False
 
-def ask_user_for_markup_import():
-    """
-    Ask the user if they want to import markup workflow files.
-    Now handles workflow continuation directly instead of just returning boolean.
-    """
-    try:
-        result = slicer.util.confirmYesNoDisplay(
-            "Would you like to import markup workflow files?\n\n"
-            "This will prompt you to import:\n"
-            "• Markup/point list file (.mrk.json, .fcsv, etc.)\n"
-            "• Straightened volume file (.nrrd, .nii, etc.)\n"
-            "• Transform file (.tfm, .h5, etc.)\n\n"
-            "• YES: Import all files, create curve models, and open Data module\n"
-            "• NO: Continue with normal segmentation workflow",
-            windowTitle="Import Markup Workflow Files"
-        )
-        
-        if result:
-            # User wants to import markup - use the full markup workflow function
-            # Call the function that handles markup import and continues workflow
-            markup_workflow_after_crop()
-        else:
-            # User declined markup import - continue with normal threshold workflow
-            continue_workflow_without_markup()
-            
-        return result
-    except Exception as e:
-        pass
-        return False
+# Removed ask_user_for_markup_import() function - skipping markup import popup
 
 def ask_user_for_segmentation_import():
     """
@@ -1515,28 +1487,11 @@ def create_threshold_segment_with_markup_only():
     slicer.modules.WorkflowUsingMarkup = False
     slicer.modules.WorkflowUsingImportedSegmentation = False
     
-    # Ask user if they want to import markup
-    want_markup = ask_user_for_markup_import()
-    
-    if want_markup:
-        # User wants to import markup - handle all imports from source folder
-        markup_success = import_markup_file()
-        if markup_success:
-            # Store markup workflow flag for later use
-            slicer.modules.WorkflowUsingMarkup = True
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
-        else:
-            # Markup import failed, continue with normal workflow
-            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
-            slicer.modules.WorkflowUsingMarkup = False
+    # Skip markup import popup - continue with normal workflow without markup
     
     # Continue with threshold workflow
-    threshold_values = prompt_for_threshold_range()
-    if threshold_values is None:
-        return
-    
-    threshold_value_low, threshold_value_high = threshold_values
+    # Use default threshold values instead of prompting user
+    threshold_value_low, threshold_value_high = 290.0, 3071.0
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
@@ -1578,11 +1533,8 @@ def markup_workflow_after_crop():
             slicer.modules.WorkflowUsingMarkup = False
         
         # Continue with threshold workflow (same as create_threshold_segment_with_markup_only)
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
-            return
-        
-        threshold_value_low, threshold_value_high = threshold_values
+        # Use default threshold values instead of prompting user
+        threshold_value_low, threshold_value_high = 290.0, 3071.0
         
         segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
         
@@ -1615,11 +1567,8 @@ def continue_workflow_without_markup():
         slicer.modules.WorkflowUsingImportedSegmentation = False
         
         # Continue with threshold segmentation workflow
-        threshold_values = prompt_for_threshold_range()
-        if threshold_values is None:
-            return
-        
-        threshold_value_low, threshold_value_high = threshold_values
+        # Use default threshold values instead of prompting user
+        threshold_value_low, threshold_value_high = 290.0, 3071.0
         
         segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
         
@@ -1963,21 +1912,9 @@ def create_threshold_segment():
             # Segmentation import failed, continue with normal workflow
             slicer.util.infoDisplay("Segmentation import cancelled or failed. Continuing with normal workflow.")
     
-    # Ask user if they want to import markup
-    want_markup = ask_user_for_markup_import()
-    
-    if want_markup:
-        # User wants to import markup - handle all imports from source folder
-        markup_success = import_markup_file()
-        if markup_success:
-            # Store markup workflow flag for later use
-            slicer.modules.WorkflowUsingMarkup = True
-            
-            slicer.util.infoDisplay("Markup workflow imports completed. Tube masks created automatically.")
-        else:
-            # Markup import failed, continue with normal workflow
-            slicer.util.infoDisplay("Markup import cancelled or failed. Continuing with normal workflow.")
-            slicer.modules.WorkflowUsingMarkup = False
+    # Skip markup import popup - continue with normal workflow without markup
+    want_markup = False
+    slicer.modules.WorkflowUsingMarkup = False
     
     # If neither segmentation nor markup is imported, continue with normal threshold workflow
     # But if user cancelled both and we were called from crop workflow, go to crop workflow
@@ -1988,11 +1925,8 @@ def create_threshold_segment():
         return
     
     # Continue with normal threshold workflow
-    threshold_values = prompt_for_threshold_range()
-    if threshold_values is None:
-        return
-    
-    threshold_value_low, threshold_value_high = threshold_values
+    # Use default threshold values instead of prompting user
+    threshold_value_low, threshold_value_high = 290.0, 3071.0
     
     segmentation_node = create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high)
     
@@ -2000,65 +1934,7 @@ def create_threshold_segment():
         show_segmentation_in_3d(segmentation_node)
         load_into_segment_editor(segmentation_node, volume_node)
 
-def prompt_for_threshold_range():
-    """
-    Show a single dialog to get both threshold values from user
-    """
-    try:
-        dialog = qt.QDialog(slicer.util.mainWindow())
-        dialog.setWindowTitle("Threshold Segmentation")
-        dialog.setModal(True)
-        dialog.resize(350, 200)
-        
-        layout = qt.QVBoxLayout(dialog)
-        title_label = qt.QLabel("Set Threshold Range")
-        title_label.setStyleSheet("QLabel { font-weight: bold; font-size: 14px; margin: 10px; }")
-        layout.addWidget(title_label)
-        
-        lower_layout = qt.QHBoxLayout()
-        lower_label = qt.QLabel("Lower threshold:")
-        lower_label.setMinimumWidth(100)
-        lower_spinbox = qt.QDoubleSpinBox()
-        lower_spinbox.setRange(-1024.0, 3071.0)
-        lower_spinbox.setValue(290.0)
-        lower_spinbox.setDecimals(2)
-        lower_layout.addWidget(lower_label)
-        lower_layout.addWidget(lower_spinbox)
-        layout.addLayout(lower_layout)
-        
-        upper_layout = qt.QHBoxLayout()
-        upper_label = qt.QLabel("Upper threshold:")
-        upper_label.setMinimumWidth(100)
-        upper_spinbox = qt.QDoubleSpinBox()
-        upper_spinbox.setRange(-1024.0, 3071.0)
-        upper_spinbox.setValue(3071.0)
-        upper_spinbox.setDecimals(2)
-        upper_layout.addWidget(upper_label)
-        upper_layout.addWidget(upper_spinbox)
-        layout.addLayout(upper_layout)
-        
-        info_label = qt.QLabel("Range: -1024 to 3071 Hounsfield units")
-        info_label.setStyleSheet("QLabel { color: #333; font-size: 11px; margin: 5px; }")
-        layout.addWidget(info_label)
-        
-        button_layout = qt.QHBoxLayout()
-        ok_button = qt.QPushButton("OK")
-        cancel_button = qt.QPushButton("Cancel")
-        
-        ok_button.connect('clicked()', dialog.accept)
-        cancel_button.connect('clicked()', dialog.reject)
-        
-        button_layout.addWidget(cancel_button)
-        button_layout.addWidget(ok_button)
-        layout.addLayout(button_layout)
-        
-        if dialog.exec_() == qt.QDialog.Accepted:
-            return (lower_spinbox.value, upper_spinbox.value)
-        else:
-            return None
-            
-    except Exception as e:
-        return (290.0, 3071.0)
+# Removed prompt_for_threshold_range() function - using hardcoded values instead
 
 def create_segmentation_from_threshold(volume_node, threshold_value_low, threshold_value_high=None):
     """
@@ -15848,7 +15724,8 @@ def continue_workflow_after_custom_crop():
         if not volume_node:
             return
 
-        ask_user_for_markup_import()
+        # Skip markup import popup - continue with normal threshold workflow
+        continue_workflow_without_markup()
             
     except Exception as e:
         print(f"Error in continue_workflow_after_custom_crop: {e}")
