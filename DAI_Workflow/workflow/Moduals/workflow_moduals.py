@@ -13377,10 +13377,73 @@ def start_with_segment_editor_scissors():
             segment_id = segment_ids.GetValue(0)
             segmentEditorNode.SetSelectedSegmentID(segment_id)
         
-        # Create invisible segment editor widget for API access
+        # Create segment editor widget with proper keyboard shortcut support
         segmentEditorWidget = slicer.qMRMLSegmentEditorWidget()
         segmentEditorWidget.setMRMLScene(slicer.mrmlScene)
         segmentEditorWidget.setMRMLSegmentEditorNode(segmentEditorNode)
+        
+        # Enable undo functionality in the segment editor widget
+        segmentEditorWidget.setUndoEnabled(True)
+        
+        # Make sure the widget can receive focus and keyboard events
+        segmentEditorWidget.setFocusPolicy(qt.Qt.StrongFocus)
+        
+        # Make the segment editor widget visible but small to ensure it can receive events
+        # This is a workaround to ensure keyboard shortcuts work
+        segmentEditorWidget.resize(1, 1)  # Make it tiny
+        segmentEditorWidget.show()
+        segmentEditorWidget.hide()  # Hide it but keep it in the widget hierarchy
+        
+        # Install keyboard shortcuts for Ctrl+Z functionality
+        try:
+            # Method 1: Install shortcuts on the main window
+            main_window = slicer.util.mainWindow()
+            if main_window:
+                # Create a shortcut for Ctrl+Z that calls the segment editor's undo
+                undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), main_window)
+                undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+                
+                # Create a shortcut for Ctrl+Y (redo) as well
+                redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), main_window)
+                redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+                
+                # Store shortcut references so they don't get garbage collected
+                slicer.modules.WorkflowUndoShortcut = undo_shortcut
+                slicer.modules.WorkflowRedoShortcut = redo_shortcut
+                
+                print("Installed global Ctrl+Z and Ctrl+Y shortcuts")
+            
+            # Method 2: Also try to install shortcuts directly on the segment editor widget
+            if segmentEditorWidget:
+                widget_undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), segmentEditorWidget)
+                widget_undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+                
+                widget_redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), segmentEditorWidget)
+                widget_redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+                
+                # Store these as well
+                slicer.modules.WorkflowWidgetUndoShortcut = widget_undo_shortcut
+                slicer.modules.WorkflowWidgetRedoShortcut = widget_redo_shortcut
+                
+                print("Installed widget-specific Ctrl+Z and Ctrl+Y shortcuts")
+                
+        except Exception as shortcut_error:
+            print(f"Warning: Could not install keyboard shortcuts: {shortcut_error}")
+        
+        # Configure segment editor for better undo support
+        try:
+            # Enable maximum undo levels for the segmentation
+            segmentation = segmentation_node.GetSegmentation()
+            if segmentation and hasattr(segmentation, 'SetMaximumNumberOfUndoStates'):
+                segmentation.SetMaximumNumberOfUndoStates(20)  # Allow plenty of undo levels
+            
+            # Enable scene undo as backup
+            slicer.mrmlScene.SetUndoOn()
+            slicer.mrmlScene.SetMaximumNumberOfUndoLevels(20)
+            
+            print("Configured undo system with 20 levels for both segmentation and scene")
+        except Exception as undo_config_error:
+            print(f"Warning: Could not configure undo system: {undo_config_error}")
         
         # Store references for scissors tool control
         slicer.modules.WorkflowSegmentEditorNode = segmentEditorNode
@@ -13396,6 +13459,257 @@ def start_with_segment_editor_scissors():
     except Exception as e:
         pass
         return False
+
+def handle_keyboard_undo(segmentEditorWidget=None):
+    """
+    Handle Ctrl+Z keyboard shortcut for undo in segment editor
+    """
+    try:
+        # Get the segment editor widget if not provided
+        if not segmentEditorWidget and hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if segmentEditorWidget:
+            # First try the segment editor's built-in undo
+            if hasattr(segmentEditorWidget, 'undo'):
+                segmentEditorWidget.undo()
+                print("Executed keyboard undo via segment editor")
+                return True
+            elif hasattr(segmentEditorWidget, 'undoEnabled') and segmentEditorWidget.undoEnabled:
+                # Alternative method to trigger undo
+                segmentEditorWidget.undoEnabled = True
+                if hasattr(segmentEditorWidget, 'undo'):
+                    segmentEditorWidget.undo()
+                    print("Executed keyboard undo via alternative method")
+                    return True
+        
+        # Fallback to scene undo system
+        print("Falling back to scene undo system for keyboard shortcut")
+        if slicer.mrmlScene.GetUndoFlag() and slicer.mrmlScene.GetNumberOfUndoLevels() > 0:
+            slicer.mrmlScene.Undo()
+            slicer.app.processEvents()  # Refresh views
+            return True
+        else:
+            print("No undo levels available")
+            return False
+        
+    except Exception as e:
+        print(f"Error in keyboard undo handler: {e}")
+        return False
+
+def handle_keyboard_redo(segmentEditorWidget=None):
+    """
+    Handle Ctrl+Y keyboard shortcut for redo in segment editor
+    """
+    try:
+        # Get the segment editor widget if not provided
+        if not segmentEditorWidget and hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if segmentEditorWidget:
+            # Try the segment editor's built-in redo
+            if hasattr(segmentEditorWidget, 'redo'):
+                segmentEditorWidget.redo()
+                print("Executed keyboard redo via segment editor")
+                return True
+        
+        # If no segment editor redo available, inform user
+        if hasattr(slicer, 'util') and hasattr(slicer.util, 'infoDisplay'):
+            slicer.util.infoDisplay("Redo functionality not available in workflow mode.", autoCloseMsec=2000)
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error in keyboard redo handler: {e}")
+        return False
+
+def test_keyboard_undo_functionality():
+    """
+    Test function to verify that Ctrl+Z keyboard shortcut is working properly
+    """
+    try:
+        print("=== Testing Keyboard Undo Functionality ===")
+        
+        # Check if shortcuts are installed
+        if hasattr(slicer.modules, 'WorkflowUndoShortcut'):
+            shortcut = slicer.modules.WorkflowUndoShortcut
+            print(f"✓ Ctrl+Z shortcut found: {shortcut}")
+            print(f"  Key sequence: {shortcut.key().toString()}")
+        else:
+            print("✗ No Ctrl+Z shortcut found")
+        
+        if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
+            shortcut = slicer.modules.WorkflowRedoShortcut
+            print(f"✓ Ctrl+Y shortcut found: {shortcut}")
+            print(f"  Key sequence: {shortcut.key().toString()}")
+        else:
+            print("✗ No Ctrl+Y shortcut found")
+        
+        # Check widget shortcuts
+        if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
+            shortcut = slicer.modules.WorkflowWidgetUndoShortcut
+            print(f"✓ Widget Ctrl+Z shortcut found: {shortcut}")
+        else:
+            print("✗ No widget Ctrl+Z shortcut found")
+        
+        if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
+            shortcut = slicer.modules.WorkflowWidgetRedoShortcut
+            print(f"✓ Widget Ctrl+Y shortcut found: {shortcut}")
+        else:
+            print("✗ No widget Ctrl+Y shortcut found")
+        
+        # Check segment editor widget
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            widget = slicer.modules.WorkflowSegmentEditorWidget
+            print(f"✓ Segment editor widget found: {type(widget)}")
+            
+            if hasattr(widget, 'undoEnabled'):
+                print(f"  Undo enabled: {widget.undoEnabled}")
+            
+            if hasattr(widget, 'undo'):
+                print("  ✓ Undo method available")
+            else:
+                print("  ✗ Undo method not available")
+                
+            if hasattr(widget, 'redo'):
+                print("  ✓ Redo method available")
+            else:
+                print("  ✗ Redo method not available")
+        else:
+            print("✗ No segment editor widget found")
+        
+        # Check segmentation undo settings
+        if hasattr(slicer.modules, 'WorkflowSegmentationNode'):
+            segmentation_node = slicer.modules.WorkflowSegmentationNode
+            if segmentation_node:
+                segmentation = segmentation_node.GetSegmentation()
+                if segmentation and hasattr(segmentation, 'GetMaximumNumberOfUndoStates'):
+                    undo_states = segmentation.GetMaximumNumberOfUndoStates()
+                    print(f"✓ Segmentation undo states: {undo_states}")
+                else:
+                    print("✗ Cannot check segmentation undo states")
+        
+        # Test manual keyboard undo function
+        print("\n--- Testing Manual Keyboard Undo ---")
+        result = handle_keyboard_undo()
+        print(f"Manual undo test result: {result}")
+        
+        print("\n=== Keyboard Undo Test Complete ===")
+        print("If Ctrl+Z still doesn't work, try:")
+        print("1. Make sure you're clicking in a slice view first to give it focus")
+        print("2. Try pressing Ctrl+Z while the mouse is over a slice view")
+        print("3. Check that the segment editor widget has focus")
+        
+    except Exception as e:
+        print(f"Error during keyboard undo test: {e}")
+        import traceback
+        traceback.print_exc()
+
+def force_enable_keyboard_undo():
+    """
+    Force enable Ctrl+Z keyboard undo functionality for the workflow
+    Call this function if Ctrl+Z is not working
+    """
+    try:
+        print("Force enabling keyboard undo functionality...")
+        
+        # Get the segment editor widget
+        segmentEditorWidget = None
+        if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+            segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
+        
+        if not segmentEditorWidget:
+            print("✗ No segment editor widget found. Please start the scissors tool first.")
+            return False
+        
+        # Clear existing shortcuts
+        for shortcut_attr in ['WorkflowUndoShortcut', 'WorkflowRedoShortcut', 'WorkflowWidgetUndoShortcut', 'WorkflowWidgetRedoShortcut']:
+            if hasattr(slicer.modules, shortcut_attr):
+                try:
+                    shortcut = getattr(slicer.modules, shortcut_attr)
+                    shortcut.setParent(None)
+                    delattr(slicer.modules, shortcut_attr)
+                except Exception:
+                    pass
+        
+        # Re-install shortcuts with fresh references
+        main_window = slicer.util.mainWindow()
+        if main_window:
+            # Global shortcuts
+            undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), main_window)
+            undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+            slicer.modules.WorkflowUndoShortcut = undo_shortcut
+            
+            redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), main_window)
+            redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+            slicer.modules.WorkflowRedoShortcut = redo_shortcut
+            
+            print("✓ Installed global keyboard shortcuts")
+        
+        # Widget shortcuts
+        if segmentEditorWidget:
+            widget_undo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Z"), segmentEditorWidget)
+            widget_undo_shortcut.connect('activated()', lambda: handle_keyboard_undo(segmentEditorWidget))
+            slicer.modules.WorkflowWidgetUndoShortcut = widget_undo_shortcut
+            
+            widget_redo_shortcut = qt.QShortcut(qt.QKeySequence("Ctrl+Y"), segmentEditorWidget)
+            widget_redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
+            slicer.modules.WorkflowWidgetRedoShortcut = widget_redo_shortcut
+            
+            print("✓ Installed widget-specific keyboard shortcuts")
+        
+        # Try to activate the segment editor widget to give it focus
+        if segmentEditorWidget:
+            segmentEditorWidget.setFocus()
+            segmentEditorWidget.activateWindow()
+        
+        print("✓ Keyboard undo functionality has been re-enabled")
+        print("Try pressing Ctrl+Z now. If it still doesn't work, make sure:")
+        print("  1. You have made some changes to the segmentation first")
+        print("  2. The mouse cursor is over a slice view when you press Ctrl+Z")
+        print("  3. You are using the scissors tool from this workflow")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error enabling keyboard undo: {e}")
+        return False
+
+def show_keyboard_undo_help():
+    """
+    Show help information for using keyboard undo functionality
+    """
+    try:
+        print("\n" + "="*60)
+        print("           KEYBOARD UNDO FUNCTIONALITY HELP")
+        print("="*60)
+        print("The workflow now supports Ctrl+Z for undo functionality!")
+        print()
+        print("HOW TO USE:")
+        print("1. Use the scissors tool to make segmentation changes")
+        print("2. Press Ctrl+Z to undo the last change")
+        print("3. Press Ctrl+Y to redo (if available)")
+        print()
+        print("TROUBLESHOOTING:")
+        print("If Ctrl+Z doesn't work, try these steps:")
+        print("• Call force_enable_keyboard_undo() to re-enable shortcuts")
+        print("• Make sure you click in a slice view first to give it focus")
+        print("• Ensure you've made at least one change before trying to undo")
+        print("• Try pressing Ctrl+Z while mouse is over a slice view")
+        print()
+        print("TESTING FUNCTIONS:")
+        print("• test_keyboard_undo_functionality() - Run diagnostics")
+        print("• force_enable_keyboard_undo() - Re-enable if not working")
+        print("• handle_keyboard_undo() - Manually trigger undo")
+        print()
+        print("The system uses multiple fallback methods:")
+        print("1. Segment editor built-in undo (preferred)")
+        print("2. Scene-based undo system (fallback)")
+        print("3. Both global and widget-specific shortcuts")
+        print("="*60 + "\n")
+        
+    except Exception as e:
+        print(f"Error showing help: {e}")
 
 def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
     """
@@ -13923,6 +14237,44 @@ def cleanup_scissors_tool_ui():
             widget = slicer.modules.WorkflowSegmentEditorWidget
             widget.setParent(None)
             del slicer.modules.WorkflowSegmentEditorWidget
+        
+        # Clean up keyboard shortcuts
+        if hasattr(slicer.modules, 'WorkflowUndoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowUndoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowUndoShortcut
+                print("Cleaned up Ctrl+Z shortcut")
+            except Exception:
+                pass
+        
+        if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowRedoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowRedoShortcut
+                print("Cleaned up Ctrl+Y shortcut")
+            except Exception:
+                pass
+        
+        # Clean up widget-specific shortcuts
+        if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowWidgetUndoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowWidgetUndoShortcut
+                print("Cleaned up widget Ctrl+Z shortcut")
+            except Exception:
+                pass
+        
+        if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
+            try:
+                shortcut = slicer.modules.WorkflowWidgetRedoShortcut
+                shortcut.setParent(None)
+                del slicer.modules.WorkflowWidgetRedoShortcut
+                print("Cleaned up widget Ctrl+Y shortcut")
+            except Exception:
+                pass
         
         for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
             if hasattr(slicer.modules, attr):
