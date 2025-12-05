@@ -39,6 +39,8 @@ def initialize_workflow_ui():
     try:
         # Use QTimer to ensure this runs after the UI is fully loaded
         qt.QTimer.singleShot(1000, force_collapse_left_panel_on_startup)
+        # Initialize workflow state tracking
+        initialize_workflow_state_tracking()
     except Exception as e:
         print(f"Warning: Could not initialize workflow UI: {e}")
 
@@ -47,6 +49,525 @@ try:
     initialize_workflow_ui()
 except Exception as e:
     print(f"Warning: Could not call initialize_workflow_ui: {e}")
+
+# ===============================================================================
+# WORKFLOW STATE MANAGEMENT AND BACK BUTTON SYSTEM
+# ===============================================================================
+
+def initialize_workflow_state_tracking():
+    """Initialize the workflow state tracking system"""
+    try:
+        # Define workflow steps in order
+        workflow_steps = [
+            {
+                'id': 'dicom_loading',
+                'name': 'DICOM Loading',
+                'module': 'AddDICOMData',
+                'description': 'Load DICOM data or volume'
+            },
+            {
+                'id': 'volume_crop',
+                'name': 'Volume Cropping',
+                'module': 'CropVolume',
+                'description': 'Crop volume to region of interest'
+            },
+            {
+                'id': 'segmentation',
+                'name': 'Segmentation',
+                'module': 'SegmentEditor',
+                'description': 'Create threshold segmentation'
+            },
+            {
+                'id': 'centerline_extraction',
+                'name': 'Centerline Extraction',
+                'module': 'ExtractCenterline',
+                'description': 'Extract vessel centerline'
+            },
+            {
+                'id': 'cpr_processing',
+                'name': 'CPR Processing',
+                'module': 'CurvedPlanarReformat',
+                'description': 'Curved planar reformat'
+            },
+            {
+                'id': 'point_placement',
+                'name': 'Point Placement & Analysis',
+                'module': 'Custom',
+                'description': 'Place analysis points and measurements'
+            }
+        ]
+        
+        # Store workflow state
+        slicer.modules.WorkflowSteps = workflow_steps
+        slicer.modules.WorkflowCurrentStep = 0
+        slicer.modules.WorkflowHistory = []
+        
+        # Initialize back button cleanup registry
+        slicer.modules.WorkflowBackButtonRegistry = []
+        
+    except Exception as e:
+        print(f"Error initializing workflow state: {e}")
+
+def get_current_workflow_step():
+    """Get the current workflow step"""
+    try:
+        if hasattr(slicer.modules, 'WorkflowCurrentStep') and hasattr(slicer.modules, 'WorkflowSteps'):
+            current_index = slicer.modules.WorkflowCurrentStep
+            if 0 <= current_index < len(slicer.modules.WorkflowSteps):
+                return slicer.modules.WorkflowSteps[current_index]
+        return None
+    except Exception as e:
+        print(f"Error getting current workflow step: {e}")
+        return None
+
+def set_workflow_step(step_id):
+    """Set the current workflow step by ID"""
+    try:
+        if not hasattr(slicer.modules, 'WorkflowSteps'):
+            initialize_workflow_state_tracking()
+            
+        for i, step in enumerate(slicer.modules.WorkflowSteps):
+            if step['id'] == step_id:
+                # Store previous step in history
+                if hasattr(slicer.modules, 'WorkflowCurrentStep'):
+                    previous_step = slicer.modules.WorkflowCurrentStep
+                    if previous_step not in slicer.modules.WorkflowHistory:
+                        slicer.modules.WorkflowHistory.append(previous_step)
+                
+                slicer.modules.WorkflowCurrentStep = i
+                print(f"Workflow step set to: {step['name']}")
+                return True
+        
+        print(f"Workflow step '{step_id}' not found")
+        return False
+        
+    except Exception as e:
+        print(f"Error setting workflow step: {e}")
+        return False
+
+def get_previous_workflow_step():
+    """Get the previous workflow step from history"""
+    try:
+        if (hasattr(slicer.modules, 'WorkflowHistory') and 
+            len(slicer.modules.WorkflowHistory) > 0 and
+            hasattr(slicer.modules, 'WorkflowSteps')):
+            
+            previous_index = slicer.modules.WorkflowHistory[-1]
+            if 0 <= previous_index < len(slicer.modules.WorkflowSteps):
+                return slicer.modules.WorkflowSteps[previous_index]
+        return None
+    except Exception as e:
+        print(f"Error getting previous workflow step: {e}")
+        return None
+
+def can_go_back():
+    """Check if there's a previous step to go back to"""
+    try:
+        return (hasattr(slicer.modules, 'WorkflowHistory') and 
+                len(slicer.modules.WorkflowHistory) > 0)
+    except Exception as e:
+        return False
+
+def create_workflow_back_button(parent_widget, callback=None):
+    """
+    Create a standardized back button for workflow modules
+    
+    Args:
+        parent_widget: The parent widget to add the button to
+        callback: Optional custom callback function for additional cleanup
+    
+    Returns:
+        The created button widget
+    """
+    try:
+        # Create back button container
+        back_container = qt.QHBoxLayout()
+        
+        # Create back button
+        back_button = qt.QPushButton("◀ Back to Previous Step")
+        back_button.setStyleSheet("""
+            QPushButton {
+                background-color: #666666;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                margin: 5px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #777777;
+            }
+            QPushButton:pressed {
+                background-color: #555555;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        
+        # Add step info label
+        step_info_label = qt.QLabel()
+        step_info_label.setStyleSheet("QLabel { color: #666666; font-size: 11px; margin-left: 10px; }")
+        
+        def update_back_button_state():
+            """Update back button state based on workflow history"""
+            try:
+                if can_go_back():
+                    back_button.enabled = True
+                    previous_step = get_previous_workflow_step()
+                    if previous_step:
+                        step_info_label.text = f"← {previous_step['name']}"
+                else:
+                    back_button.enabled = False
+                    step_info_label.text = "No previous step"
+            except Exception as e:
+                print(f"Error updating back button state: {e}")
+                back_button.enabled = False
+                step_info_label.text = "Back unavailable"
+        
+        def on_back_button_clicked():
+            """Handle back button click"""
+            try:
+                if callback:
+                    callback()
+                go_back_to_previous_step()
+            except Exception as e:
+                print(f"Error in back button callback: {e}")
+        
+        # Connect back button
+        back_button.clicked.connect(on_back_button_clicked)
+        
+        # Update initial state
+        update_back_button_state()
+        
+        # Add to layout
+        back_container.addWidget(back_button)
+        back_container.addWidget(step_info_label)
+        back_container.addStretch()
+        
+        # Store reference for cleanup
+        back_button_info = {
+            'button': back_button,
+            'label': step_info_label,
+            'container': back_container,
+            'update_function': update_back_button_state
+        }
+        
+        if not hasattr(slicer.modules, 'WorkflowBackButtonRegistry'):
+            slicer.modules.WorkflowBackButtonRegistry = []
+        slicer.modules.WorkflowBackButtonRegistry.append(back_button_info)
+        
+        # Add to parent widget if it's a layout
+        if hasattr(parent_widget, 'addLayout'):
+            parent_widget.addLayout(back_container)
+        elif hasattr(parent_widget, 'layout') and parent_widget.layout():
+            parent_widget.layout().addLayout(back_container)
+        
+        return back_button_info
+        
+    except Exception as e:
+        print(f"Error creating workflow back button: {e}")
+        return None
+
+def update_all_back_buttons():
+    """Update state of all active back buttons"""
+    try:
+        if hasattr(slicer.modules, 'WorkflowBackButtonRegistry'):
+            for button_info in slicer.modules.WorkflowBackButtonRegistry:
+                if button_info and 'update_function' in button_info:
+                    try:
+                        button_info['update_function']()
+                    except Exception as e:
+                        print(f"Error updating back button: {e}")
+    except Exception as e:
+        print(f"Error updating all back buttons: {e}")
+
+def cleanup_workflow_back_buttons():
+    """Clean up all workflow back buttons"""
+    try:
+        if hasattr(slicer.modules, 'WorkflowBackButtonRegistry'):
+            for button_info in slicer.modules.WorkflowBackButtonRegistry:
+                if button_info:
+                    try:
+                        # Hide/remove widgets
+                        if 'button' in button_info and button_info['button']:
+                            button_info['button'].hide()
+                            button_info['button'].setParent(None)
+                        if 'label' in button_info and button_info['label']:
+                            button_info['label'].hide() 
+                            button_info['label'].setParent(None)
+                    except Exception as e:
+                        print(f"Error cleaning up back button: {e}")
+            
+            # Clear registry
+            slicer.modules.WorkflowBackButtonRegistry = []
+            
+    except Exception as e:
+        print(f"Error cleaning up workflow back buttons: {e}")
+
+def go_back_to_previous_step():
+    """Go back to the previous workflow step"""
+    try:
+        if not can_go_back():
+            print("No previous step to go back to")
+            return False
+            
+        # Get previous step
+        previous_index = slicer.modules.WorkflowHistory.pop()
+        previous_step = slicer.modules.WorkflowSteps[previous_index]
+        
+        # Set current step to previous
+        slicer.modules.WorkflowCurrentStep = previous_index
+        
+        print(f"Going back to: {previous_step['name']}")
+        
+        # Clean up current step
+        cleanup_current_workflow_step()
+        
+        # Execute step-specific back navigation
+        execute_back_navigation(previous_step)
+        
+        # Update all back buttons
+        update_all_back_buttons()
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error going back to previous step: {e}")
+        return False
+
+def cleanup_current_workflow_step():
+    """Clean up the current workflow step before going back"""
+    try:
+        current_step = get_current_workflow_step()
+        if not current_step:
+            return
+            
+        step_id = current_step['id']
+        
+        # Step-specific cleanup
+        if step_id == 'volume_crop':
+            cleanup_crop_workflow_for_back()
+        elif step_id == 'segmentation':
+            cleanup_segmentation_workflow_for_back()
+        elif step_id == 'centerline_extraction':
+            cleanup_centerline_workflow_for_back()
+        elif step_id == 'cpr_processing':
+            cleanup_cpr_workflow_for_back()
+        elif step_id == 'point_placement':
+            cleanup_point_placement_workflow_for_back()
+            
+        # General cleanup
+        cleanup_workflow_ui()
+        
+    except Exception as e:
+        print(f"Error cleaning up current workflow step: {e}")
+
+def execute_back_navigation(target_step):
+    """Execute navigation back to specific step"""
+    try:
+        step_id = target_step['id']
+        module_name = target_step['module']
+        
+        if step_id == 'dicom_loading':
+            slicer.util.selectModule("AddDICOMData")
+            
+        elif step_id == 'volume_crop':
+            # Restart cropping workflow
+            restart_crop_workflow_for_back()
+            
+        elif step_id == 'segmentation':
+            # Return to segmentation step
+            restart_segmentation_workflow_for_back()
+            
+        elif step_id == 'centerline_extraction':
+            # Return to centerline extraction
+            restart_centerline_workflow_for_back()
+            
+        elif step_id == 'cpr_processing':
+            # Return to CPR processing
+            restart_cpr_workflow_for_back()
+            
+        elif step_id == 'point_placement':
+            # Return to point placement
+            restart_point_placement_workflow_for_back()
+            
+    except Exception as e:
+        print(f"Error executing back navigation: {e}")
+
+# Workflow-specific cleanup and restart functions
+def cleanup_crop_workflow_for_back():
+    """Clean up crop workflow before going back"""
+    try:
+        cleanup_custom_crop_interface()
+        cleanup_crop_module_custom_elements()
+    except Exception as e:
+        print(f"Error cleaning up crop workflow: {e}")
+
+def cleanup_segmentation_workflow_for_back():
+    """Clean up segmentation workflow before going back"""
+    try:
+        cleanup_scissors_tool_ui()
+        cleanup_segment_editor_custom_elements()
+    except Exception as e:
+        print(f"Error cleaning up segmentation workflow: {e}")
+
+def cleanup_centerline_workflow_for_back():
+    """Clean up centerline workflow before going back"""
+    try:
+        cleanup_centerline_ui()
+        cleanup_extract_centerline_custom_elements()
+        stop_all_centerline_monitoring()
+    except Exception as e:
+        print(f"Error cleaning up centerline workflow: {e}")
+
+def cleanup_cpr_workflow_for_back():
+    """Clean up CPR workflow before going back"""
+    try:
+        cleanup_cpr_custom_elements()
+        stop_cpr_monitoring()
+    except Exception as e:
+        print(f"Error cleaning up CPR workflow: {e}")
+
+def cleanup_point_placement_workflow_for_back():
+    """Clean up point placement workflow before going back"""
+    try:
+        cleanup_point_placement_ui()
+        cleanup_all_workflow_ui()
+    except Exception as e:
+        print(f"Error cleaning up point placement workflow: {e}")
+
+def restart_crop_workflow_for_back():
+    """Restart crop workflow when going back"""
+    try:
+        set_workflow_step('volume_crop')
+        set_three_up_view()
+        create_initial_custom_crop_interface()
+    except Exception as e:
+        print(f"Error restarting crop workflow: {e}")
+
+def restart_segmentation_workflow_for_back():
+    """Restart segmentation workflow when going back"""
+    try:
+        set_workflow_step('segmentation')
+        # Find current volume and segmentation
+        volume_node = find_working_volume()
+        if volume_node:
+            create_threshold_segment()
+    except Exception as e:
+        print(f"Error restarting segmentation workflow: {e}")
+
+def restart_centerline_workflow_for_back():
+    """Restart centerline workflow when going back"""
+    try:
+        set_workflow_step('centerline_extraction')
+        open_centerline_module()
+    except Exception as e:
+        print(f"Error restarting centerline workflow: {e}")
+
+def restart_cpr_workflow_for_back():
+    """Restart CPR workflow when going back"""
+    try:
+        set_workflow_step('cpr_processing')
+        # Find most recent centerlines and switch to CPR
+        centerline_model = find_recent_centerline_model()
+        centerline_curve = find_recent_centerline_curve()
+        switch_to_cpr_module(centerline_model, centerline_curve)
+    except Exception as e:
+        print(f"Error restarting CPR workflow: {e}")
+
+def restart_point_placement_workflow_for_back():
+    """Restart point placement workflow when going back"""
+    try:
+        set_workflow_step('point_placement')
+        create_point_placement_controls()
+    except Exception as e:
+        print(f"Error restarting point placement workflow: {e}")
+
+# Additional helper functions for workflow management
+def get_workflow_status():
+    """Get current workflow status for debugging"""
+    try:
+        if not hasattr(slicer.modules, 'WorkflowSteps'):
+            return "Workflow not initialized"
+            
+        current_step = get_current_workflow_step()
+        previous_step = get_previous_workflow_step()
+        
+        status = f"Current Step: {current_step['name'] if current_step else 'None'}\n"
+        status += f"Previous Step: {previous_step['name'] if previous_step else 'None'}\n"
+        status += f"History Length: {len(getattr(slicer.modules, 'WorkflowHistory', []))}\n"
+        status += f"Can Go Back: {can_go_back()}"
+        
+        return status
+    except Exception as e:
+        return f"Error getting workflow status: {e}"
+
+def print_workflow_status():
+    """Print current workflow status to console"""
+    print("=== WORKFLOW STATUS ===")
+    print(get_workflow_status())
+    print("=====================")
+
+def reset_workflow_completely():
+    """Reset workflow state completely"""
+    try:
+        cleanup_workflow_back_buttons()
+        cleanup_all_workflow_ui()
+        
+        # Reset state variables
+        if hasattr(slicer.modules, 'WorkflowSteps'):
+            del slicer.modules.WorkflowSteps
+        if hasattr(slicer.modules, 'WorkflowCurrentStep'):
+            del slicer.modules.WorkflowCurrentStep
+        if hasattr(slicer.modules, 'WorkflowHistory'):
+            del slicer.modules.WorkflowHistory
+        if hasattr(slicer.modules, 'WorkflowBackButtonRegistry'):
+            del slicer.modules.WorkflowBackButtonRegistry
+            
+        # Reinitialize
+        initialize_workflow_state_tracking()
+        
+        print("Workflow completely reset")
+        return True
+        
+    except Exception as e:
+        print(f"Error resetting workflow: {e}")
+        return False
+
+def test_workflow_back_button():
+    """Test function to demonstrate back button functionality"""
+    try:
+        print("=== Testing Workflow Back Button System ===")
+        
+        # Initialize if needed
+        if not hasattr(slicer.modules, 'WorkflowSteps'):
+            initialize_workflow_state_tracking()
+        
+        # Simulate workflow progression
+        print("Simulating workflow steps...")
+        set_workflow_step('volume_crop')
+        print(f"Step 1: {get_current_workflow_step()['name']}")
+        
+        set_workflow_step('segmentation')
+        print(f"Step 2: {get_current_workflow_step()['name']}")
+        
+        set_workflow_step('centerline_extraction')
+        print(f"Step 3: {get_current_workflow_step()['name']}")
+        
+        print(f"\nCan go back: {can_go_back()}")
+        
+        if can_go_back():
+            prev_step = get_previous_workflow_step()
+            print(f"Would go back to: {prev_step['name']}")
+        
+        print("=== Test Complete ===")
+        
+    except Exception as e:
+        print(f"Error in test: {e}")
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
@@ -1925,6 +2446,9 @@ def create_threshold_segment():
         return
     
     # Continue with normal threshold workflow
+    # Set workflow step to segmentation
+    set_workflow_step('segmentation')
+    
     # Use default threshold values instead of prompting user
     threshold_value_low, threshold_value_high = 290.0, 3071.0
     
@@ -2309,7 +2833,8 @@ def on_continue_from_scissors():
         # Open the Data module to show imported markup and created curve models
         open_data_module()
     else:
-        # Normal workflow - proceed to centerline extraction
+        # Normal workflow - proceed to centerline extraction  
+        set_workflow_step('centerline_extraction')
         open_centerline_module()
 
 def on_finish_cropping():
@@ -2505,6 +3030,9 @@ def cleanup_workflow_ui():
     Clean up workflow UI elements
     """
     try:
+        # Clean up back buttons first
+        cleanup_workflow_back_buttons()
+        
         if hasattr(slicer.modules, 'WorkflowDockWidget'):
             dock_widget = slicer.modules.WorkflowDockWidget
             dock_widget.close()
@@ -2678,6 +3206,17 @@ def add_large_centerline_apply_button():
                         
                         large_apply_button.connect('clicked()', on_apply_button_clicked)
                         
+                        # Add back button for workflow navigation
+                        button_container = qt.QWidget()
+                        button_layout = qt.QVBoxLayout(button_container)
+                        button_layout.addWidget(large_apply_button)
+                        
+                        try:
+                            set_workflow_step('centerline_extraction')
+                            create_workflow_back_button(button_layout)
+                        except Exception as e:
+                            print(f"Warning: Could not add back button to centerline interface: {e}")
+                        
                         main_ui_widget = None
                         
                         # Strategy 1: Look for the main widget container
@@ -2692,21 +3231,21 @@ def add_large_centerline_apply_button():
                         if not main_ui_widget:
                             main_ui_widget = centerline_widget
                         
-                        # Add button to the main UI widget
+                        # Add button container to the main UI widget
                         if main_ui_widget and hasattr(main_ui_widget, 'layout'):
                             layout = main_ui_widget.layout()
                             if layout:
                                 # Insert at the top of the module for maximum visibility
-                                layout.insertWidget(0, large_apply_button)
+                                layout.insertWidget(0, button_container)
                             else:
                                 # Create a layout if none exists
                                 new_layout = qt.QVBoxLayout(main_ui_widget)
-                                new_layout.insertWidget(0, large_apply_button)
+                                new_layout.insertWidget(0, button_container)
                         else:
                             container_widgets = centerline_widget.findChildren(qt.QWidget)
                             for widget in container_widgets:
                                 if hasattr(widget, 'layout') and widget.layout() and widget.layout().count() > 0:
-                                    widget.layout().insertWidget(0, large_apply_button)
+                                    widget.layout().insertWidget(0, button_container)
                                     break
                             else:
                                 return False
@@ -3445,11 +3984,18 @@ def add_large_cpr_apply_button():
                         if not main_ui_widget:
                             main_ui_widget = cpr_widget
 
-                        # Create a container widget for both buttons
+                        # Create a container widget for buttons with back button
                         button_container = qt.QWidget()
                         button_layout = qt.QVBoxLayout(button_container)
                         button_layout.addWidget(large_apply_button)
                         button_layout.addWidget(cross_section_button)
+                        
+                        # Add back button for workflow navigation
+                        try:
+                            set_workflow_step('cpr_processing')
+                            create_workflow_back_button(button_layout)
+                        except Exception as e:
+                            print(f"Warning: Could not add back button to CPR interface: {e}")
 
                         if main_ui_widget and hasattr(main_ui_widget, 'layout'):
                             layout = main_ui_widget.layout()
@@ -3929,6 +4475,9 @@ def start_with_dicom_data():
     Start the workflow by opening the Add DICOM Data module and waiting for a volume to be loaded.
     """
     try:
+        # Set workflow step to DICOM loading
+        set_workflow_step('dicom_loading')
+        
         # Set 3D view background to black at the start of workflow
         set_3d_view_background_black()
         
@@ -7197,6 +7746,13 @@ def create_point_placement_controls():
         # Initialize the dropdown with existing circles
         update_circle_dropdown()
         
+        # Add back button for workflow navigation
+        try:
+            set_workflow_step('point_placement')
+            create_workflow_back_button(layout)
+        except Exception as e:
+            print(f"Warning: Could not add back button to point placement interface: {e}")
+        
         layout.addStretch()
         
         main_window.addDockWidget(qt.Qt.RightDockWidgetArea, dock_widget)
@@ -9706,6 +10262,7 @@ def cleanup_all_workflow_ui():
     Clean up all workflow UI elements before continuing to workflow2
     """
     try:
+        cleanup_workflow_back_buttons()
         cleanup_point_placement_ui()
         cleanup_workflow_ui()
         cleanup_continue_ui()
@@ -14071,6 +14628,83 @@ def create_scissors_tool_button():
     except Exception as e:
         return False
 
+def create_scissors_undo_button():
+    """
+    Create an undo button specifically for the scissors tool that performs Ctrl+Z functionality
+    """
+    try:
+        undo_button = qt.QPushButton("↶ UNDO (Ctrl+Z)")
+        undo_button.setStyleSheet("""
+            QPushButton { 
+                background-color: #ffc107; 
+                color: #212529; 
+                border: none; 
+                padding: 10px 16px; 
+                font-weight: bold;
+                border-radius: 6px;
+                margin: 5px;
+                font-size: 13px;
+                min-height: 36px;
+                min-width: 140px;
+            }
+            QPushButton:hover { 
+                background-color: #e0a800; 
+            }
+            QPushButton:pressed { 
+                background-color: #d39e00; 
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        
+        def on_undo_clicked():
+            """Handle undo button click by performing segmentation undo"""
+            try:
+                # Try multiple undo methods for comprehensive coverage
+                success = handle_keyboard_undo()
+                if success:
+                    print("Scissors undo performed successfully")
+                else:
+                    print("Undo may not have been successful - trying alternative method")
+                    # Try alternative undo method
+                    try_alternative_undo()
+            except Exception as e:
+                print(f"Error performing scissors undo: {e}")
+        
+        def try_alternative_undo():
+            """Alternative undo method using segment editor widget directly"""
+            try:
+                if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
+                    segment_editor_widget = slicer.modules.WorkflowSegmentEditorWidget
+                    if segment_editor_widget and hasattr(segment_editor_widget, 'undo'):
+                        segment_editor_widget.undo()
+                        print("Alternative undo method executed")
+                        return True
+                
+                # Try scene-level undo as last resort
+                if slicer.mrmlScene.GetUndoFlag():
+                    slicer.mrmlScene.Undo()
+                    print("Scene-level undo executed")
+                    return True
+                    
+            except Exception as e:
+                print(f"Alternative undo method failed: {e}")
+            return False
+        
+        # Connect the button
+        undo_button.clicked.connect(on_undo_clicked)
+        
+        # Store reference for potential cleanup
+        slicer.modules.WorkflowScissorsUndoButton = undo_button
+        
+        return undo_button
+        
+    except Exception as e:
+        print(f"Error creating scissors undo button: {e}")
+        return None
+
 def create_floating_scissors_widget(scissors_button):
     """
     Create a floating widget for the scissors button and finish cropping button
@@ -14109,6 +14743,14 @@ def create_floating_scissors_widget(scissors_button):
         # Connect finish button to continue workflow
         finish_button.connect('clicked()', lambda: on_finish_cropping())
         layout.addWidget(finish_button)
+        
+        # Add undo button for scissors tool
+        try:
+            undo_button = create_scissors_undo_button()
+            if undo_button:
+                layout.addWidget(undo_button)
+        except Exception as e:
+            print(f"Warning: Could not add undo button to scissors interface: {e}")
         
         # Add instructions
         instructions = qt.QLabel("Use scissors tool to ERASE/SUBTRACT from segmentation, then click Finish Cropping to continue")
@@ -14226,6 +14868,18 @@ def cleanup_scissors_tool_ui():
                     parent.layout().removeWidget(button)
             button.setParent(None)
             del slicer.modules.WorkflowFinishButton
+        
+        # Clean up undo button
+        if hasattr(slicer.modules, 'WorkflowScissorsUndoButton'):
+            button = slicer.modules.WorkflowScissorsUndoButton
+            if button.parent():
+                parent = button.parent()
+                if hasattr(parent, 'removeWidget'):
+                    parent.removeWidget(button)
+                elif hasattr(parent, 'layout') and parent.layout():
+                    parent.layout().removeWidget(button)
+            button.setParent(None)
+            del slicer.modules.WorkflowScissorsUndoButton
         
         # Clean up segment editor components
         if hasattr(slicer.modules, 'WorkflowSegmentEditorNode'):
@@ -15734,6 +16388,14 @@ def add_scissors_tools_to_initial_interface():
         # Store button reference for external access (override previous if exists)
         slicer.modules.CustomScissorsButton = scissors_button
         
+        # Add undo scissors button under the toggle scissors button
+        try:
+            undo_button = create_scissors_undo_button()
+            if undo_button:
+                layout.addWidget(undo_button)
+        except Exception as e:
+            print(f"Warning: Could not add undo button to crop interface: {e}")
+        
         # Add spacing
         layout.addSpacing(15)
         
@@ -15929,6 +16591,14 @@ def create_custom_crop_interface():
         
         # Store button reference for external access
         slicer.modules.CustomScissorsButton = scissors_button
+        
+        # Add undo scissors button under the toggle scissors button
+        try:
+            undo_button = create_scissors_undo_button()
+            if undo_button:
+                layout.addWidget(undo_button)
+        except Exception as e:
+            print(f"Warning: Could not add undo button to crop interface: {e}")
         
         # Add spacing
         layout.addSpacing(15)
@@ -16348,7 +17018,7 @@ def cleanup_custom_crop_interface():
                 widget.deleteLater()
             delattr(slicer.modules, 'CustomCropWidget')
 
-        for attr_name in ['CustomCropButton', 'CustomScissorsButton', 'CustomContinueButton']:
+        for attr_name in ['CustomCropButton', 'CustomScissorsButton', 'CustomContinueButton', 'WorkflowScissorsUndoButton']:
             if hasattr(slicer.modules, attr_name):
                 delattr(slicer.modules, attr_name)
     except Exception as e:
