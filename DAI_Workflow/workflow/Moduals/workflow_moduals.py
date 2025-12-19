@@ -3959,11 +3959,7 @@ def start_with_dicom_data():
     try:
         # Set 3D view background to black at the start of workflow
         set_3d_view_background_black()
-        
-        # Delete all patients from DICOM database before loading new data
-        deleteAllPatients()
-        
-        pass
+
         
         # Check if there are already volumes in the scene
         existing_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
@@ -3999,8 +3995,6 @@ def load_dicom_from_source_file(dicom_path):
     import vtk
     try:
         
-        # Delete all patients from DICOM database before loading new data
-        deleteAllPatients()
         
         # Check if path exists
         if not os.path.exists(dicom_path):
@@ -4017,7 +4011,7 @@ def load_dicom_from_source_file(dicom_path):
         if dicom_files:
             file_analysis = _analyze_dicom_files(dicom_files)
             if file_analysis['is_philips']:
-                
+                deleteAllPatients()
                 # Try the simple method first (exact copy of user's working script)
                 simple_result = load_philips_dicom_simple(dicom_path)
                 if simple_result:
@@ -5263,7 +5257,7 @@ def load_philips_dicom_simple(dicom_path):
         import slicer
 
         # Delete all patients from DICOM database before loading new data
-        deleteAllPatients()
+        
 
         dicomDataDir = dicom_path
 
@@ -5397,7 +5391,6 @@ def simple_dicom_load(dicom_path):
     
     try:
         # Delete all patients from DICOM database before loading new data
-        deleteAllPatients()
         
         # Method 1: Try direct directory loading
         volume_node = slicer.util.loadVolume(dicom_path)
