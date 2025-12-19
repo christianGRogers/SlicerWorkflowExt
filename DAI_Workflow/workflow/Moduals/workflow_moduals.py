@@ -79,27 +79,25 @@ def deleteAllPatients():
     
     print("All patients deleted successfully")
 
-def onApplicationStateChanged(state):
-    """
-    Monitor application state changes.
-    More granular control over different exit states.
-    """
-    if state == slicer.app.ApplicationState.Quit:
-        print("Application is quitting...")
-        try:
-            # Delete all patients from DICOM database on exit
-            deleteAllPatients()
-            print("Workflow cleanup completed on Slicer exit")
-        except Exception as e:
-            print(f"Error during workflow cleanup: {e}")
+# APPROACH 1: Using aboutToQuit signal (Most Reliable)
+def onSlicerAboutToQuit():
+    """Called when Slicer is about to quit - runs before database closes"""
+    print("Slicer is about to quit - running cleanup...")
+    try:
+        deleteAllPatients()
+        print("Cleanup completed successfully")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
 
 def setup_exit_handler():
-    """Set up cleanup when Slicer exits using application state monitoring"""
+    """Set up cleanup using aboutToQuit signal"""
     try:
-        slicer.app.stateChanged.connect(onApplicationStateChanged)
-        print("Application state monitor registered successfully")
+        slicer.app.connect("aboutToQuit()", onSlicerAboutToQuit)
+        print("Exit handler registered (aboutToQuit approach)")
+        return True
     except Exception as e:
-        print(f"Warning: Could not register application state monitor: {e}")
+        print(f"Could not register aboutToQuit handler: {e}")
+        return False
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
