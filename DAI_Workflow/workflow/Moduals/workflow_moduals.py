@@ -4045,15 +4045,13 @@ def clear_dicom_database():
 def load_dicom_from_source_file(dicom_path):
     """
     Load DICOM data from a path specified in the source_slicer.txt file.
-    Uses a robust plugin-based approach similar to mpReviewPreprocessor for better compatibility.
+    Uses direct loading approach to bypass database conflicts entirely.
     """
     import os
     import vtk
     try:
         
-        # Clear the DICOM database before loading new data to prevent conflicts
-        print("Preparing clean environment for DICOM loading...")
-        clear_dicom_database()  # Always continues regardless of success
+        print(f"Loading DICOM directly from source file: {dicom_path}")
         
         if not os.path.exists(dicom_path):
             qt.QMessageBox.warning(
@@ -4063,13 +4061,13 @@ def load_dicom_from_source_file(dicom_path):
             )
             return False
         
-
+        # Enhanced Philips detection - use direct loading for Philips files
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         if dicom_files:
             file_analysis = _analyze_dicom_files(dicom_files)
             if file_analysis['is_philips']:
                 
-                # Try the simple method first (exact copy of user's working script)
+                # Use the direct loading method (no database operations)
                 simple_result = load_philips_dicom_simple(dicom_path)
                 if simple_result:
                     return True
@@ -4078,6 +4076,35 @@ def load_dicom_from_source_file(dicom_path):
                 philips_result = _load_philips_dicom_series(dicom_path)
                 if philips_result:
                     return True
+        
+        # Try simple direct loading first for any DICOM type
+        print("Attempting direct DICOM loading (no database)...")
+        try:
+            # Method 1: Direct directory loading
+            volume_node = slicer.util.loadVolume(dicom_path)
+            if volume_node:
+                print("Successfully loaded DICOM via direct directory method")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+        except Exception as direct_error:
+            print(f"Direct directory loading failed: {direct_error}")
+        
+        # Method 2: Load first DICOM file (should trigger series loading)
+        if dicom_files:
+            try:
+                first_file = dicom_files[0]
+                volume_node = slicer.util.loadVolume(first_file)
+                if volume_node:
+                    print("Successfully loaded DICOM via first file method")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+            except Exception as file_error:
+                print(f"First file loading failed: {file_error}")
+        
+        # Only fall back to database methods if direct loading fails
+        print("Direct loading failed, trying database methods...")
         
         if not DICOM_UTILS_AVAILABLE:
             return _fallback_dicom_loading(dicom_path)
@@ -5300,43 +5327,99 @@ def test_philips_detection(dicom_path):
 
 def load_philips_dicom_simple(dicom_path):
     """
-    Load Philips DICOM using the exact user's working method.
-    This is a direct copy of the user's proven script.
+    Load Philips DICOM directly without using the DICOM database.
+    This bypasses database operations entirely to avoid conflicts.
     """
     try:
-        import DICOMLib
-        from DICOMLib import DICOMUtils
-        import slicer
-
-        # Clear the DICOM database before importing new data to prevent conflicts
-        print("Preparing clean environment for Philips DICOM loading...")
-        clear_dicom_database()  # Always continues regardless of success
-
-        dicomDataDir = dicom_path
-
-        # Import DICOM directory (ignores unreadable files like v_headers)
-        DICOMUtils.importDicom(dicomDataDir)
-
-        # Access the Slicer DICOM database instance
-        db = slicer.dicomDatabase
-
-        # Get all patient UIDs in the database
-        patientUIDs = db.patients()
-
-        if len(patientUIDs) == 0:
-            return None
-        else:
-            firstPatientUID = patientUIDs[0]
-            DICOMUtils.loadPatientByUID(firstPatientUID)
+        print(f"Loading Philips DICOM directly from: {dicom_path}")
+        
+        # Method 1: Try direct directory loading (simplest approach)
+        try:
+            volume_node = slicer.util.loadVolume(dicom_path)
+            if volume_node:
+                print("Successfully loaded Philips DICOM via direct directory loading")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+        except Exception as direct_error:
+            print(f"Direct directory loading failed: {direct_error}")
+        
+        # Method 2: Find DICOM files and load the first one (triggers series loading)
+        try:
+            dicom_files = _find_dicom_files_in_directory(dicom_path)
+            if dicom_files:
+                print(f"Found {len(dicom_files)} DICOM files, attempting to load series...")
+                
+                # Load the first DICOM file (Slicer should auto-load the series)
+                first_file = dicom_files[0]
+                volume_node = slicer.util.loadVolume(first_file)
+                
+                if volume_node:
+                    print("Successfully loaded Philips DICOM via first file loading")
+                    set_3d_view_background_black()
+                    qt.QTimer.singleShot(1000, start_with_volume_crop)
+                    return True
+        except Exception as file_error:
+            print(f"First file loading failed: {file_error}")
+        
+        # Method 3: Use VTK DICOM reader directly
+        try:
+            import vtk
+            reader = vtk.vtkDICOMImageReader()
+            reader.SetDirectoryName(dicom_path)
+            reader.Update()
             
-            # Continue workflow after successful loading
-            qt.QTimer.singleShot(1000, start_with_volume_crop)
+            output = reader.GetOutput()
+            if output and output.GetNumberOfPoints() > 0:
+                # Create volume node from VTK output
+                volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+                volume_node.SetName("PhilipsDICOM")
+                volume_node.SetAndObserveImageData(output)
+                volume_node.CreateDefaultDisplayNodes()
+                
+                print("Successfully loaded Philips DICOM via VTK reader")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+        except Exception as vtk_error:
+            print(f"VTK reader loading failed: {vtk_error}")
+        
+        # Method 4: Use SimpleITK as fallback
+        try:
+            import SimpleITK as sitk
             
-            # Return success
-            return True
+            # Try to read as DICOM series
+            series_reader = sitk.ImageSeriesReader()
+            dicom_names = series_reader.GetGDCMSeriesFileNames(dicom_path)
+            
+            if dicom_names:
+                series_reader.SetFileNames(dicom_names)
+                image = series_reader.Execute()
+                
+                # Convert to Slicer volume
+                volume_node = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+                volume_node.SetName("PhilipsDICOM")
+                slicer.util.updateVolumeFromArray(volume_node, sitk.GetArrayFromImage(image))
+                
+                # Set proper spacing and origin
+                spacing = image.GetSpacing()
+                origin = image.GetOrigin()
+                volume_node.SetSpacing(spacing)
+                volume_node.SetOrigin(origin)
+                
+                print("Successfully loaded Philips DICOM via SimpleITK")
+                set_3d_view_background_black()
+                qt.QTimer.singleShot(1000, start_with_volume_crop)
+                return True
+        except Exception as sitk_error:
+            print(f"SimpleITK loading failed: {sitk_error}")
+        
+        print("All direct loading methods failed for Philips DICOM")
+        return False
             
     except Exception as e:
-        return None
+        print(f"Error in direct Philips DICOM loading: {str(e)}")
+        return False
 
 def test_philips_dicom_loading(dicom_path):
     """
@@ -5435,16 +5518,15 @@ def test_dicom_loading_with_path(dicom_path):
 
 def simple_dicom_load(dicom_path):
     """
-    Simplified DICOM loading that bypasses complex database operations.
+    Simplified DICOM loading that bypasses database operations entirely.
+    Loads DICOM directly without touching the database.
     Usage: simple_dicom_load(r"G:\\My Drive\\Lawson\\FOURDIX\\...")
     """
     
     if not os.path.exists(dicom_path):
         return False
     
-    # Clear the DICOM database before loading new data to prevent conflicts
-    print("Preparing clean environment for simple DICOM load...")
-    clear_dicom_database()  # Always continues regardless of success
+    print(f"Loading DICOM directly (no database) from: {dicom_path}")
     
     try:
         # Method 1: Try direct directory loading
@@ -5454,34 +5536,40 @@ def simple_dicom_load(dicom_path):
             image_data = volume_node.GetImageData()
             if image_data:
                 dims = image_data.GetDimensions()
+                print(f"Successfully loaded volume with dimensions: {dims}")
             
             set_3d_view_background_black()
             qt.QTimer.singleShot(1000, start_with_volume_crop)
             return True
             
     except Exception as e:
-        pass
+        print(f"Direct directory loading failed: {e}")
     
     try:
         # Method 2: Find and load first DICOM file
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         
         if not dicom_files:
+            print("No DICOM files found in directory")
             return False
             
+        print(f"Found {len(dicom_files)} DICOM files, loading first one...")
         first_file = dicom_files[0]
         
         volume_node = slicer.util.loadVolume(first_file)
         
         if volume_node:
             image_data = volume_node.GetImageData()
+            if image_data:
+                dims = image_data.GetDimensions()
+                print(f"Successfully loaded volume with dimensions: {dims}")
             
             set_3d_view_background_black()
             qt.QTimer.singleShot(1000, start_with_volume_crop)
             return True
             
     except Exception as e:
-        pass
+        print(f"First file loading failed: {e}")
     
     return False
 
