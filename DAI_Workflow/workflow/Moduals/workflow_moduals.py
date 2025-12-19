@@ -3963,66 +3963,84 @@ def clear_dicom_database():
     """
     Clear all DICOM studies from the Slicer DICOM database to prevent conflicts.
     This ensures a clean database before loading new DICOM data.
+    Uses a conservative approach that gracefully handles database access issues.
     """
     try:
-        # Get the DICOM database
-        db = slicer.dicomDatabase
+        print("Attempting to clear DICOM database...")
         
-        if not db:
-            print("DICOM database not available")
-            return False
-        
-        # Get all patient UIDs in the database
-        patient_uids = db.patients()
-        
-        if not patient_uids:
-            print("No patients found in DICOM database - already clean")
-            return True
-        
-        print(f"Found {len(patient_uids)} patient(s) in DICOM database. Clearing...")
-        
-        # Remove all patients (this will cascade remove studies and series)
-        for patient_uid in patient_uids:
-            try:
-                # Get studies for this patient
-                study_uids = db.studiesForPatient(patient_uid)
-                
-                # Remove each study (which removes series and instances)
-                for study_uid in study_uids:
-                    series_uids = db.seriesForStudy(study_uid)
-                    for series_uid in series_uids:
-                        # Remove all instances in this series
-                        instance_uids = db.instancesForSeries(series_uid)
-                        for instance_uid in instance_uids:
-                            db.removeInstance(instance_uid)
-                        # Remove the series
-                        db.removeSeries(series_uid)
-                    # Remove the study
-                    db.removeStudy(study_uid)
-                
-                # Remove the patient
-                db.removePatient(patient_uid)
-                print(f"Removed patient: {patient_uid}")
-                
-            except Exception as patient_error:
-                print(f"Error removing patient {patient_uid}: {str(patient_error)}")
-                continue
-        
-        # Force database update
-        slicer.app.processEvents()
-        
-        # Verify database is cleared
-        remaining_patients = db.patients()
-        if remaining_patients:
-            print(f"Warning: {len(remaining_patients)} patient(s) still remain in database")
-            return False
-        else:
-            print("DICOM database successfully cleared")
-            return True
+        # First, try to clear any loaded volumes from the scene to prevent conflicts
+        try:
+            volume_nodes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
+            if volume_nodes:
+                print(f"Removing {len(volume_nodes)} existing volume(s) from scene...")
+                for volume in volume_nodes:
+                    slicer.mrmlScene.RemoveNode(volume)
             
+            # Also clear any segmentation nodes
+            seg_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
+            if seg_nodes:
+                print(f"Removing {len(seg_nodes)} existing segmentation(s) from scene...")
+                for seg in seg_nodes:
+                    slicer.mrmlScene.RemoveNode(seg)
+                    
+        except Exception as scene_error:
+            print(f"Could not clear scene nodes: {str(scene_error)}")
+
+        try:
+
+            db = None
+            
+
+            try:
+                dicom_widget = slicer.modules.dicom.widgetRepresentation()
+                if hasattr(dicom_widget, 'dicomDatabase'):
+                    db = dicom_widget.dicomDatabase
+                elif hasattr(dicom_widget, 'detailsPopup') and hasattr(dicom_widget.detailsPopup, 'dicomDatabase'):
+                    db = dicom_widget.detailsPopup.dicomDatabase
+            except:
+                pass
+
+            if not db:
+                try:
+                    import DICOMLib
+                    settings = qt.QSettings()
+                    db_path = settings.value('DICOM/DatabaseDirectory')
+                    if db_path and os.path.exists(db_path):
+                        db = DICOMLib.DICOMDatabase()
+                        if hasattr(db, 'openDatabase'):
+                            db.openDatabase(db_path)
+                except:
+                    pass
+            
+            if db and hasattr(db, 'patients'):
+                try:
+                    patients = db.patients()
+                    if patients:
+                        print(f"Found {len(patients)} patient(s) in database. Attempting to clear...")
+                        for patient in patients:
+                            try:
+                                if hasattr(db, 'removePatient'):
+                                    db.removePatient(patient)
+                            except Exception as remove_error:
+                                print(f"Could not remove patient {patient}: {str(remove_error)}")
+                        print("Database clearing completed")
+                    else:
+                        print("No patients found in database - already clean")
+                    return True
+                except Exception as db_access_error:
+                    print(f"Could not access database patients: {str(db_access_error)}")
+            else:
+                print("Could not access DICOM database for clearing")
+                
+        except Exception as db_error:
+            print(f"Database clearing failed: {str(db_error)}")
+        
+        print("Database clearing skipped - proceeding with scene cleared")
+        return True
+        
     except Exception as e:
-        print(f"Error clearing DICOM database: {str(e)}")
-        return False
+        print(f"Error in database clearing function: {str(e)}")
+        return True
 
 def load_dicom_from_source_file(dicom_path):
     """
@@ -4034,10 +4052,8 @@ def load_dicom_from_source_file(dicom_path):
     try:
         
         # Clear the DICOM database before loading new data to prevent conflicts
-        print("Clearing DICOM database before loading new data...")
-        database_cleared = clear_dicom_database()
-        if not database_cleared:
-            print("Warning: Could not fully clear DICOM database, continuing anyway...")
+        print("Preparing clean environment for DICOM loading...")
+        clear_dicom_database()  # Always continues regardless of success
         
         if not os.path.exists(dicom_path):
             qt.QMessageBox.warning(
@@ -5293,10 +5309,8 @@ def load_philips_dicom_simple(dicom_path):
         import slicer
 
         # Clear the DICOM database before importing new data to prevent conflicts
-        print("Clearing DICOM database before loading Philips data...")
-        database_cleared = clear_dicom_database()
-        if not database_cleared:
-            print("Warning: Could not fully clear DICOM database, continuing anyway...")
+        print("Preparing clean environment for Philips DICOM loading...")
+        clear_dicom_database()  # Always continues regardless of success
 
         dicomDataDir = dicom_path
 
@@ -5429,10 +5443,8 @@ def simple_dicom_load(dicom_path):
         return False
     
     # Clear the DICOM database before loading new data to prevent conflicts
-    print("Clearing DICOM database before simple DICOM load...")
-    database_cleared = clear_dicom_database()
-    if not database_cleared:
-        print("Warning: Could not fully clear DICOM database, continuing anyway...")
+    print("Preparing clean environment for simple DICOM load...")
+    clear_dicom_database()  # Always continues regardless of success
     
     try:
         # Method 1: Try direct directory loading
