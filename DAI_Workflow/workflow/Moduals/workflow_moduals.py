@@ -87,6 +87,7 @@ def setup_exit_handler():
             # Delete all patients from DICOM database on exit
             deleteAllPatients()
             print("Workflow cleanup completed on Slicer exit")
+            i = input("Press Enter to continue...")
         except Exception as e:
             print(f"Error during workflow cleanup: {e}")
     
