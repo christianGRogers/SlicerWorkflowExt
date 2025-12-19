@@ -48,6 +48,34 @@ try:
 except Exception as e:
     print(f"Warning: Could not call initialize_workflow_ui: {e}")
 
+def deleteAllPatients():
+    """Delete all patients from the DICOM database"""
+    dicomDatabase = slicer.dicomDatabase
+    
+    if not dicomDatabase.isOpen:
+        print("DICOM database is not open")
+        return
+    
+    # Get all patient IDs
+    patients = dicomDatabase.patients()
+    
+    if len(patients) == 0:
+        print("No patients found in database")
+        return
+    
+    print(f"Found {len(patients)} patients. Deleting all...")
+    
+    # Delete each patient
+    for patientID in patients:
+        patientName = dicomDatabase.nameForPatient(patientID)
+        dicomDatabase.removePatient(patientID)
+        print(f"Deleted Patient ID: {patientID}, Name: {patientName}")
+    
+    print("All patients deleted successfully")
+
+# Run the function immediately when module is loaded (commented out by default)
+# deleteAllPatients()
+
 # Set up scene save observer after functions are defined
 def setup_module_observers():
     """Set up observers after all functions are defined"""
@@ -3932,6 +3960,9 @@ def start_with_dicom_data():
         # Set 3D view background to black at the start of workflow
         set_3d_view_background_black()
         
+        # Delete all patients from DICOM database before loading new data
+        deleteAllPatients()
+        
         pass
         
         # Check if there are already volumes in the scene
@@ -3967,6 +3998,9 @@ def load_dicom_from_source_file(dicom_path):
     import os
     import vtk
     try:
+        
+        # Delete all patients from DICOM database before loading new data
+        deleteAllPatients()
         
         # Check if path exists
         if not os.path.exists(dicom_path):
@@ -5228,6 +5262,9 @@ def load_philips_dicom_simple(dicom_path):
         from DICOMLib import DICOMUtils
         import slicer
 
+        # Delete all patients from DICOM database before loading new data
+        deleteAllPatients()
+
         dicomDataDir = dicom_path
 
         # Import DICOM directory (ignores unreadable files like v_headers)
@@ -5359,6 +5396,9 @@ def simple_dicom_load(dicom_path):
         return False
     
     try:
+        # Delete all patients from DICOM database before loading new data
+        deleteAllPatients()
+        
         # Method 1: Try direct directory loading
         volume_node = slicer.util.loadVolume(dicom_path)
         
