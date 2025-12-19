@@ -48,6 +48,12 @@ try:
 except Exception as e:
     print(f"Warning: Could not call initialize_workflow_ui: {e}")
 
+# Set up exit handler to delete patients when Slicer closes
+try:
+    setup_exit_handler()
+except Exception as e:
+    print(f"Warning: Could not set up exit handler: {e}")
+
 def deleteAllPatients():
     """Delete all patients from the DICOM database"""
     dicomDatabase = slicer.dicomDatabase
@@ -73,8 +79,23 @@ def deleteAllPatients():
     
     print("All patients deleted successfully")
 
-# Run the function immediately when module is loaded (commented out by default)
-# deleteAllPatients()
+def setup_exit_handler():
+    """Set up cleanup when Slicer exits"""
+    def workflow_cleanup():
+        """Cleanup workflow-specific items when Slicer closes"""
+        try:
+            # Delete all patients from DICOM database on exit
+            deleteAllPatients()
+            print("Workflow cleanup completed on Slicer exit")
+        except Exception as e:
+            print(f"Error during workflow cleanup: {e}")
+    
+    # Connect to application exit
+    try:
+        slicer.app.aboutToQuit.connect(workflow_cleanup)
+        print("Exit handler registered successfully")
+    except Exception as e:
+        print(f"Warning: Could not register exit handler: {e}")
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
