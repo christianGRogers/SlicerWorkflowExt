@@ -4011,7 +4011,7 @@ def load_dicom_from_source_file(dicom_path):
         if dicom_files:
             file_analysis = _analyze_dicom_files(dicom_files)
             if file_analysis['is_philips']:
-                deleteAllPatients()
+                # deleteAllPatients()
                 # Try the simple method first (exact copy of user's working script)
                 simple_result = load_philips_dicom_simple(dicom_path)
                 if simple_result:
