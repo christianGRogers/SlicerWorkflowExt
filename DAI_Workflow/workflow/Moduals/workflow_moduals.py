@@ -79,24 +79,27 @@ def deleteAllPatients():
     
     print("All patients deleted successfully")
 
-def setup_exit_handler():
-    """Set up cleanup when Slicer exits"""
-    def workflow_cleanup():
-        """Cleanup workflow-specific items when Slicer closes"""
+def onApplicationStateChanged(state):
+    """
+    Monitor application state changes.
+    More granular control over different exit states.
+    """
+    if state == slicer.app.ApplicationState.Quit:
+        print("Application is quitting...")
         try:
             # Delete all patients from DICOM database on exit
             deleteAllPatients()
             print("Workflow cleanup completed on Slicer exit")
-            i = input("Press Enter to continue...1")
         except Exception as e:
             print(f"Error during workflow cleanup: {e}")
-            i = input("Press Enter to continue...2")
-    # Connect to application exit
+
+def setup_exit_handler():
+    """Set up cleanup when Slicer exits using application state monitoring"""
     try:
-        slicer.app.aboutToQuit.connect(workflow_cleanup)
-        print("Exit handler registered successfully")
+        slicer.app.stateChanged.connect(onApplicationStateChanged)
+        print("Application state monitor registered successfully")
     except Exception as e:
-        print(f"Warning: Could not register exit handler: {e}")
+        print(f"Warning: Could not register application state monitor: {e}")
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
