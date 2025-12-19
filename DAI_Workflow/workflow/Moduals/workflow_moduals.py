@@ -87,10 +87,10 @@ def setup_exit_handler():
             # Delete all patients from DICOM database on exit
             deleteAllPatients()
             print("Workflow cleanup completed on Slicer exit")
-            i = input("Press Enter to continue...")
+            i = input("Press Enter to continue...1")
         except Exception as e:
             print(f"Error during workflow cleanup: {e}")
-    
+            i = input("Press Enter to continue...2")
     # Connect to application exit
     try:
         slicer.app.aboutToQuit.connect(workflow_cleanup)
