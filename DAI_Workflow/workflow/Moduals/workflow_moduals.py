@@ -3959,6 +3959,71 @@ def start_with_dicom_data():
     except Exception as e:
         slicer.util.errorDisplay(f"Could not open DICOM module: {str(e)}")
 
+def clear_dicom_database():
+    """
+    Clear all DICOM studies from the Slicer DICOM database to prevent conflicts.
+    This ensures a clean database before loading new DICOM data.
+    """
+    try:
+        # Get the DICOM database
+        db = slicer.dicomDatabase
+        
+        if not db:
+            print("DICOM database not available")
+            return False
+        
+        # Get all patient UIDs in the database
+        patient_uids = db.patients()
+        
+        if not patient_uids:
+            print("No patients found in DICOM database - already clean")
+            return True
+        
+        print(f"Found {len(patient_uids)} patient(s) in DICOM database. Clearing...")
+        
+        # Remove all patients (this will cascade remove studies and series)
+        for patient_uid in patient_uids:
+            try:
+                # Get studies for this patient
+                study_uids = db.studiesForPatient(patient_uid)
+                
+                # Remove each study (which removes series and instances)
+                for study_uid in study_uids:
+                    series_uids = db.seriesForStudy(study_uid)
+                    for series_uid in series_uids:
+                        # Remove all instances in this series
+                        instance_uids = db.instancesForSeries(series_uid)
+                        for instance_uid in instance_uids:
+                            db.removeInstance(instance_uid)
+                        # Remove the series
+                        db.removeSeries(series_uid)
+                    # Remove the study
+                    db.removeStudy(study_uid)
+                
+                # Remove the patient
+                db.removePatient(patient_uid)
+                print(f"Removed patient: {patient_uid}")
+                
+            except Exception as patient_error:
+                print(f"Error removing patient {patient_uid}: {str(patient_error)}")
+                continue
+        
+        # Force database update
+        slicer.app.processEvents()
+        
+        # Verify database is cleared
+        remaining_patients = db.patients()
+        if remaining_patients:
+            print(f"Warning: {len(remaining_patients)} patient(s) still remain in database")
+            return False
+        else:
+            print("DICOM database successfully cleared")
+            return True
+            
+    except Exception as e:
+        print(f"Error clearing DICOM database: {str(e)}")
+        return False
+
 def load_dicom_from_source_file(dicom_path):
     """
     Load DICOM data from a path specified in the source_slicer.txt file.
@@ -3968,7 +4033,12 @@ def load_dicom_from_source_file(dicom_path):
     import vtk
     try:
         
-        # Check if path exists
+        # Clear the DICOM database before loading new data to prevent conflicts
+        print("Clearing DICOM database before loading new data...")
+        database_cleared = clear_dicom_database()
+        if not database_cleared:
+            print("Warning: Could not fully clear DICOM database, continuing anyway...")
+        
         if not os.path.exists(dicom_path):
             qt.QMessageBox.warning(
                 None,
@@ -3977,8 +4047,7 @@ def load_dicom_from_source_file(dicom_path):
             )
             return False
         
-        # Enhanced Philips detection - prioritize this approach for Philips files
-        # This checks for v_headers files and manufacturer info to identify Philips DICOMs
+
         dicom_files = _find_dicom_files_in_directory(dicom_path)
         if dicom_files:
             file_analysis = _analyze_dicom_files(dicom_files)
@@ -3994,17 +4063,14 @@ def load_dicom_from_source_file(dicom_path):
                 if philips_result:
                     return True
         
-        # Check if enhanced DICOM utilities are available
         if not DICOM_UTILS_AVAILABLE:
             return _fallback_dicom_loading(dicom_path)
         
-        # Use robust plugin-based approach inspired by mpReviewPreprocessor
         try:
             
-            # Check if we can use TemporaryDICOMDatabase
+            
             if DICOM_UTILS_AVAILABLE:
                 try:
-                    # Use temporary database for clean operation
                     temp_db_dir = os.path.join(slicer.app.temporaryPath, "WorkflowDICOMTemp")
                     if os.path.exists(temp_db_dir):
                         import shutil
@@ -4016,8 +4082,6 @@ def load_dicom_from_source_file(dicom_path):
                             return success
                 except Exception as temp_db_error:
                     pass
-            
-            # Fallback to direct plugin examination without temporary database
             success = _import_and_load_dicom_data(dicom_path, None)
             if success:
                 return success
@@ -5228,6 +5292,12 @@ def load_philips_dicom_simple(dicom_path):
         from DICOMLib import DICOMUtils
         import slicer
 
+        # Clear the DICOM database before importing new data to prevent conflicts
+        print("Clearing DICOM database before loading Philips data...")
+        database_cleared = clear_dicom_database()
+        if not database_cleared:
+            print("Warning: Could not fully clear DICOM database, continuing anyway...")
+
         dicomDataDir = dicom_path
 
         # Import DICOM directory (ignores unreadable files like v_headers)
@@ -5357,6 +5427,12 @@ def simple_dicom_load(dicom_path):
     
     if not os.path.exists(dicom_path):
         return False
+    
+    # Clear the DICOM database before loading new data to prevent conflicts
+    print("Clearing DICOM database before simple DICOM load...")
+    database_cleared = clear_dicom_database()
+    if not database_cleared:
+        print("Warning: Could not fully clear DICOM database, continuing anyway...")
     
     try:
         # Method 1: Try direct directory loading
