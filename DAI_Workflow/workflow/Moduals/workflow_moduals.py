@@ -8144,8 +8144,32 @@ def stop_point_placement_mode():
     Stop the point placement mode and return to normal interaction
     """
     try:
-        # Clean up any orphaned start markers before stopping
-        cleanup_orphaned_start_markers()
+        print("[DEBUG] === Stopping point placement mode ===")
+        
+        # Check current F-1 points before any cleanup
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                print(f"[DEBUG] F-1 node before stop: {node.GetNumberOfControlPoints()} points")
+                for i in range(node.GetNumberOfControlPoints()):
+                    label = node.GetNthControlPointLabel(i)
+                    print(f"  Point {i}: {label}")
+                break
+        
+        # SKIP cleanup entirely during stop - points should remain as placed
+        print("[DEBUG] Skipping cleanup during stop to preserve all placed points")
+        
+        # Keep cleanup disabled for now - will re-enable later if needed
+        print("[DEBUG] Keeping orphaned cleanup disabled after stopping point placement")
+        
+        # Check F-1 points after (skipped) cleanup
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                print(f"[DEBUG] F-1 node after stop (no cleanup): {node.GetNumberOfControlPoints()} points")
+                for i in range(node.GetNumberOfControlPoints()):
+                    label = node.GetNthControlPointLabel(i)
+                    print(f"  Point {i}: {label}")
+                break
         
         # Disable placement mode
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
@@ -8179,8 +8203,16 @@ def cleanup_orphaned_start_markers():
     """
     Remove any start-slice markers that don't have corresponding end-slice markers
     Only run this during stop operations, not during active point placement
+    
+    IMPORTANT: This function should only remove truly orphaned start markers,
+    not valid end-slice markers that complete a pair.
     """
     try:
+        # Global disable flag check
+        if hasattr(slicer.modules, 'DisableOrphanedCleanup') and slicer.modules.DisableOrphanedCleanup:
+            print("[DEBUG] Cleanup disabled by global flag")
+            return False
+            
         # Check if point placement is currently active - don't cleanup during active placement
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode and interactionNode.GetCurrentInteractionMode() == interactionNode.Place:
@@ -8195,31 +8227,70 @@ def cleanup_orphaned_start_markers():
                 break
         
         if not f1_points:
+            print("[DEBUG] No F-1 node found for cleanup")
             return False
         
         total_points = f1_points.GetNumberOfControlPoints()
-        if total_points <= 3:  # Need at least test-point, pre-lesion, post-lesion, and one slice point
+        print(f"[DEBUG] Cleanup analyzing F-1 node with {total_points} points")
+        
+        if total_points <= 2:  # Need at least pre-lesion, post-lesion
+            print("[DEBUG] Not enough points for cleanup (need > 2)")
             return False
         
-        # Count slice points (everything after the first 3 points)
-        slice_points = total_points - 3
+        # Print all current labels for debugging
+        for i in range(total_points):
+            label = f1_points.GetNthControlPointLabel(i)
+            print(f"[DEBUG]   Point {i}: '{label}'")
         
-        # If odd number of slice points, we have an orphaned start marker
+        # Count slice points (everything after the first 2 points: pre-lesion, post-lesion)
+        slice_points = total_points - 2
+        print(f"[DEBUG] Found {slice_points} slice points")
+        
+        # Only remove if we have an odd number of slice points AND the last point is actually a start-slice
         if slice_points % 2 == 1:
-            # Remove the last point (orphaned start marker)
             last_point_index = total_points - 1
-            
-            # Get the label to confirm it's a start marker
             last_label = f1_points.GetNthControlPointLabel(last_point_index)
-            if last_label and "start-slice" in last_label:
-                print(f"[DEBUG] Removing orphaned start marker: {last_label}")
+            print(f"[DEBUG] Odd number of slice points ({slice_points}), checking last point: '{last_label}'")
+            
+            # Only remove if it's actually a start-slice marker (not an end-slice)
+            if last_label and "start-slice" in last_label and "end-slice" not in last_label:
+                print(f"[DEBUG] Removing truly orphaned start marker: {last_label}")
                 f1_points.RemoveNthControlPoint(last_point_index)
-                pass  # Removed orphaned start marker
                 return True
-        
-        return False
+            else:
+                # The last point is an end-slice or something else - don't remove it
+                print(f"[DEBUG] Last point '{last_label}' is not an orphaned start marker - keeping it")
+                return False
+        else:
+            print(f"[DEBUG] Even number of slice points ({slice_points}) - no cleanup needed")
+            return False
         
     except Exception as e:
+        print(f"[ERROR] Failed in cleanup_orphaned_start_markers: {e}")
+        return False
+
+def manually_enable_orphaned_cleanup():
+    """
+    Manually re-enable orphaned cleanup (for use after point placement is complete)
+    """
+    try:
+        slicer.modules.DisableOrphanedCleanup = False
+        print("[DEBUG] Manually re-enabled orphaned cleanup")
+    except Exception as e:
+        print(f"[DEBUG] Error re-enabling cleanup: {e}")
+
+
+def manually_run_cleanup():
+    """
+    Manually run cleanup after re-enabling (for export or workflow completion)
+    """
+    try:
+        manually_enable_orphaned_cleanup()
+        result = cleanup_orphaned_start_markers()
+        print(f"[DEBUG] Manual cleanup result: {result}")
+        return result
+    except Exception as e:
+        print(f"[DEBUG] Error in manual cleanup: {e}")
         return False
 
 def setup_point_count_observer(point_list, count_label):
@@ -8419,6 +8490,7 @@ def verify_f1_node_points():
 def apply_point_labels_to_list(point_list):
     """
     Apply proper labels to all points in the list - standalone helper function
+    Updated to skip test-point and start directly with pre-lesion, post-lesion, then start/end slices
     """
     try:
         point_count = point_list.GetNumberOfControlPoints()
@@ -8429,24 +8501,21 @@ def apply_point_labels_to_list(point_list):
             if not current_label or current_label.startswith("F") or current_label.startswith("P-") or current_label.strip() == "":
                 new_label = ""
                 if i == 0:
-                    new_label = "test-point"
-                    point_list.SetNthControlPointLabel(i, new_label)
-                elif i == 1:
                     new_label = "pre-lesion"
                     point_list.SetNthControlPointLabel(i, new_label)
-                elif i == 2:
+                elif i == 1:
                     new_label = "post-lesion"
                     point_list.SetNthControlPointLabel(i, new_label)
                 else:
-                    # For points 4 and beyond, alternate between start and end slices
-                    # Points 3, 5, 7, 9... are start slices (start-slice-1, start-slice-2, etc.)
-                    # Points 4, 6, 8, 10... are end slices (end-slice-1, end-slice-2, etc.)
-                    if (i - 3) % 2 == 0:  # Even offset from position 3 = start slice
-                        start_slice_number = ((i - 3) // 2) + 1
+                    # For points 2 and beyond, alternate between start and end slices
+                    # Points 2, 4, 6, 8... are start slices (start-slice-1, start-slice-2, etc.)
+                    # Points 3, 5, 7, 9... are end slices (end-slice-1, end-slice-2, etc.)
+                    if (i - 2) % 2 == 0:  # Even offset from position 2 = start slice
+                        start_slice_number = ((i - 2) // 2) + 1
                         new_label = f"start-slice-{start_slice_number}"
                         point_list.SetNthControlPointLabel(i, new_label)
-                    else:  # Odd offset from position 3 = end slice
-                        end_slice_number = ((i - 3) // 2) + 1
+                    else:  # Odd offset from position 2 = end slice
+                        end_slice_number = ((i - 2) // 2) + 1
                         new_label = f"end-slice-{end_slice_number}"
                         point_list.SetNthControlPointLabel(i, new_label)
                 
@@ -8688,6 +8757,10 @@ def start_new_point_list_placement(count_label):
         # Clear any automatically added points that may have been created
         while point_list.GetNumberOfControlPoints() > 0:
             point_list.RemoveNthControlPoint(0)
+        
+        # Disable orphaned cleanup during active point placement
+        slicer.modules.DisableOrphanedCleanup = True
+        print("[DEBUG] Disabled orphaned cleanup for active point placement session")
         
         # Automatically apply the only transform to the point list if available
         apply_only_transform_to_point_list(point_list)
@@ -9705,8 +9778,30 @@ def export_project_and_continue():
     Save the Slicer project using custom save functionality and continue to workflow2.py
     """
     try:
+        print("[DEBUG] === Starting export_project_and_continue ===")
+        
+        # Check current F-1 points before any cleanup
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                print(f"[DEBUG] F-1 node before cleanup: {node.GetNumberOfControlPoints()} points")
+                for i in range(node.GetNumberOfControlPoints()):
+                    label = node.GetNthControlPointLabel(i)
+                    print(f"  Point {i}: {label}")
+                break
+        
         # Clean up any orphaned start markers before export
-        cleanup_orphaned_start_markers()
+        cleanup_result = cleanup_orphaned_start_markers()
+        print(f"[DEBUG] Cleanup orphaned markers result: {cleanup_result}")
+        
+        # Check F-1 points after cleanup
+        for node in fiducial_nodes:
+            if node.GetName() == "F-1":
+                print(f"[DEBUG] F-1 node after cleanup: {node.GetNumberOfControlPoints()} points")
+                for i in range(node.GetNumberOfControlPoints()):
+                    label = node.GetNthControlPointLabel(i)
+                    print(f"  Point {i}: {label}")
+                break
         
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         lesion_analysis_nodes = []
