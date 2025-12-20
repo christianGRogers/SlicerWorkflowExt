@@ -16397,3 +16397,53 @@ try:
     setup_module_observers()
 except Exception as e:
     print(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
+
+
+def deleteAllPatients():
+    """Delete all patients from the DICOM database"""
+    dicomDatabase = slicer.dicomDatabase
+    
+    if not dicomDatabase.isOpen:
+        print("DICOM database is not open")
+        return
+    
+    # Get all patient IDs
+    patients = dicomDatabase.patients()
+    
+    if len(patients) == 0:
+        print("No patients found in database")
+        return
+    
+    print(f"Found {len(patients)} patients. Deleting all...")
+    
+    # Delete each patient
+    for patientID in patients:
+        patientName = dicomDatabase.nameForPatient(patientID)
+        dicomDatabase.removePatient(patientID)
+        print(f"Deleted Patient ID: {patientID}, Name: {patientName}")
+    
+    print("All patients deleted successfully")
+
+
+def onSlicerAboutToQuit():
+    """Called when Slicer is about to quit - runs before database closes"""
+    print("Slicer is about to quit - running cleanup...")
+    try:
+        deleteAllPatients()
+        print("Cleanup completed successfully")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+
+
+def setup_exit_handler():
+    """Set up cleanup using aboutToQuit signal"""
+    try:
+        slicer.app.connect("aboutToQuit()", onSlicerAboutToQuit)
+        print("Exit handler registered successfully")
+        print("Patient data will be deleted when Slicer exits")
+        return True
+    except Exception as e:
+        print(f"Could not register exit handler: {e}")
+        return False
+
+setup_exit_handler()
