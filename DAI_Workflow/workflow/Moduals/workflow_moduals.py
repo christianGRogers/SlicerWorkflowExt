@@ -8178,8 +8178,15 @@ def stop_point_placement_mode():
 def cleanup_orphaned_start_markers():
     """
     Remove any start-slice markers that don't have corresponding end-slice markers
+    Only run this during stop operations, not during active point placement
     """
     try:
+        # Check if point placement is currently active - don't cleanup during active placement
+        interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
+        if interactionNode and interactionNode.GetCurrentInteractionMode() == interactionNode.Place:
+            print("[DEBUG] Skipping orphaned marker cleanup - point placement is active")
+            return False
+            
         f1_points = None
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         for node in fiducial_nodes:
@@ -8205,6 +8212,7 @@ def cleanup_orphaned_start_markers():
             # Get the label to confirm it's a start marker
             last_label = f1_points.GetNthControlPointLabel(last_point_index)
             if last_label and "start-slice" in last_label:
+                print(f"[DEBUG] Removing orphaned start marker: {last_label}")
                 f1_points.RemoveNthControlPoint(last_point_index)
                 pass  # Removed orphaned start marker
                 return True
@@ -8223,7 +8231,7 @@ def setup_point_count_observer(point_list, count_label):
             point_list.RemoveObserver(point_list.PointCountObserver)
         
         observer_id = point_list.AddObserver(point_list.PointModifiedEvent, 
-                                           lambda caller, event: update_point_count_display_for_current_list(count_label))
+                                           lambda caller, event: update_point_count_display(caller, count_label))
         point_list.PointCountObserver = observer_id
         
         observer_id2 = point_list.AddObserver(point_list.PointAddedEvent, 
@@ -8231,7 +8239,7 @@ def setup_point_count_observer(point_list, count_label):
         point_list.PointAddObserver = observer_id2
         
         observer_id3 = point_list.AddObserver(point_list.PointRemovedEvent, 
-                                            lambda caller, event: update_point_count_display_for_current_list(count_label))
+                                            lambda caller, event: update_point_count_display(caller, count_label))
         point_list.PointRemoveObserver = observer_id3
         
     except Exception as e:
@@ -8244,14 +8252,27 @@ def on_point_added(point_list, count_label):
     Ensures points are placed based on the most recently used centerline for CPR.
     """
     try:
+        print(f"[DEBUG] on_point_added called for node: '{point_list.GetName()}' ID: '{point_list.GetID()}'")
+        print(f"[DEBUG] Point count in this node: {point_list.GetNumberOfControlPoints()}")
+        
+        # Check if this is the expected F-1 node
+        expected_f1 = getattr(slicer.modules, 'CurrentLesionAnalysisPointList', None)
+        if expected_f1:
+            print(f"[DEBUG] Expected F-1 node: '{expected_f1.GetName()}' ID: '{expected_f1.GetID()}'")
+            if point_list.GetID() != expected_f1.GetID():
+                print(f"[WARNING] Point added to different node than expected F-1!")
+        
         # Ensure this point list uses the current centerline reference
         ensure_point_placement_uses_current_centerline(point_list)
         
-        # Update the display first
-        update_point_count_display_for_current_list(count_label)
+        # Update the display first - use the specific point_list that was modified
+        update_point_count_display(point_list, count_label)
         
         # Ensure point placement mode remains active for continued point placement
         ensure_point_placement_mode_active(point_list)
+        
+        # Debug: Verify what's in all F-1 nodes
+        verify_f1_node_points()
         
         # Get current point count for feedback
         point_count = point_list.GetNumberOfControlPoints()
@@ -8283,18 +8304,14 @@ def on_point_added(point_list, count_label):
                         break
         
         # Draw circle for the newly added point only if centerline exists
-        # AND only if this is not the very first point being placed
         if point_count > 0 and centerline_exists:
-            # Additional check: Don't create circle for the first point unless we're sure the user placed it
-            # This prevents automatic circle creation when the workflow is just starting
-            if point_count == 1:
-                # For the first point, only create circle if we're in a resumed workflow state
-                # (i.e., not during initial tool activation)
-                pass  # Skip circle creation for first point during initial setup
-            else:
-                success = draw_circle_for_single_point(point_count - 1)
-                # Note: draw_circle_for_single_point will hide the fiducial points after creating circles
-                # This keeps the workflow logic intact while simplifying the visual display
+            print(f"[DEBUG] Creating circle for point {point_count - 1} (total points: {point_count})")
+            success = draw_circle_for_single_point(point_count - 1)
+            print(f"[DEBUG] Circle creation success: {success}")
+            
+            # IMPORTANT: Re-ensure placement mode is active after drawing circle
+            # The circle creation process might have interfered with the placement mode
+            ensure_point_placement_mode_active(point_list)
         
         # Provide feedback about what point was just placed and what's next
         if point_count == 1:
@@ -8362,6 +8379,83 @@ def update_point_count_display_for_current_list(count_label):
     except Exception as e:
         pass
 
+def verify_f1_node_points():
+    """
+    Debug function to verify all points are in the F-1 node
+    """
+    try:
+        print("[DEBUG] === Verifying F-1 node points ===")
+        
+        # Find all F-1 nodes
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        f1_nodes = [node for node in fiducial_nodes if node.GetName() == "F-1"]
+        
+        print(f"[DEBUG] Found {len(f1_nodes)} F-1 nodes")
+        
+        for i, node in enumerate(f1_nodes):
+            print(f"[DEBUG] F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
+            for j in range(node.GetNumberOfControlPoints()):
+                label = node.GetNthControlPointLabel(j)
+                pos = [0, 0, 0]
+                node.GetNthControlPointPosition(j, pos)
+                print(f"  Point {j}: label='{label}', pos=[{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]")
+        
+        # Check which node is currently active for placement
+        selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
+        if selectionNode:
+            active_id = selectionNode.GetActivePlaceNodeID()
+            print(f"[DEBUG] Active place node ID: {active_id}")
+            
+        # Check stored reference
+        expected_f1 = getattr(slicer.modules, 'CurrentLesionAnalysisPointList', None)
+        if expected_f1:
+            print(f"[DEBUG] Stored CurrentLesionAnalysisPointList: ID={expected_f1.GetID()}, Points={expected_f1.GetNumberOfControlPoints()}")
+        
+        print("[DEBUG] === End verification ===")
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to verify F-1 points: {e}")
+
+def apply_point_labels_to_list(point_list):
+    """
+    Apply proper labels to all points in the list - standalone helper function
+    """
+    try:
+        point_count = point_list.GetNumberOfControlPoints()
+        
+        for i in range(point_count):
+            current_label = point_list.GetNthControlPointLabel(i)
+            # Assign labels if empty or if they have default/generic labels
+            if not current_label or current_label.startswith("F") or current_label.startswith("P-") or current_label.strip() == "":
+                new_label = ""
+                if i == 0:
+                    new_label = "test-point"
+                    point_list.SetNthControlPointLabel(i, new_label)
+                elif i == 1:
+                    new_label = "pre-lesion"
+                    point_list.SetNthControlPointLabel(i, new_label)
+                elif i == 2:
+                    new_label = "post-lesion"
+                    point_list.SetNthControlPointLabel(i, new_label)
+                else:
+                    # For points 4 and beyond, alternate between start and end slices
+                    # Points 3, 5, 7, 9... are start slices (start-slice-1, start-slice-2, etc.)
+                    # Points 4, 6, 8, 10... are end slices (end-slice-1, end-slice-2, etc.)
+                    if (i - 3) % 2 == 0:  # Even offset from position 3 = start slice
+                        start_slice_number = ((i - 3) // 2) + 1
+                        new_label = f"start-slice-{start_slice_number}"
+                        point_list.SetNthControlPointLabel(i, new_label)
+                    else:  # Odd offset from position 3 = end slice
+                        end_slice_number = ((i - 3) // 2) + 1
+                        new_label = f"end-slice-{end_slice_number}"
+                        point_list.SetNthControlPointLabel(i, new_label)
+                
+                print(f"[DEBUG] Point {i}: '{current_label}' -> '{new_label}'")
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to apply labels: {e}")
+        pass
+
 def update_point_count_display(point_list, count_label):
     """
     Update the point count display label and assign specific lesion analysis labels
@@ -8371,25 +8465,8 @@ def update_point_count_display(point_list, count_label):
         point_count = point_list.GetNumberOfControlPoints()
         count_label.setText(f"Points placed: {point_count}")
         
-        for i in range(point_count):
-            current_label = point_list.GetNthControlPointLabel(i)
-            if not current_label or current_label.startswith("F") or current_label.startswith("P-"): 
-                if i == 0:
-                    point_list.SetNthControlPointLabel(i, "test-point")
-                elif i == 1:
-                    point_list.SetNthControlPointLabel(i, "pre-lesion")
-                elif i == 2:
-                    point_list.SetNthControlPointLabel(i, "post-lesion")
-                else:
-                    # For points 4 and beyond, alternate between start and end slices
-                    # Points 3, 5, 7, 9... are start slices (start-slice-1, start-slice-2, etc.)
-                    # Points 4, 6, 8, 10... are end slices (end-slice-1, end-slice-2, etc.)
-                    if (i - 3) % 2 == 0:  # Even offset from position 3 = start slice
-                        start_slice_number = ((i - 3) // 2) + 1
-                        point_list.SetNthControlPointLabel(i, f"start-slice-{start_slice_number}")
-                    else:  # Odd offset from position 3 = end slice
-                        end_slice_number = ((i - 3) // 2) + 1
-                        point_list.SetNthControlPointLabel(i, f"end-slice-{end_slice_number}")
+        # Use the helper function to apply labels
+        apply_point_labels_to_list(point_list)
         
     except Exception as e:
         pass
@@ -8456,24 +8533,39 @@ def ensure_point_placement_mode_active(point_list):
     Ensure that point placement mode remains active after each point is placed
     """
     try:
+        # Check for multiple F-1 nodes - this might be the issue!
+        fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
+        f1_nodes = [node for node in fiducial_nodes if node.GetName() == "F-1"]
+        if len(f1_nodes) > 1:
+            print(f"[WARNING] Found {len(f1_nodes)} F-1 nodes! This might cause point placement issues.")
+            for i, node in enumerate(f1_nodes):
+                print(f"  F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
+        
         # Re-select the active point list in the selection node
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
-            selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
-            selectionNode.SetActivePlaceNodeID(point_list.GetID())
+            current_active_id = selectionNode.GetActivePlaceNodeID()
+            if current_active_id != point_list.GetID():
+                print(f"[DEBUG] Resetting active place node from '{current_active_id}' to '{point_list.GetID()}'")
+                selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
+                selectionNode.SetActivePlaceNodeID(point_list.GetID())
 
         # Ensure interaction mode is set to placement with continuous mode enabled
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             current_mode = interactionNode.GetCurrentInteractionMode()
             if current_mode != interactionNode.Place:
+                print(f"[DEBUG] Resetting interaction mode from {current_mode} to Place mode")
                 interactionNode.SetCurrentInteractionMode(interactionNode.Place)
-                pass
             
             # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
-            interactionNode.SetPlaceModePersistence(1)
+            persistence = interactionNode.GetPlaceModePersistence()
+            if persistence != 1:
+                print(f"[DEBUG] Enabling place mode persistence (was {persistence})")
+                interactionNode.SetPlaceModePersistence(1)
         
     except Exception as e:
+        print(f"[ERROR] Failed to ensure placement mode: {e}")
         pass
 
 def cleanup_point_placement_ui():
@@ -8569,6 +8661,7 @@ def start_new_point_list_placement(count_label):
         point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
         
         point_list.SetName("F-1")
+        print(f"[DEBUG] Created new F-1 node with ID: {point_list.GetID()}")
         
         # Store reference to the centerline that should be used for this point list
         # This ensures consistent positioning relative to the CPR centerline
@@ -8600,22 +8693,27 @@ def start_new_point_list_placement(count_label):
         apply_only_transform_to_point_list(point_list)
         
         slicer.modules.CurrentLesionAnalysisPointList = point_list
+        print(f"[DEBUG] Stored F-1 node as CurrentLesionAnalysisPointList")
         
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
             selectionNode.SetActivePlaceNodeID(point_list.GetID())
+            print(f"[DEBUG] Set active place node ID to: {point_list.GetID()}")
         
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
             # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
             interactionNode.SetPlaceModePersistence(1)
+            print(f"[DEBUG] Set interaction mode to Place with persistence enabled")
         
         setup_point_count_observer(point_list, count_label)
+        print(f"[DEBUG] Set up observers for point list")
         
         update_point_count_display(point_list, count_label)
         
+        print(f"[DEBUG] Point placement setup complete for F-1 node: {point_list.GetID()}")
         pass
         pass
         pass
@@ -12267,13 +12365,15 @@ def draw_circle_for_single_point(point_index):
             slicer.modules.WorkflowCenterlineCircleNodes.append(circle_node)
             
             try:
-                # Hide the specific control point
+                # Hide only the specific control point, not the entire fiducial list
                 f1_points.SetNthControlPointVisibility(point_index, False)
-                # Also hide the point in 3D view
+                # Keep the fiducial list itself visible for continued point placement
                 display_node = f1_points.GetDisplayNode()
                 if display_node:
-                    display_node.SetPointLabelsVisibility(False)
-                    display_node.SetVisibility(False)  
+                    display_node.SetPointLabelsVisibility(True)  # Keep labels visible
+                    display_node.SetVisibility(True)  # Keep the fiducial list visible
+                    # Only hide individual point glyphs if needed
+                    display_node.SetGlyphScale(0.1)  # Make points very small instead of invisible
 
             except Exception as hide_error:
                 pass
