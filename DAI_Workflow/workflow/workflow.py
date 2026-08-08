@@ -234,7 +234,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             # Use the panel collapse function from workflow_moduals
             workflow_mod.force_collapse_left_panel_on_startup()
         except Exception as e:
-            logger.info(f"Could not collapse left panel: {e}")
+            logger.error(f"Could not collapse left panel: {e}")
 
     def checkForSourceSlicerFile(self) -> None:
         """Check for source_slicer.txt file in user directory and auto-load DICOM if found."""
@@ -264,17 +264,17 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                         import Moduals.workflow_moduals as workflow_mod
                         workflow_mod.load_dicom_from_source_file(dicom_path)
                     else:
-                        logger.info(f"Invalid or non-existent DICOM path in source file: {dicom_path}")
+                        logger.error(f"Invalid or non-existent DICOM path in source file: {dicom_path}")
                         
                 except Exception as e:
-                    logger.info(f"Error reading source_slicer.txt: {e}")
+                    logger.error(f"Error reading source_slicer.txt: {e}")
             else:
                 # Mark as processed even if file doesn't exist to prevent repeated checks
                 slicer.modules.SourceSlicerFileProcessed = True
-                logger.info("No source_slicer.txt file found in user directory")
+                logger.warning("No source_slicer.txt file found in user directory")
                 
         except Exception as e:
-            logger.info(f"Error checking for source_slicer.txt: {e}")
+            logger.error(f"Error checking for source_slicer.txt: {e}")
 
     def initializeParameterNode(self) -> None:
         """Ensure parameter node exists and observed."""

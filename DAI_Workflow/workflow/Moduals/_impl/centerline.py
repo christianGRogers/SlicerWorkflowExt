@@ -2196,7 +2196,7 @@ def debug_centerline_editing():
                 logger.info(f"  Curve {i}: None")
         
         if not all_curves:
-            logger.info("DEBUG: No centerline curves found in scene")
+            logger.warning("DEBUG: No centerline curves found in scene")
             return False
         
         # Try to open editing dialog with the first curve
@@ -2207,7 +2207,7 @@ def debug_centerline_editing():
         return True
         
     except Exception as e:
-        logger.info(f"DEBUG: Error in debug_centerline_editing: {str(e)}")
+        logger.error(f"DEBUG: Error in debug_centerline_editing: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

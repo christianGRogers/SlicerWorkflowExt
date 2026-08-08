@@ -53,7 +53,7 @@ def initialize_workflow_ui():
         # Use QTimer to ensure this runs after the UI is fully loaded
         qt.QTimer.singleShot(1000, force_collapse_left_panel_on_startup)
     except Exception as e:
-        logger.info(f"Warning: Could not initialize workflow UI: {e}")
+        logger.error(f"Warning: Could not initialize workflow UI: {e}")
 
 def force_collapse_left_panel_on_startup():
     """Force collapse of left panel on startup - more aggressive approach"""
@@ -73,7 +73,7 @@ def force_collapse_left_panel_on_startup():
                     widget.hide()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not hide dock widgets: {e}")
+            logger.error(f"Warning: Could not hide dock widgets: {e}")
         
         # Method 2: Try specific known panel names
         try:
@@ -84,7 +84,7 @@ def force_collapse_left_panel_on_startup():
                     panel.hide()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not hide known panel widgets: {e}")
+            logger.error(f"Warning: Could not hide known panel widgets: {e}")
         
         # Method 3: Try to find all QWidget children and hide panel-related ones
         try:
@@ -95,12 +95,12 @@ def force_collapse_left_panel_on_startup():
                     widget.hide()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not hide panel-related widgets: {e}")
+            logger.error(f"Warning: Could not hide panel-related widgets: {e}")
         
         return success
         
     except Exception as e:
-        logger.info(f"Error in force_collapse_left_panel_on_startup: {e}")
+        logger.error(f"Error in force_collapse_left_panel_on_startup: {e}")
         return False
 
 def collapse_left_module_panel():
@@ -123,7 +123,7 @@ def collapse_left_module_panel():
                     widget.hide()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not hide dock widgets in collapse_left_module_panel: {e}")
+            logger.error(f"Warning: Could not hide dock widgets in collapse_left_module_panel: {e}")
         
         # Method 2: Try specific panel names
         try:
@@ -134,12 +134,12 @@ def collapse_left_module_panel():
                     panel.hide()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not hide specific panels in collapse_left_module_panel: {e}")
+            logger.error(f"Warning: Could not hide specific panels in collapse_left_module_panel: {e}")
         
         return success
         
     except Exception as e:
-        logger.info(f"Error in collapse_left_module_panel: {e}")
+        logger.error(f"Error in collapse_left_module_panel: {e}")
         return False
 
 def expand_left_module_panel():
@@ -162,7 +162,7 @@ def expand_left_module_panel():
                     widget.show()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not show dock widgets in expand_left_module_panel: {e}")
+            logger.error(f"Warning: Could not show dock widgets in expand_left_module_panel: {e}")
         
         # Method 2: Try specific panel names
         try:
@@ -173,12 +173,12 @@ def expand_left_module_panel():
                     panel.show()
                     success = True
         except Exception as e:
-            logger.info(f"Warning: Could not show specific panels in expand_left_module_panel: {e}")
+            logger.error(f"Warning: Could not show specific panels in expand_left_module_panel: {e}")
         
         return success
         
     except Exception as e:
-        logger.info(f"Error in expand_left_module_panel: {e}")
+        logger.error(f"Error in expand_left_module_panel: {e}")
         return False
 
 def set_volume_visible_in_slice_views(volume_node):
@@ -776,7 +776,7 @@ def show_saved_scene_locations():
         location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
         
         if not os.path.exists(location_file):
-            logger.info("No saved scene locations found.")
+            logger.warning("No saved scene locations found.")
             logger.info(f"Location file would be: {location_file}")
             return
         
@@ -796,7 +796,7 @@ def show_saved_scene_locations():
         logger.info(f"Total scenes recorded: {len(lines)}")
         
     except Exception as e:
-        logger.info(f"Could not read scene locations: {str(e)}")
+        logger.error(f"Could not read scene locations: {str(e)}")
 
 def show_pre_save_info():
     """
@@ -850,7 +850,7 @@ def show_pre_save_info():
             logger.info("========================")
         
     except Exception as e:
-        logger.info(f"Could not show pre-save info: {str(e)}")
+        logger.error(f"Could not show pre-save info: {str(e)}")
 
 def open_save_dialog_with_all_selected():
     """
@@ -876,7 +876,7 @@ def open_save_dialog_with_all_selected():
                             widget.selectAll()
                         break
             except Exception as select_error:
-                logger.info(f"Could not auto-select all items in save dialog: {str(select_error)}")
+                logger.error(f"Could not auto-select all items in save dialog: {str(select_error)}")
         
         # Schedule the selection after a short delay to allow dialog to fully open
         timer = qt.QTimer()
@@ -892,7 +892,7 @@ def open_save_dialog_with_all_selected():
         return success
         
     except Exception as e:
-        logger.info(f"Error opening save dialog with auto-select: {str(e)}")
+        logger.error(f"Error opening save dialog with auto-select: {str(e)}")
         # Fallback to standard dialog
         try:
             return slicer.app.ioManager().openSaveDataDialog()
@@ -1204,14 +1204,14 @@ def show_keyboard_undo_help():
         logger.info("• force_enable_keyboard_undo() - Re-enable if not working")
         logger.info("• handle_keyboard_undo() - Manually trigger undo")
         logger.info()
-        logger.info("The system uses multiple fallback methods:")
+        logger.warning("The system uses multiple fallback methods:")
         logger.info("1. Segment editor built-in undo (preferred)")
-        logger.info("2. Scene-based undo system (fallback)")
+        logger.warning("2. Scene-based undo system (fallback)")
         logger.info("3. Both global and widget-specific shortcuts")
         logger.info("="*60 + "\n")
         
     except Exception as e:
-        logger.info(f"Error showing help: {e}")
+        logger.error(f"Error showing help: {e}")
 
 def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
     """
@@ -2028,7 +2028,7 @@ def setup_crop_display_layout():
         return success
         
     except Exception as e:
-        logger.info(f"Error in setup_crop_display_layout: {e}")
+        logger.error(f"Error in setup_crop_display_layout: {e}")
         return False
 
 def cleanup_custom_crop_interface():
@@ -2048,7 +2048,7 @@ def cleanup_custom_crop_interface():
             if hasattr(slicer.modules, attr_name):
                 delattr(slicer.modules, attr_name)
     except Exception as e:
-        logger.info(f"Error in cleanup_custom_crop_interface: {e}")
+        logger.error(f"Error in cleanup_custom_crop_interface: {e}")
 
 def force_custom_crop_interface():
     """
@@ -2064,7 +2064,7 @@ def force_custom_crop_interface():
         return success
         
     except Exception as e:
-        logger.info(f"Error in force_custom_crop_interface: {e}")
+        logger.error(f"Error in force_custom_crop_interface: {e}")
         return False
 
 def onSlicerAboutToQuit():
@@ -2074,4 +2074,4 @@ def onSlicerAboutToQuit():
         core.deleteAllPatients()
         logger.info("Cleanup completed successfully")
     except Exception as e:
-        logger.info(f"Error during cleanup: {e}")
+        logger.error(f"Error during cleanup: {e}")

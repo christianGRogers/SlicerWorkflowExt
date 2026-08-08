@@ -58,6 +58,7 @@ def start_with_dicom_data():
         volume.setup_volume_addition_monitor()
         
     except Exception as e:
+        logger.debug("Suppressed exception in start_with_dicom_data", exc_info=True)
         slicer.util.errorDisplay(f"Could not open DICOM module: {str(e)}")
 
 def load_dicom_from_source_file(dicom_path):
@@ -124,8 +125,7 @@ def load_dicom_from_source_file(dicom_path):
                 return success
                     
         except Exception as e:
-            pass
-            pass
+            logger.debug("Suppressed exception in load_dicom_from_source_file", exc_info=True)
             return _fallback_dicom_loading(dicom_path)
         
         # If we get here, all methods failed
@@ -151,7 +151,7 @@ def load_dicom_from_source_file(dicom_path):
         return False
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in load_dicom_from_source_file", exc_info=True)
         qt.QMessageBox.critical(
             None,
             "Error",
@@ -182,7 +182,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                 else:
                     dicom_database = None
             except Exception as db_error:
-                pass
+                logger.debug("Suppressed exception in _import_and_load_dicom_data", exc_info=True)
                 dicom_database = None
         
         # Try different import methods based on available components
@@ -218,7 +218,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                         return True
                 
                 except Exception as philips_error:
-                    pass
+                    logger.debug("Suppressed exception in _import_and_load_dicom_data", exc_info=True)
                     pass
             
             # Skip plugin system entirely and use Slicer's built-in loading
@@ -297,7 +297,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
         return False
     
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in _import_and_load_dicom_data", exc_info=True)
         return False
 
 def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
@@ -355,13 +355,13 @@ def _process_dicom_database_patients(dicom_database, patients, input_dir=None):
                                     return True
                                     
                         except Exception as load_error:
-                            pass
+                            logger.debug("Suppressed exception in _process_dicom_database_patients", exc_info=True)
                             continue
         
         return False
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in _process_dicom_database_patients", exc_info=True)
         return False
 
 def _load_philips_dicom_series(dicom_directory):
@@ -446,6 +446,7 @@ def _load_philips_dicom_series(dicom_directory):
             return None
             
     except Exception as e:
+        logger.debug("Suppressed exception in _load_philips_dicom_series", exc_info=True)
         return None
 
 def _load_dicom_series_manually(dicom_files, series_directory):
@@ -584,7 +585,7 @@ def _load_dicom_series_manually(dicom_files, series_directory):
         return False
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
         return False
 
 def _load_with_dicom_browser(directory):
@@ -606,6 +607,7 @@ def _load_with_dicom_browser(directory):
             return False
             
     except Exception as e:
+        logger.debug("Suppressed exception in _load_with_dicom_browser", exc_info=True)
         return False
 
 def _analyze_dicom_files(files):
@@ -677,8 +679,10 @@ def _analyze_dicom_files(files):
                             analysis['series_type'] = 'standard'
                     
                 except Exception:
+                    logger.debug("Suppressed exception in _analyze_dicom_files", exc_info=True)
                     pass  # pydicom not available or file not readable
         except Exception:
+            logger.debug("Suppressed exception in _analyze_dicom_files", exc_info=True)
             pass  # DICOM analysis failed, use basic analysis
         
     except Exception as e:
@@ -709,6 +713,7 @@ def _find_dicom_files_in_directory(directory):
                     if file_size < 1024:  # Skip very small files (likely not DICOM)
                         continue
                 except:
+                    logger.debug("Suppressed exception in _find_dicom_files_in_directory", exc_info=True)
                     continue
                 
                 # Enhanced DICOM file detection patterns
@@ -760,7 +765,7 @@ def _find_dicom_files_in_directory(directory):
         return dicom_files
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in _find_dicom_files_in_directory", exc_info=True)
         return []
 
 def test_philips_detection(dicom_path):
@@ -788,6 +793,7 @@ def test_philips_detection(dicom_path):
             return False
             
     except Exception as e:
+        logger.debug("Suppressed exception in test_philips_detection", exc_info=True)
         return False
 
 def load_philips_dicom_simple(dicom_path):
@@ -824,6 +830,7 @@ def load_philips_dicom_simple(dicom_path):
             return True
             
     except Exception as e:
+        logger.debug("Suppressed exception in load_philips_dicom_simple", exc_info=True)
         return None
 
 def test_philips_dicom_loading(dicom_path):
@@ -859,6 +866,7 @@ def test_philips_dicom_loading(dicom_path):
             return False
             
     except Exception as e:
+        logger.debug("Suppressed exception in test_philips_dicom_loading", exc_info=True)
         return False
 
 def diagnose_dicom_directory(dicom_path):
@@ -918,7 +926,7 @@ def test_dicom_loading_with_path(dicom_path):
         success = load_dicom_from_source_file(dicom_path)
         return success
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in test_dicom_loading_with_path", exc_info=True)
         return False
 
 def simple_dicom_load(dicom_path):
@@ -987,7 +995,6 @@ def _fallback_dicom_loading(dicom_path):
                 return True
                 
         except Exception as e:
-            pass
             
             # Try loading subdirectories if main directory fails
             try:
@@ -1006,7 +1013,7 @@ def _fallback_dicom_loading(dicom_path):
                             qt.QTimer.singleShot(1000, volume.start_with_volume_crop)
                             return True
                     except Exception as subdir_error:
-                        pass
+                        logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
                         continue
                         
             except Exception as subdir_scan_error:
@@ -1088,6 +1095,7 @@ def _fallback_dicom_loading(dicom_path):
                         if hasattr(dicom_logic, 'database'):
                             dicom_db = dicom_logic.database
             except:
+                logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
                 dicom_db = None
                 
             if dicom_db:
@@ -1160,7 +1168,7 @@ def _fallback_dicom_loading(dicom_path):
         return False
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
         return False
 
 # ===============================================================================
@@ -1416,7 +1424,7 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
         return corrections_applied
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in fix_dicom_spacing_and_orientation", exc_info=True)
         return False
 
 def load_dicom_like_reference():
@@ -1436,7 +1444,7 @@ def load_dicom_like_reference():
             with open(source_file_path, 'r') as f:
                 dicom_path = f.read().strip()
         except FileNotFoundError:
-            pass
+            logger.debug("Suppressed exception in load_dicom_like_reference", exc_info=True)
             return False
         
         if not dicom_path or not os.path.exists(dicom_path):
@@ -1527,7 +1535,7 @@ def load_dicom_like_reference():
         return False
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in load_dicom_like_reference", exc_info=True)
         return False
 
 def force_dicom_reimport():
@@ -1548,5 +1556,5 @@ def force_dicom_reimport():
         return load_dicom_like_reference()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in force_dicom_reimport", exc_info=True)
         return False

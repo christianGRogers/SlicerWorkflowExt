@@ -91,7 +91,7 @@ def find_working_volume():
                     if active_volume and active_volume.IsA("vtkMRMLScalarVolumeNode"):
                         return active_volume
         except Exception as e:
-            logger.info(f"Warning: Could not get active volume from selection node: {e}")
+            logger.error(f"Warning: Could not get active volume from selection node: {e}")
         
         # Strategy 4: Fallback to first volume, but warn user
         first_volume = volume_nodes[0]
@@ -1430,7 +1430,7 @@ def execute_custom_crop():
         
             
     except Exception as e:
-        logger.info(f"Error in execute_custom_crop: {e}")
+        logger.error(f"Error in execute_custom_crop: {e}")
 
 def continue_workflow_after_custom_crop():
     """
@@ -1447,7 +1447,7 @@ def continue_workflow_after_custom_crop():
         markup.continue_workflow_without_markup()
             
     except Exception as e:
-        logger.info(f"Error in continue_workflow_after_custom_crop: {e}")
+        logger.error(f"Error in continue_workflow_after_custom_crop: {e}")
 
 def ensure_crop_roi_exists():
     """
@@ -1513,7 +1513,7 @@ def ensure_crop_roi_exists():
         return roiNode
         
     except Exception as e:
-        logger.info(f"Error in ensure_crop_roi_exists: {e}")
+        logger.error(f"Error in ensure_crop_roi_exists: {e}")
         return None
 
 def finish_custom_crop_workflow():
@@ -1526,7 +1526,7 @@ def finish_custom_crop_workflow():
         segmentation.on_continue_from_scissors()
         
     except Exception as e:
-        logger.info(f"Error in finish_custom_crop_workflow: {e}")
+        logger.error(f"Error in finish_custom_crop_workflow: {e}")
 
 def use_custom_crop_instead_of_module():
     """
@@ -1538,12 +1538,12 @@ def use_custom_crop_instead_of_module():
         try:
             ui.collapse_crop_volume_gui()
         except Exception as e:
-            logger.info(f"Warning: Could not collapse crop volume GUI: {e}")
+            logger.error(f"Warning: Could not collapse crop volume GUI: {e}")
         custom_interface = ui.create_custom_crop_interface()
         if custom_interface:
             return True
         return False
             
     except Exception as e:
-        logger.info(f"Error in use_custom_crop_instead_of_module: {e}")
+        logger.error(f"Error in use_custom_crop_instead_of_module: {e}")
         return False

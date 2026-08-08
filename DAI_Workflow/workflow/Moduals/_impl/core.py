@@ -62,7 +62,7 @@ __all__ = [
 try:
     ui.initialize_workflow_ui()
 except Exception as e:
-    logger.info(f"Warning: Could not call initialize_workflow_ui: {e}")
+    logger.error(f"Warning: Could not call initialize_workflow_ui: {e}")
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
@@ -70,7 +70,7 @@ def setup_module_observers():
     try:
         setup_scene_save_observer()
     except Exception as e:
-        logger.info(f"Warning: Could not set up scene save observer: {e}")
+        logger.error(f"Warning: Could not set up scene save observer: {e}")
 
 def import_transform_file():
     """
@@ -654,7 +654,7 @@ def cleanup_orphaned_start_markers():
                 break
         
         if not f1_points:
-            logger.info("[DEBUG] No F-1 node found for cleanup")
+            logger.warning("[DEBUG] No F-1 node found for cleanup")
             return False
         
         total_points = f1_points.GetNumberOfControlPoints()
@@ -693,7 +693,7 @@ def cleanup_orphaned_start_markers():
             return False
         
     except Exception as e:
-        logger.info(f"[ERROR] Failed in cleanup_orphaned_start_markers: {e}")
+        logger.error(f"[ERROR] Failed in cleanup_orphaned_start_markers: {e}")
         return False
 
 def manually_enable_orphaned_cleanup():
@@ -704,7 +704,7 @@ def manually_enable_orphaned_cleanup():
         slicer.modules.DisableOrphanedCleanup = False
         logger.info("[DEBUG] Manually re-enabled orphaned cleanup")
     except Exception as e:
-        logger.info(f"[DEBUG] Error re-enabling cleanup: {e}")
+        logger.error(f"[DEBUG] Error re-enabling cleanup: {e}")
 
 def manually_run_cleanup():
     """
@@ -716,7 +716,7 @@ def manually_run_cleanup():
         logger.info(f"[DEBUG] Manual cleanup result: {result}")
         return result
     except Exception as e:
-        logger.info(f"[DEBUG] Error in manual cleanup: {e}")
+        logger.error(f"[DEBUG] Error in manual cleanup: {e}")
         return False
 
 def toggle_analysis_masks_visibility(toggle_button):
@@ -1144,7 +1144,7 @@ def save_scene_location_to_user_home(scene_path):
         logger.info(f"Scene location saved to: {location_file}")
         
     except Exception as e:
-        logger.info(f"Could not save scene location to user home: {str(e)}")
+        logger.error(f"Could not save scene location to user home: {str(e)}")
 
 def clear_saved_scene_locations():
     """
@@ -1162,10 +1162,10 @@ def clear_saved_scene_locations():
             os.remove(location_file)
             logger.info(f"Cleared scene location history: {location_file}")
         else:
-            logger.info("No scene location history file found to clear.")
+            logger.warning("No scene location history file found to clear.")
             
     except Exception as e:
-        logger.info(f"Could not clear scene location history: {str(e)}")
+        logger.error(f"Could not clear scene location history: {str(e)}")
 
 def get_current_scene_location():
     """
@@ -1186,7 +1186,7 @@ def get_current_scene_location():
             return None
             
     except Exception as e:
-        logger.info(f"Could not get current scene location: {str(e)}")
+        logger.error(f"Could not get current scene location: {str(e)}")
         return None
 
 def setup_scene_save_observer():
@@ -1206,7 +1206,7 @@ def setup_scene_save_observer():
         logger.info("Scene save observer has been set up - all scene saves will now be tracked.")
         
     except Exception as e:
-        logger.info(f"Could not set up scene save observer: {str(e)}")
+        logger.error(f"Could not set up scene save observer: {str(e)}")
 
 def on_scene_saved(caller, event):
     """
@@ -1217,7 +1217,7 @@ def on_scene_saved(caller, event):
         qt.QTimer.singleShot(100, lambda: track_scene_save_location())
         
     except Exception as e:
-        logger.info(f"Error in scene save callback: {str(e)}")
+        logger.error(f"Error in scene save callback: {str(e)}")
 
 def track_scene_save_location():
     """
@@ -1235,12 +1235,12 @@ def track_scene_save_location():
             if scene_path and scene_path.strip():
                 save_scene_location_to_user_home(scene_path)
             else:
-                logger.info("Scene save detected but no valid file path found")
+                logger.warning("Scene save detected but no valid file path found")
         else:
             logger.info("Scene save detected but no URL available")
             
     except Exception as e:
-        logger.info(f"Could not track scene save location: {str(e)}")
+        logger.error(f"Could not track scene save location: {str(e)}")
 
 def remove_scene_save_observer():
     """
@@ -1256,7 +1256,7 @@ def remove_scene_save_observer():
             logger.info("No scene save observer was active.")
             
     except Exception as e:
-        logger.info(f"Could not remove scene save observer: {str(e)}")
+        logger.error(f"Could not remove scene save observer: {str(e)}")
 
 def enable_scene_save_tracking():
     """
@@ -1272,7 +1272,7 @@ def enable_scene_save_tracking():
         location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
         logger.info(f"  {location_file}")
     except Exception as e:
-        logger.info(f"Could not enable scene save tracking: {str(e)}")
+        logger.error(f"Could not enable scene save tracking: {str(e)}")
 
 def disable_scene_save_tracking():
     """
@@ -1283,7 +1283,7 @@ def disable_scene_save_tracking():
         remove_scene_save_observer()
         logger.info("Scene save tracking is now disabled.")
     except Exception as e:
-        logger.info(f"Could not disable scene save tracking: {str(e)}")
+        logger.error(f"Could not disable scene save tracking: {str(e)}")
 
 def setup_storage_nodes_for_consistent_saving():
     """
@@ -1345,7 +1345,7 @@ def setup_storage_nodes_for_consistent_saving():
         return True
         
     except Exception as e:
-        logger.info(f"Error setting up storage nodes: {str(e)}")
+        logger.error(f"Error setting up storage nodes: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -1399,19 +1399,19 @@ def custom_save_all_scene_data():
                                     os.rename(old_path, new_path)
                                     logger.info(f"Renamed {nrrd_files[0]} to CT_Series.nrrd")
                                 except Exception as rename_error:
-                                    logger.info(f"Could not rename {nrrd_files[0]} to CT_Series.nrrd: {str(rename_error)}")
+                                    logger.error(f"Could not rename {nrrd_files[0]} to CT_Series.nrrd: {str(rename_error)}")
                         else:
-                            logger.info("Warning: No .nrrd files found in save directory")
+                            logger.warning("Warning: No .nrrd files found in save directory")
                             
                 except Exception as dir_error:
-                    logger.info(f"Could not list directory contents: {str(dir_error)}")
+                    logger.error(f"Could not list directory contents: {str(dir_error)}")
             
             return True
         else:
             return False
             
     except Exception as e:
-        logger.info(f"Error in custom save function: {str(e)}")
+        logger.error(f"Error in custom save function: {str(e)}")
         import traceback
         traceback.print_exc()
         # Fallback to standard save dialog
@@ -1440,13 +1440,13 @@ def test_custom_save_functionality():
         if working_vol:
             logger.info(f"Working volume found: {working_vol.GetName()}")
         else:
-            logger.info("No working volume found")
+            logger.warning("No working volume found")
         
         logger.info("Custom save functionality test completed.")
         return True
         
     except Exception as e:
-        logger.info(f"Error testing custom save functionality: {str(e)}")
+        logger.error(f"Error testing custom save functionality: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -1461,7 +1461,7 @@ def manual_export_with_ct_series():
         result = custom_save_all_scene_data()
         return result
     except Exception as e:
-        logger.info(f"Error in manual export: {str(e)}")
+        logger.error(f"Error in manual export: {str(e)}")
         return False
 
 def check_ct_series_setup():
@@ -1493,7 +1493,7 @@ def check_ct_series_setup():
             else:
                 logger.info("⚠ Storage filename should be set to CT_Series.nrrd")
         else:
-            logger.info("⚠ No storage node found - will be created during save")
+            logger.warning("⚠ No storage node found - will be created during save")
         
         # Count all saveable nodes
         all_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
@@ -1512,7 +1512,7 @@ def check_ct_series_setup():
         return True
         
     except Exception as e:
-        logger.info(f"Error checking CT_Series setup: {str(e)}")
+        logger.error(f"Error checking CT_Series setup: {str(e)}")
         return False
 
 def close_slicer_after_export():
@@ -1608,9 +1608,9 @@ def export_project_and_continue():
                         scene_path = scene_path[7:]  # Remove "file://" prefix
                     save_scene_location_to_user_home(scene_path)
                 else:
-                    logger.info("Warning: Could not determine scene save location")
+                    logger.error("Warning: Could not determine scene save location")
             except Exception as e:
-                logger.info(f"Error saving scene location: {str(e)}")
+                logger.error(f"Error saving scene location: {str(e)}")
             
             # Deselect placement tools and return to normal interaction mode
             pass
@@ -1790,7 +1790,7 @@ def handle_keyboard_undo(segmentEditorWidget=None):
             return False
         
     except Exception as e:
-        logger.info(f"Error in keyboard undo handler: {e}")
+        logger.error(f"Error in keyboard undo handler: {e}")
         return False
 
 def handle_keyboard_redo(segmentEditorWidget=None):
@@ -1816,7 +1816,7 @@ def handle_keyboard_redo(segmentEditorWidget=None):
         return False
         
     except Exception as e:
-        logger.info(f"Error in keyboard redo handler: {e}")
+        logger.error(f"Error in keyboard redo handler: {e}")
         return False
 
 def test_keyboard_undo_functionality():
@@ -1832,27 +1832,27 @@ def test_keyboard_undo_functionality():
             logger.info(f"✓ Ctrl+Z shortcut found: {shortcut}")
             logger.info(f"  Key sequence: {shortcut.key().toString()}")
         else:
-            logger.info("✗ No Ctrl+Z shortcut found")
+            logger.warning("✗ No Ctrl+Z shortcut found")
         
         if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
             shortcut = slicer.modules.WorkflowRedoShortcut
             logger.info(f"✓ Ctrl+Y shortcut found: {shortcut}")
             logger.info(f"  Key sequence: {shortcut.key().toString()}")
         else:
-            logger.info("✗ No Ctrl+Y shortcut found")
+            logger.warning("✗ No Ctrl+Y shortcut found")
         
         # Check widget shortcuts
         if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
             shortcut = slicer.modules.WorkflowWidgetUndoShortcut
             logger.info(f"✓ Widget Ctrl+Z shortcut found: {shortcut}")
         else:
-            logger.info("✗ No widget Ctrl+Z shortcut found")
+            logger.warning("✗ No widget Ctrl+Z shortcut found")
         
         if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
             shortcut = slicer.modules.WorkflowWidgetRedoShortcut
             logger.info(f"✓ Widget Ctrl+Y shortcut found: {shortcut}")
         else:
-            logger.info("✗ No widget Ctrl+Y shortcut found")
+            logger.warning("✗ No widget Ctrl+Y shortcut found")
         
         # Check segment editor widget
         if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
@@ -1872,7 +1872,7 @@ def test_keyboard_undo_functionality():
             else:
                 logger.info("  ✗ Redo method not available")
         else:
-            logger.info("✗ No segment editor widget found")
+            logger.warning("✗ No segment editor widget found")
         
         # Check segmentation undo settings
         if hasattr(slicer.modules, 'WorkflowSegmentationNode'):
@@ -1883,7 +1883,7 @@ def test_keyboard_undo_functionality():
                     undo_states = segmentation.GetMaximumNumberOfUndoStates()
                     logger.info(f"✓ Segmentation undo states: {undo_states}")
                 else:
-                    logger.info("✗ Cannot check segmentation undo states")
+                    logger.error("✗ Cannot check segmentation undo states")
         
         # Test manual keyboard undo function
         logger.info("\n--- Testing Manual Keyboard Undo ---")
@@ -1897,7 +1897,7 @@ def test_keyboard_undo_functionality():
         logger.info("3. Check that the segment editor widget has focus")
         
     except Exception as e:
-        logger.info(f"Error during keyboard undo test: {e}")
+        logger.error(f"Error during keyboard undo test: {e}")
         import traceback
         traceback.print_exc()
 
@@ -1915,7 +1915,7 @@ def force_enable_keyboard_undo():
             segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
         
         if not segmentEditorWidget:
-            logger.info("✗ No segment editor widget found. Please start the scissors tool first.")
+            logger.warning("✗ No segment editor widget found. Please start the scissors tool first.")
             return False
         
         # Clear existing shortcuts
@@ -1968,7 +1968,7 @@ def force_enable_keyboard_undo():
         return True
         
     except Exception as e:
-        logger.info(f"Error enabling keyboard undo: {e}")
+        logger.error(f"Error enabling keyboard undo: {e}")
         return False
 
 def set_source_path(new_path):
@@ -2092,7 +2092,7 @@ def test_full_workflow_reset():
 try:
     setup_module_observers()
 except Exception as e:
-    logger.info(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
+    logger.error(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
 
 
 def deleteAllPatients():
@@ -2107,7 +2107,7 @@ def deleteAllPatients():
     patients = dicomDatabase.patients()
     
     if len(patients) == 0:
-        logger.info("No patients found in database")
+        logger.warning("No patients found in database")
         return
     
     logger.info(f"Found {len(patients)} patients. Deleting all...")
@@ -2128,7 +2128,7 @@ def setup_exit_handler():
         logger.info("Patient data will be deleted when Slicer exits")
         return True
     except Exception as e:
-        logger.info(f"Could not register exit handler: {e}")
+        logger.error(f"Could not register exit handler: {e}")
         return False
 
 setup_exit_handler()

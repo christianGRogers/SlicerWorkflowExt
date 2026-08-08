@@ -94,6 +94,7 @@ def import_markup_file():
         return None
         
     except Exception as e:
+        logger.debug("Suppressed exception in import_markup_file", exc_info=True)
         slicer.util.errorDisplay(f"Error importing markup folder: {str(e)}")
         return None
 
@@ -226,6 +227,7 @@ def process_markup_folder_and_create_tubes(folder_path):
             return False
             
     except Exception as e:
+        logger.debug("Suppressed exception in process_markup_folder_and_create_tubes", exc_info=True)
         import traceback
         traceback.print_exc()
         return False
@@ -256,7 +258,7 @@ def load_first_point_from_markup(markup_file_path):
         return None
         
     except Exception as e:
-        logger.info(f"Error loading markup file {markup_file_path}: {e}")
+        logger.error(f"Error loading markup file {markup_file_path}: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -289,7 +291,7 @@ def create_tube_from_two_points(start_point, end_point, tube_name, color):
         return tube_model
         
     except Exception as e:
-        logger.info(f"Error creating tube from two points: {e}")
+        logger.error(f"Error creating tube from two points: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -304,7 +306,7 @@ def create_tube_from_curve_with_color(curve_markup, tube_name, color):
         # Get the curve polydata
         curve_polydata = curve_markup.GetCurveWorld()
         if not curve_polydata:
-            logger.info("Failed to get curve polydata")
+            logger.error("Failed to get curve polydata")
             return None
             
         if curve_polydata.GetNumberOfPoints() < 2:
@@ -338,12 +340,12 @@ def create_tube_from_curve_with_color(curve_markup, tube_name, color):
             display_node.SetVisibility(True)
             logger.info(f"Set display properties: color={color}, opacity=0.8")
         else:
-            logger.info("Failed to get display node")
+            logger.error("Failed to get display node")
         
         return tube_model
         
     except Exception as e:
-        logger.info(f"Error creating tube from curve: {e}")
+        logger.error(f"Error creating tube from curve: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -384,12 +386,14 @@ def create_curve_models_from_markup(markup_node):
             markups_to_model_logic = markups_to_model.logic()
         except AttributeError:
             # Try alternative approach if MarkupsToModel is not available
+            logger.debug("Suppressed exception in create_curve_models_from_markup", exc_info=True)
             try:
                 # Check if we can access the MarkupsToModel logic directly
                 import MarkupsToModel
                 markups_to_model_logic = MarkupsToModel.MarkupsToModelLogic()
                 markups_to_model = True  # Flag that we have the module
             except ImportError:
+                logger.debug("Suppressed exception in create_curve_models_from_markup", exc_info=True)
                 slicer.util.errorDisplay("MarkupsToModel module not found. Please install the MarkupsToModel extension.")
                 return []
         
@@ -469,6 +473,7 @@ def create_curve_models_from_markup(markup_node):
                     
                 except Exception as model_error:
                     # Fallback: Create a simple line model using VTK
+                    logger.debug("Suppressed exception in create_curve_models_from_markup", exc_info=True)
                     try:
                         points = vtk.vtkPoints()
                         points.InsertNextPoint(point1_pos)
@@ -495,6 +500,7 @@ def create_curve_models_from_markup(markup_node):
                         
                     except Exception as vtk_error:
                         # Create basic polydata line
+                        logger.debug("Suppressed exception in create_curve_models_from_markup", exc_info=True)
                         points = vtk.vtkPoints()
                         points.InsertNextPoint(point1_pos)
                         points.InsertNextPoint(point2_pos)
@@ -543,6 +549,7 @@ def create_curve_models_from_markup(markup_node):
                 slicer.mrmlScene.RemoveNode(curve_markup)
                 
             except Exception as e:
+                logger.debug("Suppressed exception in create_curve_models_from_markup", exc_info=True)
                 continue
         
         # After creating all models, delete the first two and ensure remaining are visible
@@ -595,6 +602,7 @@ def create_curve_models_from_markup(markup_node):
         return created_models
         
     except Exception as e:
+        logger.debug("Suppressed exception in create_curve_models_from_markup", exc_info=True)
         slicer.util.errorDisplay(f"Error creating curve models from markup: {str(e)}")
         return []
 
@@ -705,7 +713,7 @@ def create_additional_fiducial_list():
         return fiducial_node
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_additional_fiducial_list", exc_info=True)
         return None
 
 def create_additional_curve_markup():
@@ -737,7 +745,7 @@ def create_additional_curve_markup():
         return curve_node
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_additional_curve_markup", exc_info=True)
         return None
 
 def force_point_placement_tool_selection():
@@ -786,6 +794,7 @@ def force_point_placement_tool_selection():
                     place_widget.setPlaceModeEnabled(True)
                     place_widget.setCurrentNode(endpoints_node)
         except Exception as e:
+            logger.debug("Suppressed exception in force_point_placement_tool_selection", exc_info=True)
             pass  # If this fails, the main interaction mode setting should still work
         
         # Final GUI update
@@ -794,6 +803,7 @@ def force_point_placement_tool_selection():
         return True
         
     except Exception as e:
+        logger.debug("Suppressed exception in force_point_placement_tool_selection", exc_info=True)
         return False
 
 def start_markup_workflow():
@@ -804,8 +814,8 @@ def start_markup_workflow():
         # Start with crop workflow - markup dialog will appear after ROI is set
         volume.start_with_volume_crop()
     except Exception as e:
-        pass
         # Fallback to the original function if needed
+        logger.debug("Suppressed exception in start_markup_workflow", exc_info=True)
         segmentation.create_threshold_segment_with_markup_only()
 
 def prompt_for_endpoints():
@@ -817,7 +827,7 @@ def prompt_for_endpoints():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in prompt_for_endpoints", exc_info=True)
         pass
 
             
@@ -835,7 +845,7 @@ def create_point_list_and_prompt():
         return True
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_point_list_and_prompt", exc_info=True)
         slicer.util.errorDisplay(f"Could not create point placement controls: {str(e)}")
         return False
 
@@ -1259,6 +1269,7 @@ def calculate_circle_radius(circle_node):
         return max(0.5, min(10.0, radius))  # Clamp to reasonable range
         
     except Exception as e:
+        logger.debug("Suppressed exception in calculate_circle_radius", exc_info=True)
         return 2.0  # Default radius on error
 
 def on_radius_slider_changed(slider_value):
@@ -1425,7 +1436,7 @@ def toggle_point_placement_mode():
             """)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in toggle_point_placement_mode", exc_info=True)
         slicer.util.errorDisplay(f"Could not toggle point placement: {str(e)}")
 
 def toggle_post_branch_point_placement_mode():
@@ -1498,7 +1509,7 @@ def toggle_post_branch_point_placement_mode():
             """)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in toggle_post_branch_point_placement_mode", exc_info=True)
         slicer.util.errorDisplay(f"Could not toggle post branch point placement: {str(e)}")
 
 def start_new_post_branch_point_list_placement(count_label):
@@ -1575,7 +1586,7 @@ def start_new_post_branch_point_list_placement(count_label):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in start_new_post_branch_point_list_placement", exc_info=True)
         slicer.util.errorDisplay(f"Could not start post branch point placement: {str(e)}")
 
 def stop_post_branch_point_placement_mode():
@@ -1597,7 +1608,7 @@ def stop_post_branch_point_placement_mode():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_post_branch_point_placement_mode", exc_info=True)
         slicer.util.errorDisplay(f"Could not stop post branch point placement: {str(e)}")
 
 def setup_post_branch_point_count_observer(point_list, count_label):
@@ -1677,6 +1688,7 @@ def on_post_branch_point_added(point_list, count_label):
                     pass  # Found centerline model by exact name
             except:
                 # Try to find any centerline model by pattern
+                logger.debug("Suppressed exception in on_post_branch_point_added", exc_info=True)
                 all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
                 for model in all_models:
                     if 'centerline' in model.GetName().lower() or 'tree' in model.GetName().lower():
@@ -1779,7 +1791,7 @@ def toggle_branch_point_placement_mode():
             """)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in toggle_branch_point_placement_mode", exc_info=True)
         slicer.util.errorDisplay(f"Could not toggle branch point placement: {str(e)}")
 
 def start_new_branch_point_list_placement(count_label):
@@ -1856,7 +1868,7 @@ def start_new_branch_point_list_placement(count_label):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in start_new_branch_point_list_placement", exc_info=True)
         slicer.util.errorDisplay(f"Could not start branch point placement: {str(e)}")
 
 def setup_branch_point_count_observer(point_list, count_label):
@@ -1916,6 +1928,7 @@ def on_branch_point_added(point_list, count_label):
                     pass  # Found centerline model by exact name
             except:
                 # Try to find any centerline model by pattern
+                logger.debug("Suppressed exception in on_branch_point_added", exc_info=True)
                 all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
                 for model in all_models:
                     if 'centerline' in model.GetName().lower() or 'tree' in model.GetName().lower():
@@ -2038,6 +2051,7 @@ def draw_circle_for_single_branch_point(point_index):
         return draw_circle_for_branch_point(current_point_list, point_index)
         
     except Exception as e:
+        logger.debug("Suppressed exception in draw_circle_for_single_branch_point", exc_info=True)
         return False
 
 def draw_circle_for_single_post_branch_point(point_index):
@@ -2055,6 +2069,7 @@ def draw_circle_for_single_post_branch_point(point_index):
         return draw_circle_for_post_branch_point(current_point_list, point_index)
         
     except Exception as e:
+        logger.debug("Suppressed exception in draw_circle_for_single_post_branch_point", exc_info=True)
         return False
 
 def stop_branch_point_placement_mode():
@@ -2080,7 +2095,7 @@ def stop_branch_point_placement_mode():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_branch_point_placement_mode", exc_info=True)
         slicer.util.errorDisplay(f"Could not stop branch point placement: {str(e)}")
 
 def stop_point_placement_mode():
@@ -2181,7 +2196,7 @@ def on_point_added(point_list, count_label):
         if expected_f1:
             logger.info(f"[DEBUG] Expected F-1 node: '{expected_f1.GetName()}' ID: '{expected_f1.GetID()}'")
             if point_list.GetID() != expected_f1.GetID():
-                logger.info(f"[WARNING] Point added to different node than expected F-1!")
+                logger.warning(f"[WARNING] Point added to different node than expected F-1!")
         
         # Ensure this point list uses the current centerline reference
         centerline.ensure_point_placement_uses_current_centerline(point_list)
@@ -2216,6 +2231,7 @@ def on_point_added(point_list, count_label):
                     pass  # Found centerline model by exact name
             except:
                 # Try to find any centerline model by pattern
+                logger.debug("Suppressed exception in on_point_added", exc_info=True)
                 all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
                 for model in all_models:
                     if 'centerline' in model.GetName().lower() or 'tree' in model.GetName().lower():
@@ -2335,7 +2351,7 @@ def verify_f1_node_points():
         logger.info("[DEBUG] === End verification ===")
         
     except Exception as e:
-        logger.info(f"[ERROR] Failed to verify F-1 points: {e}")
+        logger.error(f"[ERROR] Failed to verify F-1 points: {e}")
 
 def apply_point_labels_to_list(point_list):
     """
@@ -2372,7 +2388,7 @@ def apply_point_labels_to_list(point_list):
                 logger.info(f"[DEBUG] Point {i}: '{current_label}' -> '{new_label}'")
         
     except Exception as e:
-        logger.info(f"[ERROR] Failed to apply labels: {e}")
+        logger.error(f"[ERROR] Failed to apply labels: {e}")
         pass
 
 def update_point_count_display(point_list, count_label):
@@ -2399,7 +2415,7 @@ def ensure_point_placement_mode_active(point_list):
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         f1_nodes = [node for node in fiducial_nodes if node.GetName() == "F-1"]
         if len(f1_nodes) > 1:
-            logger.info(f"[WARNING] Found {len(f1_nodes)} F-1 nodes! This might cause point placement issues.")
+            logger.warning(f"[WARNING] Found {len(f1_nodes)} F-1 nodes! This might cause point placement issues.")
             for i, node in enumerate(f1_nodes):
                 logger.info(f"  F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
         
@@ -2427,7 +2443,7 @@ def ensure_point_placement_mode_active(point_list):
                 interactionNode.SetPlaceModePersistence(1)
         
     except Exception as e:
-        logger.info(f"[ERROR] Failed to ensure placement mode: {e}")
+        logger.error(f"[ERROR] Failed to ensure placement mode: {e}")
         pass
 
 def cleanup_point_placement_ui():
@@ -2479,7 +2495,7 @@ def apply_only_transform_to_point_list(point_list):
             return False
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in apply_only_transform_to_point_list", exc_info=True)
         return False
 
 def start_new_point_list_placement(count_label):
@@ -2585,7 +2601,7 @@ def start_new_point_list_placement(count_label):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in start_new_point_list_placement", exc_info=True)
         slicer.util.errorDisplay(f"Could not start point placement: {str(e)}")
 
 def remove_transforms_from_point_lists():
@@ -2649,7 +2665,7 @@ def remove_transforms_from_point_lists():
                 return False
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in remove_transforms_from_point_lists", exc_info=True)
         return False
 
 def verify_pre_post_lesion_points_transform_free():
@@ -2697,7 +2713,7 @@ def verify_pre_post_lesion_points_transform_free():
             return False
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in verify_pre_post_lesion_points_transform_free", exc_info=True)
         return False
 
 def reapply_transforms_to_point_lists():
@@ -2738,7 +2754,7 @@ def reapply_transforms_to_point_lists():
             return False
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in reapply_transforms_to_point_lists", exc_info=True)
         return False
 
 def reapply_transforms_to_circles():
@@ -2787,7 +2803,7 @@ def reapply_transforms_to_circles():
             return False
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in reapply_transforms_to_circles", exc_info=True)
         return False
 
 def create_closed_curve_circle(circle_node, center_point, radius):
@@ -2809,7 +2825,7 @@ def create_closed_curve_circle(circle_node, center_point, radius):
         return True
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_closed_curve_circle", exc_info=True)
         return False
 
 def create_perpendicular_circle(circle_node, center_point, radius, direction_vector):
@@ -2853,8 +2869,8 @@ def create_perpendicular_circle(circle_node, center_point, radius, direction_vec
         return True
         
     except Exception as e:
-        pass
         # Fallback to axial circle
+        logger.debug("Suppressed exception in create_perpendicular_circle", exc_info=True)
         return create_closed_curve_circle(circle_node, center_point, radius)
 
 def clear_branch_circles():
@@ -2899,7 +2915,7 @@ def clear_circles_selective(circle_types=None):
         return removed_count > 0
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in clear_circles_selective", exc_info=True)
         return False
 
 def draw_circle_for_single_point(point_index):
@@ -3051,6 +3067,7 @@ def draw_circle_for_single_point(point_index):
         return success
         
     except Exception as e:
+        logger.debug("Suppressed exception in draw_circle_for_single_point", exc_info=True)
         return False
 
 def apply_transform_to_circle(circle_node):
@@ -3079,7 +3096,7 @@ def apply_transform_to_circle(circle_node):
             return False
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in apply_transform_to_circle", exc_info=True)
         return False
 
 def draw_circle_for_branch_point(branch_node, point_index):
@@ -3201,7 +3218,7 @@ def draw_circle_for_branch_point(branch_node, point_index):
 
         return success
     except Exception as e:
-        pass  # Error creating branch circle: {str(e)}
+        logger.debug("Suppressed exception in draw_circle_for_branch_point", exc_info=True)
         return False
 
 def draw_circle_for_post_branch_point(post_branch_node, point_index):
@@ -3316,7 +3333,7 @@ def draw_circle_for_post_branch_point(post_branch_node, point_index):
 
         return success
     except Exception as e:
-        pass  # Error creating post branch circle: {str(e)}
+        logger.debug("Suppressed exception in draw_circle_for_post_branch_point", exc_info=True)
         return False
 
 def create_tube_from_curve(centerline_curve, pair_number):
@@ -3359,4 +3376,5 @@ def create_tube_from_curve(centerline_curve, pair_number):
         return tube_model
         
     except Exception as e:
+        logger.debug("Suppressed exception in create_tube_from_curve", exc_info=True)
         return None

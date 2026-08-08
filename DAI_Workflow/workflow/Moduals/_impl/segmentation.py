@@ -1005,7 +1005,7 @@ def start_with_segment_editor_scissors():
                 logger.info("Installed widget-specific Ctrl+Z and Ctrl+Y shortcuts")
                 
         except Exception as shortcut_error:
-            logger.info(f"Warning: Could not install keyboard shortcuts: {shortcut_error}")
+            logger.error(f"Warning: Could not install keyboard shortcuts: {shortcut_error}")
         
         # Configure segment editor for better undo support
         try:
@@ -1020,7 +1020,7 @@ def start_with_segment_editor_scissors():
             
             logger.info("Configured undo system with 20 levels for both segmentation and scene")
         except Exception as undo_config_error:
-            logger.info(f"Warning: Could not configure undo system: {undo_config_error}")
+            logger.error(f"Warning: Could not configure undo system: {undo_config_error}")
         
         # Store references for scissors tool control
         slicer.modules.WorkflowSegmentEditorNode = segmentEditorNode
@@ -1593,7 +1593,7 @@ def update_crop_interface_for_segmentation_phase():
         
         
     except Exception as e:
-        logger.info(f"Error in update_crop_interface_for_segmentation_phase: {e}")
+        logger.error(f"Error in update_crop_interface_for_segmentation_phase: {e}")
 
 def toggle_scissors_tool(activated=None):
     """
@@ -1650,4 +1650,4 @@ def toggle_scissors_tool(activated=None):
                     if hasattr(button, 'setChecked'):
                         button.setChecked(False)
     except Exception as e:
-        logger.info(f"Error in toggle_scissors_tool: {e}")
+        logger.error(f"Error in toggle_scissors_tool: {e}")
