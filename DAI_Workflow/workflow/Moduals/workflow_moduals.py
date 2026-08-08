@@ -1,4 +1,5 @@
 # Standard library imports
+import logging
 import math
 import os
 import time
@@ -11,19 +12,26 @@ import vtk
 import slicer
 import qt
 
+# Module logger. Routes through Slicer's Python logging so that failures are
+# recorded in the application log (Help > Report a bug / the log files) instead
+# of being silently swallowed. Suppressed/expected exceptions are logged at
+# DEBUG so they stay quiet in normal use but can be surfaced by lowering the
+# log level (logging.getLogger("DAI_Workflow").setLevel(logging.DEBUG)).
+logger = logging.getLogger("DAI_Workflow")
+
 # Import DICOM utilities with error handling
 try:
     import DICOMLib
     from DICOMLib.DICOMUtils import TemporaryDICOMDatabase
     DICOM_UTILS_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: DICOMLib not available: {e}")
+    logger.warning("DICOMLib not available: %s", e)
     DICOM_UTILS_AVAILABLE = False
 
 try:
     import ctk
 except ImportError as e:
-    print(f"Warning: ctk not available: {e}")
+    logger.warning("ctk not available: %s", e)
     ctk = None
 
 """
@@ -40,13 +48,13 @@ def initialize_workflow_ui():
         # Use QTimer to ensure this runs after the UI is fully loaded
         qt.QTimer.singleShot(1000, force_collapse_left_panel_on_startup)
     except Exception as e:
-        print(f"Warning: Could not initialize workflow UI: {e}")
+        logger.info(f"Warning: Could not initialize workflow UI: {e}")
 
 # Call initialization when module is imported
 try:
     initialize_workflow_ui()
 except Exception as e:
-    print(f"Warning: Could not call initialize_workflow_ui: {e}")
+    logger.info(f"Warning: Could not call initialize_workflow_ui: {e}")
 
 # Set up scene save observer after functions are defined
 def setup_module_observers():
@@ -54,7 +62,7 @@ def setup_module_observers():
     try:
         setup_scene_save_observer()
     except Exception as e:
-        print(f"Warning: Could not set up scene save observer: {e}")
+        logger.info(f"Warning: Could not set up scene save observer: {e}")
 
 
 
@@ -113,7 +121,7 @@ def find_working_volume():
                     if active_volume and active_volume.IsA("vtkMRMLScalarVolumeNode"):
                         return active_volume
         except Exception as e:
-            print(f"Warning: Could not get active volume from selection node: {e}")
+            logger.info(f"Warning: Could not get active volume from selection node: {e}")
         
         # Strategy 4: Fallback to first volume, but warn user
         first_volume = volume_nodes[0]
@@ -141,7 +149,7 @@ def force_collapse_left_panel_on_startup():
                     widget.hide()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not hide dock widgets: {e}")
+            logger.info(f"Warning: Could not hide dock widgets: {e}")
         
         # Method 2: Try specific known panel names
         try:
@@ -152,7 +160,7 @@ def force_collapse_left_panel_on_startup():
                     panel.hide()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not hide known panel widgets: {e}")
+            logger.info(f"Warning: Could not hide known panel widgets: {e}")
         
         # Method 3: Try to find all QWidget children and hide panel-related ones
         try:
@@ -163,12 +171,12 @@ def force_collapse_left_panel_on_startup():
                     widget.hide()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not hide panel-related widgets: {e}")
+            logger.info(f"Warning: Could not hide panel-related widgets: {e}")
         
         return success
         
     except Exception as e:
-        print(f"Error in force_collapse_left_panel_on_startup: {e}")
+        logger.info(f"Error in force_collapse_left_panel_on_startup: {e}")
         return False
 
 def collapse_left_module_panel():
@@ -191,7 +199,7 @@ def collapse_left_module_panel():
                     widget.hide()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not hide dock widgets in collapse_left_module_panel: {e}")
+            logger.info(f"Warning: Could not hide dock widgets in collapse_left_module_panel: {e}")
         
         # Method 2: Try specific panel names
         try:
@@ -202,12 +210,12 @@ def collapse_left_module_panel():
                     panel.hide()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not hide specific panels in collapse_left_module_panel: {e}")
+            logger.info(f"Warning: Could not hide specific panels in collapse_left_module_panel: {e}")
         
         return success
         
     except Exception as e:
-        print(f"Error in collapse_left_module_panel: {e}")
+        logger.info(f"Error in collapse_left_module_panel: {e}")
         return False
 
 def expand_left_module_panel():
@@ -230,7 +238,7 @@ def expand_left_module_panel():
                     widget.show()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not show dock widgets in expand_left_module_panel: {e}")
+            logger.info(f"Warning: Could not show dock widgets in expand_left_module_panel: {e}")
         
         # Method 2: Try specific panel names
         try:
@@ -241,12 +249,12 @@ def expand_left_module_panel():
                     panel.show()
                     success = True
         except Exception as e:
-            print(f"Warning: Could not show specific panels in expand_left_module_panel: {e}")
+            logger.info(f"Warning: Could not show specific panels in expand_left_module_panel: {e}")
         
         return success
         
     except Exception as e:
-        print(f"Error in expand_left_module_panel: {e}")
+        logger.info(f"Error in expand_left_module_panel: {e}")
         return False
 
 def get_volume_slice_thickness(volume_node):
@@ -352,7 +360,7 @@ def hide_centerlines_from_views():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in hide_centerlines_from_views", exc_info=True)
 
 def hide_cpr_slice_size_controls():
     """
@@ -372,7 +380,7 @@ def hide_cpr_slice_size_controls():
             try:
                 cpr_module = cpr_widget.self()
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in hide_cpr_slice_size_controls", exc_info=True)
         
         if not cpr_module:
             cpr_module = cpr_widget
@@ -544,7 +552,7 @@ def process_markup_folder_and_create_tubes(folder_path):
                 if pre_lesion_markup:
                     pre_lesion_markup.SetName("Circle_pre-lesion")
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in process_markup_folder_and_create_tubes", exc_info=True)
         
         if post_lesion_file:
             try:
@@ -552,7 +560,7 @@ def process_markup_folder_and_create_tubes(folder_path):
                 if post_lesion_markup:
                     post_lesion_markup.SetName("Circle_post-lesion")
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in process_markup_folder_and_create_tubes", exc_info=True)
         
         # Load the "Straightened Volume" if it exists
         straightened_volume_path = None
@@ -567,7 +575,7 @@ def process_markup_folder_and_create_tubes(folder_path):
                 if straightened_volume:
                     slicer.modules.WorkflowStraightenedVolume = straightened_volume
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in process_markup_folder_and_create_tubes", exc_info=True)
         
         # Load transform file if found
         if transform_file:
@@ -576,7 +584,7 @@ def process_markup_folder_and_create_tubes(folder_path):
                 if transform_node:
                     slicer.modules.WorkflowTransform = transform_node
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in process_markup_folder_and_create_tubes", exc_info=True)
         
         # Create tube masks from markup file pairs
         created_tubes = []
@@ -613,7 +621,7 @@ def process_markup_folder_and_create_tubes(folder_path):
                         created_tubes.append(tube_model)
 
         
-        print(f"Created {len(created_tubes)} tubes total")
+        logger.info(f"Created {len(created_tubes)} tubes total")
         
         if created_tubes:
             # Set workflow flag to indicate markup was imported
@@ -634,7 +642,7 @@ def load_first_point_from_markup(markup_file_path):
     import json
     
     try:
-        print(f"Loading markup file: {markup_file_path}")
+        logger.info(f"Loading markup file: {markup_file_path}")
         with open(markup_file_path, 'r') as f:
             markup_data = json.load(f)
 
@@ -653,7 +661,7 @@ def load_first_point_from_markup(markup_file_path):
         return None
         
     except Exception as e:
-        print(f"Error loading markup file {markup_file_path}: {e}")
+        logger.info(f"Error loading markup file {markup_file_path}: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -663,30 +671,30 @@ def create_tube_from_two_points(start_point, end_point, tube_name, color):
     Create a tube model from two points
     """
     try:
-        print(f"Creating tube '{tube_name}' from points {start_point} to {end_point}")
+        logger.info(f"Creating tube '{tube_name}' from points {start_point} to {end_point}")
         
         # Create a curve markup with the two points
         curve_markup = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsCurveNode")
         curve_markup.SetName(f"Curve_{tube_name}")
-        print(f"Created curve markup: {curve_markup.GetName()}")
+        logger.info(f"Created curve markup: {curve_markup.GetName()}")
         
         # Add the two points to the curve (points are already in world coordinates)
         curve_markup.AddControlPoint(start_point[0], start_point[1], start_point[2])
         curve_markup.AddControlPoint(end_point[0], end_point[1], end_point[2])
-        print(f"Added {curve_markup.GetNumberOfControlPoints()} points to curve")
+        logger.info(f"Added {curve_markup.GetNumberOfControlPoints()} points to curve")
         
         # Create tube from the curve
         tube_model = create_tube_from_curve_with_color(curve_markup, tube_name, color)
-        print(f"Tube creation result: {tube_model}")
+        logger.info(f"Tube creation result: {tube_model}")
         
         # Clean up the temporary curve
         slicer.mrmlScene.RemoveNode(curve_markup)
-        print(f"Cleaned up temporary curve")
+        logger.info(f"Cleaned up temporary curve")
         
         return tube_model
         
     except Exception as e:
-        print(f"Error creating tube from two points: {e}")
+        logger.info(f"Error creating tube from two points: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -696,19 +704,19 @@ def create_tube_from_curve_with_color(curve_markup, tube_name, color):
     Create a tube model from a curve markup with specified color
     """
     try:
-        print(f"Creating tube model from curve: {curve_markup.GetName()}")
+        logger.info(f"Creating tube model from curve: {curve_markup.GetName()}")
         
         # Get the curve polydata
         curve_polydata = curve_markup.GetCurveWorld()
         if not curve_polydata:
-            print("Failed to get curve polydata")
+            logger.info("Failed to get curve polydata")
             return None
             
         if curve_polydata.GetNumberOfPoints() < 2:
-            print(f"Curve has insufficient points: {curve_polydata.GetNumberOfPoints()}")
+            logger.info(f"Curve has insufficient points: {curve_polydata.GetNumberOfPoints()}")
             return None
         
-        print(f"Curve has {curve_polydata.GetNumberOfPoints()} points")
+        logger.info(f"Curve has {curve_polydata.GetNumberOfPoints()} points")
         
         # Create tube filter
         import vtk
@@ -718,13 +726,13 @@ def create_tube_from_curve_with_color(curve_markup, tube_name, color):
         tube_filter.SetNumberOfSides(12)
         tube_filter.CappingOn()
         tube_filter.Update()
-        print("Tube filter created and updated")
+        logger.info("Tube filter created and updated")
         
         # Create model node
         tube_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
         tube_model.SetName(tube_name)
         tube_model.SetAndObservePolyData(tube_filter.GetOutput())
-        print(f"Created model node: {tube_model.GetName()}")
+        logger.info(f"Created model node: {tube_model.GetName()}")
         
         # Create display node and set color
         tube_model.CreateDefaultDisplayNodes()
@@ -733,14 +741,14 @@ def create_tube_from_curve_with_color(curve_markup, tube_name, color):
             display_node.SetColor(color)
             display_node.SetOpacity(0.8)
             display_node.SetVisibility(True)
-            print(f"Set display properties: color={color}, opacity=0.8")
+            logger.info(f"Set display properties: color={color}, opacity=0.8")
         else:
-            print("Failed to get display node")
+            logger.info("Failed to get display node")
         
         return tube_model
         
     except Exception as e:
-        print(f"Error creating tube from curve: {e}")
+        logger.info(f"Error creating tube from curve: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -1011,7 +1019,7 @@ def set_volume_visible_in_slice_views(volume_node):
     
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in set_volume_visible_in_slice_views", exc_info=True)
 
 def show_red_green_views_only():
     """
@@ -1441,7 +1449,7 @@ def open_data_module():
                     if hasattr(scene_model, 'expandAll'):
                         scene_model.expandAll()
         except Exception as expand_error:
-            pass
+            logger.debug("Suppressed exception in open_data_module", exc_info=True)
         
         
     except Exception as e:
@@ -1471,7 +1479,7 @@ def set_3d_view_background_black():
             viewNode.SetBackgroundColor(r, g, b)
             viewNode.SetBackgroundColor2(r, g, b)  # Also set gradient background
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in set_3d_view_background_black", exc_info=True)
 
 def create_threshold_segment_with_markup_only():
     """
@@ -1549,7 +1557,7 @@ def markup_workflow_after_crop():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in markup_workflow_after_crop", exc_info=True)
 
 def continue_workflow_without_markup():
     """
@@ -1581,7 +1589,7 @@ def continue_workflow_without_markup():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in continue_workflow_without_markup", exc_info=True)
 
 def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
     """
@@ -1778,7 +1786,7 @@ def add_post_threshold_tools_to_left_panel(segmentation_node, volume_node):
         slicer.modules.PostThresholdToolsWidget = tools_widget
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in add_post_threshold_tools_to_left_panel", exc_info=True)
 
 def create_additional_fiducial_list():
     """
@@ -1859,7 +1867,7 @@ def continue_to_centerline_from_left_panel():
         qt.QTimer.singleShot(1000, lambda: on_continue_from_scissors())
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in continue_to_centerline_from_left_panel", exc_info=True)
 
 def cleanup_post_threshold_tools():
     """
@@ -1874,7 +1882,7 @@ def cleanup_post_threshold_tools():
             del slicer.modules.LeftPanelScissorsButton
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_post_threshold_tools", exc_info=True)
 
 def create_threshold_segment():
     """
@@ -2002,7 +2010,7 @@ def create_segmentation_from_threshold(volume_node, threshold_value_low, thresho
             pass
         slicer.mrmlScene.RemoveNode(temp_labelmap)
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_segmentation_from_threshold", exc_info=True)
     set_3d_view_background_black()
     
     return segmentation_node
@@ -2284,7 +2292,7 @@ def create_floating_continue_button():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_floating_continue_button", exc_info=True)
 
 def add_continue_button_to_crop_module(crop_widget, continue_container):
     """
@@ -2342,7 +2350,7 @@ def on_finish_cropping():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_finish_cropping", exc_info=True)
 
 def collapse_crop_volume_gui():
     """
@@ -2379,7 +2387,7 @@ def collapse_crop_volume_gui():
                     crop_widget.setMaximumHeight(50)  # Minimize height
                     pass
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in collapse_crop_volume_gui", exc_info=True)
             
             pass
             
@@ -2389,7 +2397,7 @@ def collapse_crop_volume_gui():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in collapse_crop_volume_gui", exc_info=True)
 
 def cleanup_continue_ui():
     """
@@ -2521,7 +2529,7 @@ def cleanup_workflow_ui():
         cleanup_centerline_ui()
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_workflow_ui", exc_info=True)
 
 def open_centerline_module():
     """
@@ -2602,7 +2610,7 @@ def remove_duplicate_centerline_buttons():
                 pass
                 
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in remove_duplicate_centerline_buttons", exc_info=True)
 
 def add_large_centerline_apply_button():
     """
@@ -2728,7 +2736,7 @@ def add_large_centerline_apply_button():
             qt.QTimer.singleShot(3000, delayed_create)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in add_large_centerline_apply_button", exc_info=True)
 
 def cleanup_centerline_ui():
     """
@@ -2748,7 +2756,7 @@ def cleanup_centerline_ui():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_centerline_ui", exc_info=True)
 
 def setup_centerline_module():
     """
@@ -2793,7 +2801,7 @@ def setup_centerline_module():
                                         segment_set = True
                                         break
                                     except Exception as e:
-                                        pass
+                                        logger.debug("Suppressed exception in setup_centerline_module", exc_info=True)
 
                     else:
                         segmentation = workflow_segmentation.GetSegmentation()
@@ -2857,7 +2865,7 @@ def setup_centerline_module():
                                 getattr(centerline_module.ui, create_new_attr).setChecked(True)
                                 
                     except Exception as e:
-                        pass
+                        logger.debug("Suppressed exception in setup_centerline_module", exc_info=True)
                     
                     try:
                         centerline_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
@@ -2878,7 +2886,7 @@ def setup_centerline_module():
                             if hasattr(centerline_module.ui, create_new_model_attr):
                                 getattr(centerline_module.ui, create_new_model_attr).setChecked(True)
                     except Exception as e:
-                        pass
+                        logger.debug("Suppressed exception in setup_centerline_module", exc_info=True)
                     try:
                         if hasattr(centerline_module.ui, 'outputTreeModelSelector'):
                             tree_model = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLModelNode")
@@ -2903,7 +2911,7 @@ def setup_centerline_module():
                                 getattr(centerline_module.ui, tree_curve_attr).setCurrentNode(tree_curve)
                                 
                     except Exception as e:
-                        pass
+                        logger.debug("Suppressed exception in setup_centerline_module", exc_info=True)
                     
                     # Force GUI update and give time for widgets to initialize
                     slicer.app.processEvents()
@@ -2921,7 +2929,7 @@ def setup_centerline_module():
         prompt_for_endpoints()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_centerline_module", exc_info=True)
 
 def force_point_placement_tool_selection():
     """
@@ -3090,7 +3098,7 @@ def fix_extract_centerline_setup_issues():
         force_point_placement_tool_selection()
                         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in fix_extract_centerline_setup_issues", exc_info=True)
 
 def prepare_surface_for_centerline(segmentation_node):
     """
@@ -3137,7 +3145,7 @@ def remove_segment_from_all_segmentations(segment_name):
                     break 
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in remove_segment_from_all_segmentations", exc_info=True)
 
 
 def add_large_crop_apply_button():
@@ -3178,21 +3186,21 @@ def add_large_cpr_apply_button():
                         try:
                             cpr_module = cpr_widget.self()
                         except Exception as e:
-                            pass
+                            logger.debug("Suppressed exception in create_large_button", exc_info=True)
                     
                     if not cpr_module:
                         try:
                             cpr_module = cpr_widget
                             pass
                         except Exception as e:
-                            pass
+                            logger.debug("Suppressed exception in create_large_button", exc_info=True)
 
                     if not cpr_module:
                         try:
                             cpr_module = slicer.modules.curvedplanarreformat.createNewWidgetRepresentation()
                             pass
                         except Exception as e:
-                            pass
+                            logger.debug("Suppressed exception in create_large_button", exc_info=True)
                     
                     if cpr_module:
                         pass
@@ -3271,7 +3279,7 @@ def add_large_cpr_apply_button():
                                     slicer.app.processEvents()
                                     
                                 except Exception as e:
-                                    pass
+                                    logger.debug("Suppressed exception in apply_cpr_and_transform", exc_info=True)
                             
                             large_apply_button.connect('clicked()', apply_cpr_and_transform)
                             
@@ -3325,7 +3333,7 @@ def add_large_cpr_apply_button():
                                             setup_cross_section_analysis_module()
                                             pass
                                         except Exception as e3:
-                                            pass
+                                            logger.debug("Suppressed exception in open_cross_section_analysis", exc_info=True)
 
                             cross_section_button.connect('clicked()', open_cross_section_analysis)
                             
@@ -3376,7 +3384,7 @@ def add_large_cpr_apply_button():
                                     pass
                                     
                                 except Exception as e:
-                                    pass
+                                    logger.debug("Suppressed exception in trigger_cpr_apply", exc_info=True)
                             
                             large_apply_button.connect('clicked()', trigger_cpr_apply)
                             
@@ -3429,7 +3437,7 @@ def add_large_cpr_apply_button():
                                             setup_cross_section_analysis_module()
                                             pass
                                         except Exception as e3:
-                                            pass
+                                            logger.debug("Suppressed exception in open_cross_section_analysis", exc_info=True)
 
                             cross_section_button.connect('clicked()', open_cross_section_analysis)
                         
@@ -3476,7 +3484,7 @@ def add_large_cpr_apply_button():
                                 attrs = [attr for attr in dir(cpr_widget) if not attr.startswith('_')]
                                 pass
                             except:
-                                pass
+                                logger.debug("Suppressed exception in create_large_button", exc_info=True)
                         return False
                         
             except Exception as e:
@@ -3490,7 +3498,7 @@ def add_large_cpr_apply_button():
             qt.QTimer.singleShot(3000, create_large_button)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in add_large_cpr_apply_button", exc_info=True)
 
 def apply_cpr_transform_to_centerlines():
     """
@@ -3579,7 +3587,7 @@ def apply_cpr_transform_to_centerlines():
                 pass
                 
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in apply_cpr_transform_to_centerlines", exc_info=True)
         
         if transformed_count > 0:
             
@@ -3665,7 +3673,7 @@ def configure_cross_section_module():
                 time.sleep(0.2)
                 
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in configure_cross_section_module", exc_info=True)
 
         try:
             # Look for the input curve selector (first qMRMLNodeComboBox)
@@ -3772,7 +3780,7 @@ def configure_cross_section_module():
                         if module and hasattr(module, 'logic'):
                             module_logic = module.logic()
                     except Exception as logic_error:
-                        pass
+                        logger.debug("Suppressed exception in configure_cross_section_module", exc_info=True)
                     
                     # Wait for processing to complete
                     qt.QTimer.singleShot(2000, lambda: configure_browse_cross_sections())
@@ -3813,7 +3821,7 @@ def collapse_parameters_tab():
                     cb.hide()
                     return True
         except Exception as ctk_error:
-            pass
+            logger.debug("Suppressed exception in collapse_parameters_tab", exc_info=True)
         
         # Also try QGroupBox as fallback
         group_boxes = module_widget.findChildren(qt.QGroupBox)
@@ -3874,7 +3882,7 @@ def configure_browse_cross_sections():
                 if "browse" in cb.text.lower() or "cross" in cb.text.lower():
                     browse_widgets.append(cb)
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in configure_browse_cross_sections", exc_info=True)
 
         group_boxes = module_widget.findChildren(qt.QGroupBox)
         for gb in group_boxes:
@@ -3896,7 +3904,7 @@ def configure_browse_cross_sections():
                         if red_slice_node:
                             axial_selector.setCurrentNode(red_slice_node)
                 except Exception as axial_error:
-                    pass
+                    logger.debug("Suppressed exception in configure_browse_cross_sections", exc_info=True)
                 try:
                     if longitudinal_selector:
                         # Set Longitudinal to Green using direct node selection (similar to provided script)
@@ -3904,7 +3912,7 @@ def configure_browse_cross_sections():
                         if green_slice_node:
                             longitudinal_selector.setCurrentNode(green_slice_node)
                 except Exception as longitudinal_error:
-                    pass
+                    logger.debug("Suppressed exception in configure_browse_cross_sections", exc_info=True)
                 
                 # Find slider for Point Index (moveToPointSliderWidget in XML)
                 try:
@@ -3917,7 +3925,7 @@ def configure_browse_cross_sections():
                             target_value = min(230, point_slider.maximum)
                             point_slider.setValue(target_value)
                 except Exception as slider_error:
-                    pass
+                    logger.debug("Suppressed exception in configure_browse_cross_sections", exc_info=True)
             except Exception as e:
                 continue
         return True
@@ -4015,7 +4023,7 @@ def load_dicom_from_source_file(dicom_path):
                         if success:
                             return success
                 except Exception as temp_db_error:
-                    pass
+                    logger.debug("Suppressed exception in load_dicom_from_source_file", exc_info=True)
             
             # Fallback to direct plugin examination without temporary database
             success = _import_and_load_dicom_data(dicom_path, None)
@@ -4099,7 +4107,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     return _process_dicom_database_patients(dicom_database, patients, input_dir)
                     
             except Exception as indexer_error:
-                pass
+                logger.debug("Suppressed exception in _import_and_load_dicom_data", exc_info=True)
 
         # Method 2: Direct file analysis without plugins (bypass database issues)
         dicom_files = _find_dicom_files_in_directory(input_dir)
@@ -4141,7 +4149,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     return True
                     
             except Exception as dir_load_error:
-                pass
+                logger.debug("Suppressed exception in _import_and_load_dicom_data", exc_info=True)
             
             # Method 2b: Try loading first DICOM file (should trigger series loading)
             try:
@@ -4175,7 +4183,7 @@ def _import_and_load_dicom_data(input_dir, temp_db=None):
                     return True
                     
             except Exception as file_load_error:
-                pass
+                logger.debug("Suppressed exception in _import_and_load_dicom_data", exc_info=True)
             
             # Method 2c: Try manual series loading for numbered DICOM files
             success = _load_dicom_series_manually(dicom_files, input_dir)
@@ -4394,14 +4402,14 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                             try:
                                 shutil.rmtree(temp_dir, ignore_errors=True)
                             except:
-                                pass
+                                logger.debug("Suppressed exception in cleanup_temp", exc_info=True)
                         
                         # Cleanup after a delay
                         qt.QTimer.singleShot(5000, cleanup_temp)
                         
                         return volume_node
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in _load_via_standardized_temp_folder", exc_info=True)
         
         # Method 2: Load using first file in standardized series
         try:
@@ -4420,13 +4428,13 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                                 try:
                                     shutil.rmtree(temp_dir, ignore_errors=True)
                                 except:
-                                    pass
+                                    logger.debug("Suppressed exception in cleanup_temp", exc_info=True)
                             
                             qt.QTimer.singleShot(5000, cleanup_temp)
                             
                             return volume_node
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in _load_via_standardized_temp_folder", exc_info=True)
         
         # Method 3: Try VTK DICOM reader with standardized files
         try:
@@ -4438,19 +4446,19 @@ def _load_via_standardized_temp_folder(dicom_files, series_directory):
                     try:
                         shutil.rmtree(temp_dir, ignore_errors=True)
                     except:
-                        pass
+                        logger.debug("Suppressed exception in cleanup_temp", exc_info=True)
                 
                 qt.QTimer.singleShot(5000, cleanup_temp)
                 
                 return result
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in _load_via_standardized_temp_folder", exc_info=True)
         
         # Clean up temp folder if all methods failed
         try:
             shutil.rmtree(temp_dir, ignore_errors=True)
         except:
-            pass
+            logger.debug("Suppressed exception in _load_via_standardized_temp_folder", exc_info=True)
             
         return None
         
@@ -4488,7 +4496,7 @@ def _load_philips_dicom_series(dicom_directory):
                     # This should initialize slicer.dicomDatabase
                     DICOMLib.DICOMUtils.openDatabase()
         except Exception as init_error:
-            pass
+            logger.debug("Suppressed exception in _load_philips_dicom_series", exc_info=True)
         
         # Import DICOM directory (ignores unreadable files like v_headers)
         DICOMUtils.importDicom(dicom_directory)
@@ -4563,7 +4571,7 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                     qt.QTimer.singleShot(1000, start_with_volume_crop)
                     return True
             except Exception as philips_error:
-                pass
+                logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
         
         # Method 0: Try standardized temp folder conversion first
         try:
@@ -4573,7 +4581,7 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                 qt.QTimer.singleShot(1000, start_with_volume_crop)
                 return True
         except Exception as std_error:
-            pass
+            logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
         
         # Method 1: Try using DICOMLib to create a temporary database and load series
         try:
@@ -4633,7 +4641,7 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 
         except Exception as dicomlib_error:
-            pass
+            logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
         
         # Method 2: Try loading with explicit file list
         try:
@@ -4664,10 +4672,10 @@ def _load_dicom_series_manually(dicom_files, series_directory):
                                 return True
 
                 except Exception as approach_error:
-                    pass
+                    logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
                     
         except Exception as filelist_error:
-            pass
+            logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
         
         # Method 3: Try DICOM browser loading
         try:
@@ -4675,7 +4683,7 @@ def _load_dicom_series_manually(dicom_files, series_directory):
             if success:
                 return True
         except Exception as browser_error:
-            pass
+            logger.debug("Suppressed exception in _load_dicom_series_manually", exc_info=True)
         
         return False
         
@@ -4723,7 +4731,7 @@ def _load_volume_from_file_list(file_list):
                     volume_node.CreateDefaultDisplayNodes()
                     return volume_node
         except Exception as dir_error:
-            pass
+            logger.debug("Suppressed exception in _load_volume_from_file_list", exc_info=True)
         
         # Method 2: Use SimpleITK for DICOM series reading
         try:
@@ -4747,9 +4755,9 @@ def _load_volume_from_file_list(file_list):
                         return volume_node
                 
         except ImportError:
-            pass
+            logger.debug("Suppressed exception in _load_volume_from_file_list", exc_info=True)
         except Exception as sitk_error:
-            pass
+            logger.debug("Suppressed exception in _load_volume_from_file_list", exc_info=True)
         
         # Method 3: Try VTK ImageReader2 with file pattern
         try:
@@ -4762,7 +4770,7 @@ def _load_volume_from_file_list(file_list):
                 pattern_file = os.path.join(os.path.dirname(file_list[0]), f"{base_pattern[:8]}*.CTDC.*")
         
         except Exception as pattern_error:
-            pass
+            logger.debug("Suppressed exception in _load_volume_from_file_list", exc_info=True)
         
         return None
         
@@ -4861,7 +4869,7 @@ def _load_as_volume_sequence(dicom_files, directory):
                                 # Clean up single slice
                                 slicer.mrmlScene.RemoveNode(temp_volume)
                 except Exception as chunk_error:
-                    pass
+                    logger.debug("Suppressed exception in _load_as_volume_sequence", exc_info=True)
                     
                 # Don't try too many chunks
                 if i > 100:
@@ -4913,7 +4921,7 @@ def _load_with_vtk_direct(dicom_files):
                     
                     return True
         except Exception as vtk_error:
-            pass
+            logger.debug("Suppressed exception in _load_with_vtk_direct", exc_info=True)
         
         # Method 2: Try creating a volume from individual slice loading
         try:
@@ -4950,7 +4958,7 @@ def _load_with_vtk_direct(dicom_files):
 
                         
                     except Exception as slice_error:
-                        pass
+                        logger.debug("Suppressed exception in _load_with_vtk_direct", exc_info=True)
                 
                 if loaded_count > 1:
                     append_filter.Update()
@@ -4974,7 +4982,7 @@ def _load_with_vtk_direct(dicom_files):
                         return True
                         
         except Exception as stack_error:
-            pass
+            logger.debug("Suppressed exception in _load_with_vtk_direct", exc_info=True)
         
         return False
         
@@ -5056,7 +5064,7 @@ def _analyze_dicom_files(files):
             pass  # DICOM analysis failed, use basic analysis
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in _analyze_dicom_files", exc_info=True)
     
     return analysis
 
@@ -5175,7 +5183,7 @@ def _find_dicom_files_in_directory(directory):
                                 if dicm_tag == b'DICM':
                                     is_dicom = True
                         except:
-                            pass
+                            logger.debug("Suppressed exception in _find_dicom_files_in_directory", exc_info=True)
                 
                 if is_dicom:
                     dicom_files.append(file_path)
@@ -5330,7 +5338,7 @@ def diagnose_dicom_directory(dicom_path):
 
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in diagnose_dicom_directory", exc_info=True)
 
 def test_dicom_loading_with_path(dicom_path):
     """
@@ -5372,7 +5380,7 @@ def simple_dicom_load(dicom_path):
             return True
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in simple_dicom_load", exc_info=True)
     
     try:
         # Method 2: Find and load first DICOM file
@@ -5393,7 +5401,7 @@ def simple_dicom_load(dicom_path):
             return True
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in simple_dicom_load", exc_info=True)
     
     return False
 
@@ -5438,7 +5446,7 @@ def _fallback_dicom_loading(dicom_path):
                         continue
                         
             except Exception as subdir_scan_error:
-                pass
+                logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
         
         # Method 2: Enhanced directory analysis and direct loading
         try:
@@ -5478,7 +5486,7 @@ def _fallback_dicom_loading(dicom_path):
                         qt.QTimer.singleShot(1000, start_with_volume_crop)
                         return True
                 except Exception as dir_load_error:
-                    pass
+                    logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
                 
                 # Try loading first file (may only get single slice)
                 try:
@@ -5488,10 +5496,10 @@ def _fallback_dicom_loading(dicom_path):
                         qt.QTimer.singleShot(1000, start_with_volume_crop)
                         return True
                 except Exception as file_load_error:
-                    pass
+                    logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
                                 
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
             
         # Method 3: Try using Slicer's DICOM database directly (safer approach)
         try:
@@ -5552,7 +5560,7 @@ def _fallback_dicom_loading(dicom_path):
                             return True
                             
                 except Exception as db_import_error:
-                    pass
+                    logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
             else:
                 
                 # Method 4: Direct Slicer loading without database
@@ -5580,10 +5588,10 @@ def _fallback_dicom_loading(dicom_path):
                             return True
                             
                 except Exception as direct_load_error:
-                    pass
+                    logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
                     
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in _fallback_dicom_loading", exc_info=True)
         
         return False
         
@@ -5613,7 +5621,7 @@ def setup_volume_addition_monitor():
         slicer.modules.VolumeMonitorCheckCount = 0
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_volume_addition_monitor", exc_info=True)
 
 def create_volume_waiting_status_widget():
     """
@@ -5688,7 +5696,7 @@ def create_volume_waiting_status_widget():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_volume_waiting_status_widget", exc_info=True)
 
 def update_volume_waiting_status(message):
     """
@@ -5700,7 +5708,7 @@ def update_volume_waiting_status(message):
             if label:
                 label.setText(message)
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_volume_waiting_status", exc_info=True)
 
 def cleanup_volume_waiting_status_widget():
     """
@@ -5718,7 +5726,7 @@ def cleanup_volume_waiting_status_widget():
             del slicer.modules.VolumeWaitingStatusLabel
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_volume_waiting_status_widget", exc_info=True)
 
 def cancel_volume_waiting():
     """
@@ -5730,7 +5738,7 @@ def cancel_volume_waiting():
         cleanup_volume_waiting_status_widget()
         pass
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cancel_volume_waiting", exc_info=True)
 
 def check_for_volume_addition():
     """
@@ -5759,7 +5767,7 @@ def check_for_volume_addition():
             qt.QTimer.singleShot(500, start_with_volume_crop)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_for_volume_addition", exc_info=True)
 
 def stop_volume_addition_monitoring():
     """
@@ -5780,7 +5788,7 @@ def stop_volume_addition_monitoring():
         cleanup_volume_waiting_status_widget()
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_volume_addition_monitoring", exc_info=True)
 
 def start_markup_workflow():
     """
@@ -5966,7 +5974,7 @@ def check_crop_completion(original_volume_node):
                     # Set flag to prevent button restoration
                     slicer.modules.WorkflowCropCompleted = True
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in check_crop_completion", exc_info=True)
             
             # Switch to 3D-only view after cropping is complete
             qt.QTimer.singleShot(500, set_3d_only_view)
@@ -6056,7 +6064,7 @@ def setup_centerline_completion_monitor():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_centerline_completion_monitor", exc_info=True)
 
 def check_specific_centerline_completion():
     """
@@ -6117,7 +6125,7 @@ def check_specific_centerline_completion():
             show_centerline_completion_dialog(best_model, best_curve)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_specific_centerline_completion", exc_info=True)
 
 def check_centerline_completion():
     """
@@ -6174,7 +6182,7 @@ def check_centerline_completion():
             show_centerline_completion_dialog(new_centerline_model, new_centerline_curve)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_centerline_completion", exc_info=True)
 
 def get_current_centerline_for_placement():
     """
@@ -6232,14 +6240,14 @@ def ensure_point_placement_uses_current_centerline(point_list):
                 point_list.ReferenceCenterlineModel = centerline_model
                 pass  # Stored centerline model reference
             except:
-                pass
+                logger.debug("Suppressed exception in ensure_point_placement_uses_current_centerline", exc_info=True)
         
         if centerline_curve:
             try:
                 point_list.ReferenceCenterlineCurve = centerline_curve
                 pass  # Stored centerline curve reference
             except:
-                pass
+                logger.debug("Suppressed exception in ensure_point_placement_uses_current_centerline", exc_info=True)
         
         return (centerline_model is not None) or (centerline_curve is not None)
         
@@ -6475,7 +6483,7 @@ def stop_centerline_monitoring():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_centerline_monitoring", exc_info=True)
 
 def hide_threshold_segmentation_mask():
     """
@@ -6516,7 +6524,7 @@ def hide_threshold_segmentation_mask():
         slicer.app.processEvents()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in hide_threshold_segmentation_mask", exc_info=True)
 
 def switch_to_cpr_module(centerline_model=None, centerline_curve=None):
     """
@@ -6642,7 +6650,7 @@ def setup_cpr_completion_monitor():
             pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_cpr_completion_monitor", exc_info=True)
 
 def check_cpr_completion():
     """
@@ -6675,7 +6683,7 @@ def check_cpr_completion():
             
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_cpr_completion", exc_info=True)
 
 def stop_cpr_monitoring():
     """
@@ -6694,7 +6702,7 @@ def stop_cpr_monitoring():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_cpr_monitoring", exc_info=True)
 
 def setup_cpr_module():
     """
@@ -6865,7 +6873,7 @@ def setup_cpr_module():
                 pass
                     
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in setup_cpr_module", exc_info=True)
 
             slicer.app.processEvents()
             
@@ -6875,7 +6883,7 @@ def setup_cpr_module():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_cpr_module", exc_info=True)
             
 
 
@@ -7208,7 +7216,7 @@ def create_point_placement_controls():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_point_placement_controls", exc_info=True)
 
 def update_circle_dropdown():
     """
@@ -7244,7 +7252,7 @@ def update_circle_dropdown():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_circle_dropdown", exc_info=True)
 
 def on_circle_selection_changed(selected_text):
     """
@@ -7280,7 +7288,7 @@ def on_circle_selection_changed(selected_text):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_circle_selection_changed", exc_info=True)
 
 def calculate_circle_radius(circle_node):
     """
@@ -7344,7 +7352,7 @@ def on_radius_slider_changed(slider_value):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_radius_slider_changed", exc_info=True)
 
 def apply_radius_to_circle(circle_node, radius_value):
     """
@@ -7409,7 +7417,7 @@ def apply_radius_to_circle(circle_node, radius_value):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in apply_radius_to_circle", exc_info=True)
 
 def toggle_point_placement_mode():
     """
@@ -7586,12 +7594,12 @@ def start_new_post_branch_point_list_placement(count_label):
             try:
                 point_list.ReferenceCenterlineModel = current_centerline_model
             except:
-                pass
+                logger.debug("Suppressed exception in start_new_post_branch_point_list_placement", exc_info=True)
         if current_centerline_curve:
             try:
                 point_list.ReferenceCenterlineCurve = current_centerline_curve
             except:
-                pass
+                logger.debug("Suppressed exception in start_new_post_branch_point_list_placement", exc_info=True)
         
         display_node = point_list.GetDisplayNode()
         if display_node:
@@ -7674,7 +7682,7 @@ def setup_post_branch_point_count_observer(point_list, count_label):
         point_list.PostBranchPointAddObserver = observer_id2
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_post_branch_point_count_observer", exc_info=True)
 
 def update_post_branch_point_count_display(point_list, count_label):
     """
@@ -7685,7 +7693,7 @@ def update_post_branch_point_count_display(point_list, count_label):
             count = point_list.GetNumberOfControlPoints()
             count_label.setText(f"Post Branch Points: {count}")
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_post_branch_point_count_display", exc_info=True)
 
 def update_post_branch_point_count_display_for_current_list(count_label):
     """
@@ -7696,7 +7704,7 @@ def update_post_branch_point_count_display_for_current_list(count_label):
         if current_list:
             update_post_branch_point_count_display(current_list, count_label)
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_post_branch_point_count_display_for_current_list", exc_info=True)
 
 def on_post_branch_point_added(point_list, count_label):
     """
@@ -7762,7 +7770,7 @@ def on_post_branch_point_added(point_list, count_label):
             interactionNode.SetPlaceModePersistence(1)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_post_branch_point_added", exc_info=True)
 
 def toggle_branch_point_placement_mode():
     """
@@ -7867,12 +7875,12 @@ def start_new_branch_point_list_placement(count_label):
             try:
                 point_list.ReferenceCenterlineModel = current_centerline_model
             except:
-                pass
+                logger.debug("Suppressed exception in start_new_branch_point_list_placement", exc_info=True)
         if current_centerline_curve:
             try:
                 point_list.ReferenceCenterlineCurve = current_centerline_curve
             except:
-                pass
+                logger.debug("Suppressed exception in start_new_branch_point_list_placement", exc_info=True)
         
         display_node = point_list.GetDisplayNode()
         if display_node:
@@ -7934,7 +7942,7 @@ def setup_branch_point_count_observer(point_list, count_label):
         point_list.BranchPointAddObserver = observer_id2
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_branch_point_count_observer", exc_info=True)
 
 def on_branch_point_added(point_list, count_label):
     """
@@ -8020,7 +8028,7 @@ def on_branch_point_added(point_list, count_label):
                 pass  # Next: place branch-{current_branch_num}
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_branch_point_added", exc_info=True)
 
 def update_branch_point_count_display_for_current_list(count_label):
     """
@@ -8053,7 +8061,7 @@ def update_branch_point_count_display_for_current_list(count_label):
             count_label.setText(f"Total branch points: {total_points}")
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_branch_point_count_display_for_current_list", exc_info=True)
 
 def update_branch_point_count_display(point_list, count_label):
     """
@@ -8076,7 +8084,7 @@ def update_branch_point_count_display(point_list, count_label):
                     point_list.SetNthControlPointLabel(i, f"branch-{branch_number}")
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_branch_point_count_display", exc_info=True)
 
 def draw_circle_for_single_branch_point(point_index):
     """
@@ -8144,31 +8152,31 @@ def stop_point_placement_mode():
     Stop the point placement mode and return to normal interaction
     """
     try:
-        print("[DEBUG] === Stopping point placement mode ===")
+        logger.info("[DEBUG] === Stopping point placement mode ===")
         
         # Check current F-1 points before any cleanup
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         for node in fiducial_nodes:
             if node.GetName() == "F-1":
-                print(f"[DEBUG] F-1 node before stop: {node.GetNumberOfControlPoints()} points")
+                logger.info(f"[DEBUG] F-1 node before stop: {node.GetNumberOfControlPoints()} points")
                 for i in range(node.GetNumberOfControlPoints()):
                     label = node.GetNthControlPointLabel(i)
-                    print(f"  Point {i}: {label}")
+                    logger.info(f"  Point {i}: {label}")
                 break
         
         # SKIP cleanup entirely during stop - points should remain as placed
-        print("[DEBUG] Skipping cleanup during stop to preserve all placed points")
+        logger.info("[DEBUG] Skipping cleanup during stop to preserve all placed points")
         
         # Keep cleanup disabled for now - will re-enable later if needed
-        print("[DEBUG] Keeping orphaned cleanup disabled after stopping point placement")
+        logger.info("[DEBUG] Keeping orphaned cleanup disabled after stopping point placement")
         
         # Check F-1 points after (skipped) cleanup
         for node in fiducial_nodes:
             if node.GetName() == "F-1":
-                print(f"[DEBUG] F-1 node after stop (no cleanup): {node.GetNumberOfControlPoints()} points")
+                logger.info(f"[DEBUG] F-1 node after stop (no cleanup): {node.GetNumberOfControlPoints()} points")
                 for i in range(node.GetNumberOfControlPoints()):
                     label = node.GetNthControlPointLabel(i)
-                    print(f"  Point {i}: {label}")
+                    logger.info(f"  Point {i}: {label}")
                 break
         
         # Disable placement mode
@@ -8192,12 +8200,12 @@ def stop_point_placement_mode():
                     point_count = f1_points.GetNumberOfControlPoints()
                     count_label.setText(f"Points placed: {point_count}")
             except:
-                pass
+                logger.debug("Suppressed exception in stop_point_placement_mode", exc_info=True)
         
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_point_placement_mode", exc_info=True)
 
 def cleanup_orphaned_start_markers():
     """
@@ -8210,13 +8218,13 @@ def cleanup_orphaned_start_markers():
     try:
         # Global disable flag check
         if hasattr(slicer.modules, 'DisableOrphanedCleanup') and slicer.modules.DisableOrphanedCleanup:
-            print("[DEBUG] Cleanup disabled by global flag")
+            logger.info("[DEBUG] Cleanup disabled by global flag")
             return False
             
         # Check if point placement is currently active - don't cleanup during active placement
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode and interactionNode.GetCurrentInteractionMode() == interactionNode.Place:
-            print("[DEBUG] Skipping orphaned marker cleanup - point placement is active")
+            logger.info("[DEBUG] Skipping orphaned marker cleanup - point placement is active")
             return False
             
         f1_points = None
@@ -8227,46 +8235,46 @@ def cleanup_orphaned_start_markers():
                 break
         
         if not f1_points:
-            print("[DEBUG] No F-1 node found for cleanup")
+            logger.info("[DEBUG] No F-1 node found for cleanup")
             return False
         
         total_points = f1_points.GetNumberOfControlPoints()
-        print(f"[DEBUG] Cleanup analyzing F-1 node with {total_points} points")
+        logger.info(f"[DEBUG] Cleanup analyzing F-1 node with {total_points} points")
         
         if total_points <= 2:  # Need at least pre-lesion, post-lesion
-            print("[DEBUG] Not enough points for cleanup (need > 2)")
+            logger.info("[DEBUG] Not enough points for cleanup (need > 2)")
             return False
         
         # Print all current labels for debugging
         for i in range(total_points):
             label = f1_points.GetNthControlPointLabel(i)
-            print(f"[DEBUG]   Point {i}: '{label}'")
+            logger.info(f"[DEBUG]   Point {i}: '{label}'")
         
         # Count slice points (everything after the first 2 points: pre-lesion, post-lesion)
         slice_points = total_points - 2
-        print(f"[DEBUG] Found {slice_points} slice points")
+        logger.info(f"[DEBUG] Found {slice_points} slice points")
         
         # Only remove if we have an odd number of slice points AND the last point is actually a start-slice
         if slice_points % 2 == 1:
             last_point_index = total_points - 1
             last_label = f1_points.GetNthControlPointLabel(last_point_index)
-            print(f"[DEBUG] Odd number of slice points ({slice_points}), checking last point: '{last_label}'")
+            logger.info(f"[DEBUG] Odd number of slice points ({slice_points}), checking last point: '{last_label}'")
             
             # Only remove if it's actually a start-slice marker (not an end-slice)
             if last_label and "start-slice" in last_label and "end-slice" not in last_label:
-                print(f"[DEBUG] Removing truly orphaned start marker: {last_label}")
+                logger.info(f"[DEBUG] Removing truly orphaned start marker: {last_label}")
                 f1_points.RemoveNthControlPoint(last_point_index)
                 return True
             else:
                 # The last point is an end-slice or something else - don't remove it
-                print(f"[DEBUG] Last point '{last_label}' is not an orphaned start marker - keeping it")
+                logger.info(f"[DEBUG] Last point '{last_label}' is not an orphaned start marker - keeping it")
                 return False
         else:
-            print(f"[DEBUG] Even number of slice points ({slice_points}) - no cleanup needed")
+            logger.info(f"[DEBUG] Even number of slice points ({slice_points}) - no cleanup needed")
             return False
         
     except Exception as e:
-        print(f"[ERROR] Failed in cleanup_orphaned_start_markers: {e}")
+        logger.info(f"[ERROR] Failed in cleanup_orphaned_start_markers: {e}")
         return False
 
 def manually_enable_orphaned_cleanup():
@@ -8275,9 +8283,9 @@ def manually_enable_orphaned_cleanup():
     """
     try:
         slicer.modules.DisableOrphanedCleanup = False
-        print("[DEBUG] Manually re-enabled orphaned cleanup")
+        logger.info("[DEBUG] Manually re-enabled orphaned cleanup")
     except Exception as e:
-        print(f"[DEBUG] Error re-enabling cleanup: {e}")
+        logger.info(f"[DEBUG] Error re-enabling cleanup: {e}")
 
 
 def manually_run_cleanup():
@@ -8287,10 +8295,10 @@ def manually_run_cleanup():
     try:
         manually_enable_orphaned_cleanup()
         result = cleanup_orphaned_start_markers()
-        print(f"[DEBUG] Manual cleanup result: {result}")
+        logger.info(f"[DEBUG] Manual cleanup result: {result}")
         return result
     except Exception as e:
-        print(f"[DEBUG] Error in manual cleanup: {e}")
+        logger.info(f"[DEBUG] Error in manual cleanup: {e}")
         return False
 
 def setup_point_count_observer(point_list, count_label):
@@ -8314,7 +8322,7 @@ def setup_point_count_observer(point_list, count_label):
         point_list.PointRemoveObserver = observer_id3
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_point_count_observer", exc_info=True)
 
 def on_point_added(point_list, count_label):
     """
@@ -8323,15 +8331,15 @@ def on_point_added(point_list, count_label):
     Ensures points are placed based on the most recently used centerline for CPR.
     """
     try:
-        print(f"[DEBUG] on_point_added called for node: '{point_list.GetName()}' ID: '{point_list.GetID()}'")
-        print(f"[DEBUG] Point count in this node: {point_list.GetNumberOfControlPoints()}")
+        logger.info(f"[DEBUG] on_point_added called for node: '{point_list.GetName()}' ID: '{point_list.GetID()}'")
+        logger.info(f"[DEBUG] Point count in this node: {point_list.GetNumberOfControlPoints()}")
         
         # Check if this is the expected F-1 node
         expected_f1 = getattr(slicer.modules, 'CurrentLesionAnalysisPointList', None)
         if expected_f1:
-            print(f"[DEBUG] Expected F-1 node: '{expected_f1.GetName()}' ID: '{expected_f1.GetID()}'")
+            logger.info(f"[DEBUG] Expected F-1 node: '{expected_f1.GetName()}' ID: '{expected_f1.GetID()}'")
             if point_list.GetID() != expected_f1.GetID():
-                print(f"[WARNING] Point added to different node than expected F-1!")
+                logger.info(f"[WARNING] Point added to different node than expected F-1!")
         
         # Ensure this point list uses the current centerline reference
         ensure_point_placement_uses_current_centerline(point_list)
@@ -8376,9 +8384,9 @@ def on_point_added(point_list, count_label):
         
         # Draw circle for the newly added point only if centerline exists
         if point_count > 0 and centerline_exists:
-            print(f"[DEBUG] Creating circle for point {point_count - 1} (total points: {point_count})")
+            logger.info(f"[DEBUG] Creating circle for point {point_count - 1} (total points: {point_count})")
             success = draw_circle_for_single_point(point_count - 1)
-            print(f"[DEBUG] Circle creation success: {success}")
+            logger.info(f"[DEBUG] Circle creation success: {success}")
             
             # IMPORTANT: Re-ensure placement mode is active after drawing circle
             # The circle creation process might have interfered with the placement mode
@@ -8416,7 +8424,7 @@ def on_point_added(point_list, count_label):
                 pass  # Next: place start-slice-{start_num} or finish
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_point_added", exc_info=True)
 
 def update_point_count_display_for_current_list(count_label):
     """
@@ -8448,44 +8456,44 @@ def update_point_count_display_for_current_list(count_label):
             count_label.setText(f"Total points: {total_points}")
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_point_count_display_for_current_list", exc_info=True)
 
 def verify_f1_node_points():
     """
     Debug function to verify all points are in the F-1 node
     """
     try:
-        print("[DEBUG] === Verifying F-1 node points ===")
+        logger.info("[DEBUG] === Verifying F-1 node points ===")
         
         # Find all F-1 nodes
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         f1_nodes = [node for node in fiducial_nodes if node.GetName() == "F-1"]
         
-        print(f"[DEBUG] Found {len(f1_nodes)} F-1 nodes")
+        logger.info(f"[DEBUG] Found {len(f1_nodes)} F-1 nodes")
         
         for i, node in enumerate(f1_nodes):
-            print(f"[DEBUG] F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
+            logger.info(f"[DEBUG] F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
             for j in range(node.GetNumberOfControlPoints()):
                 label = node.GetNthControlPointLabel(j)
                 pos = [0, 0, 0]
                 node.GetNthControlPointPosition(j, pos)
-                print(f"  Point {j}: label='{label}', pos=[{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]")
+                logger.info(f"  Point {j}: label='{label}', pos=[{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]")
         
         # Check which node is currently active for placement
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             active_id = selectionNode.GetActivePlaceNodeID()
-            print(f"[DEBUG] Active place node ID: {active_id}")
+            logger.info(f"[DEBUG] Active place node ID: {active_id}")
             
         # Check stored reference
         expected_f1 = getattr(slicer.modules, 'CurrentLesionAnalysisPointList', None)
         if expected_f1:
-            print(f"[DEBUG] Stored CurrentLesionAnalysisPointList: ID={expected_f1.GetID()}, Points={expected_f1.GetNumberOfControlPoints()}")
+            logger.info(f"[DEBUG] Stored CurrentLesionAnalysisPointList: ID={expected_f1.GetID()}, Points={expected_f1.GetNumberOfControlPoints()}")
         
-        print("[DEBUG] === End verification ===")
+        logger.info("[DEBUG] === End verification ===")
         
     except Exception as e:
-        print(f"[ERROR] Failed to verify F-1 points: {e}")
+        logger.info(f"[ERROR] Failed to verify F-1 points: {e}")
 
 def apply_point_labels_to_list(point_list):
     """
@@ -8519,10 +8527,10 @@ def apply_point_labels_to_list(point_list):
                         new_label = f"end-slice-{end_slice_number}"
                         point_list.SetNthControlPointLabel(i, new_label)
                 
-                print(f"[DEBUG] Point {i}: '{current_label}' -> '{new_label}'")
+                logger.info(f"[DEBUG] Point {i}: '{current_label}' -> '{new_label}'")
         
     except Exception as e:
-        print(f"[ERROR] Failed to apply labels: {e}")
+        logger.info(f"[ERROR] Failed to apply labels: {e}")
         pass
 
 def update_point_count_display(point_list, count_label):
@@ -8538,7 +8546,7 @@ def update_point_count_display(point_list, count_label):
         apply_point_labels_to_list(point_list)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in update_point_count_display", exc_info=True)
 
 def validate_point_placement_centerline_reference():
     """
@@ -8606,16 +8614,16 @@ def ensure_point_placement_mode_active(point_list):
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         f1_nodes = [node for node in fiducial_nodes if node.GetName() == "F-1"]
         if len(f1_nodes) > 1:
-            print(f"[WARNING] Found {len(f1_nodes)} F-1 nodes! This might cause point placement issues.")
+            logger.info(f"[WARNING] Found {len(f1_nodes)} F-1 nodes! This might cause point placement issues.")
             for i, node in enumerate(f1_nodes):
-                print(f"  F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
+                logger.info(f"  F-1 node {i}: ID={node.GetID()}, Points={node.GetNumberOfControlPoints()}")
         
         # Re-select the active point list in the selection node
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             current_active_id = selectionNode.GetActivePlaceNodeID()
             if current_active_id != point_list.GetID():
-                print(f"[DEBUG] Resetting active place node from '{current_active_id}' to '{point_list.GetID()}'")
+                logger.info(f"[DEBUG] Resetting active place node from '{current_active_id}' to '{point_list.GetID()}'")
                 selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
                 selectionNode.SetActivePlaceNodeID(point_list.GetID())
 
@@ -8624,17 +8632,17 @@ def ensure_point_placement_mode_active(point_list):
         if interactionNode:
             current_mode = interactionNode.GetCurrentInteractionMode()
             if current_mode != interactionNode.Place:
-                print(f"[DEBUG] Resetting interaction mode from {current_mode} to Place mode")
+                logger.info(f"[DEBUG] Resetting interaction mode from {current_mode} to Place mode")
                 interactionNode.SetCurrentInteractionMode(interactionNode.Place)
             
             # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
             persistence = interactionNode.GetPlaceModePersistence()
             if persistence != 1:
-                print(f"[DEBUG] Enabling place mode persistence (was {persistence})")
+                logger.info(f"[DEBUG] Enabling place mode persistence (was {persistence})")
                 interactionNode.SetPlaceModePersistence(1)
         
     except Exception as e:
-        print(f"[ERROR] Failed to ensure placement mode: {e}")
+        logger.info(f"[ERROR] Failed to ensure placement mode: {e}")
         pass
 
 def cleanup_point_placement_ui():
@@ -8653,7 +8661,7 @@ def cleanup_point_placement_ui():
             del slicer.modules.PointCountLabel
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_point_placement_ui", exc_info=True)
 
 def apply_only_transform_to_point_list(point_list):
     """
@@ -8730,7 +8738,7 @@ def start_new_point_list_placement(count_label):
         point_list = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLMarkupsFiducialNode")
         
         point_list.SetName("F-1")
-        print(f"[DEBUG] Created new F-1 node with ID: {point_list.GetID()}")
+        logger.info(f"[DEBUG] Created new F-1 node with ID: {point_list.GetID()}")
         
         # Store reference to the centerline that should be used for this point list
         # This ensures consistent positioning relative to the CPR centerline
@@ -8738,12 +8746,12 @@ def start_new_point_list_placement(count_label):
             try:
                 point_list.ReferenceCenterlineModel = current_centerline_model
             except:
-                pass
+                logger.debug("Suppressed exception in start_new_point_list_placement", exc_info=True)
         if current_centerline_curve:
             try:
                 point_list.ReferenceCenterlineCurve = current_centerline_curve
             except:
-                pass
+                logger.debug("Suppressed exception in start_new_point_list_placement", exc_info=True)
         
         display_node = point_list.GetDisplayNode()
         if display_node:
@@ -8760,33 +8768,33 @@ def start_new_point_list_placement(count_label):
         
         # Disable orphaned cleanup during active point placement
         slicer.modules.DisableOrphanedCleanup = True
-        print("[DEBUG] Disabled orphaned cleanup for active point placement session")
+        logger.info("[DEBUG] Disabled orphaned cleanup for active point placement session")
         
         # Automatically apply the only transform to the point list if available
         apply_only_transform_to_point_list(point_list)
         
         slicer.modules.CurrentLesionAnalysisPointList = point_list
-        print(f"[DEBUG] Stored F-1 node as CurrentLesionAnalysisPointList")
+        logger.info(f"[DEBUG] Stored F-1 node as CurrentLesionAnalysisPointList")
         
         selectionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLSelectionNodeSingleton")
         if selectionNode:
             selectionNode.SetReferenceActivePlaceNodeClassName("vtkMRMLMarkupsFiducialNode")
             selectionNode.SetActivePlaceNodeID(point_list.GetID())
-            print(f"[DEBUG] Set active place node ID to: {point_list.GetID()}")
+            logger.info(f"[DEBUG] Set active place node ID to: {point_list.GetID()}")
         
         interactionNode = slicer.mrmlScene.GetNodeByID("vtkMRMLInteractionNodeSingleton")
         if interactionNode:
             interactionNode.SetCurrentInteractionMode(interactionNode.Place)
             # Enable continuous point placement mode (equivalent to "Place multiple control points" checkbox)
             interactionNode.SetPlaceModePersistence(1)
-            print(f"[DEBUG] Set interaction mode to Place with persistence enabled")
+            logger.info(f"[DEBUG] Set interaction mode to Place with persistence enabled")
         
         setup_point_count_observer(point_list, count_label)
-        print(f"[DEBUG] Set up observers for point list")
+        logger.info(f"[DEBUG] Set up observers for point list")
         
         update_point_count_display(point_list, count_label)
         
-        print(f"[DEBUG] Point placement setup complete for F-1 node: {point_list.GetID()}")
+        logger.info(f"[DEBUG] Point placement setup complete for F-1 node: {point_list.GetID()}")
         pass
         pass
         pass
@@ -8996,7 +9004,7 @@ def configure_stenosis_line_node(line_node):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in configure_stenosis_line_node", exc_info=True)
 
 def setup_single_stenosis_line_observer(line_node):
     """
@@ -9017,7 +9025,7 @@ def setup_single_stenosis_line_observer(line_node):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_single_stenosis_line_observer", exc_info=True)
 
 def check_single_line_completion(line_node):
     """
@@ -9054,7 +9062,7 @@ def check_single_line_completion(line_node):
             pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_single_line_completion", exc_info=True)
 
 def check_first_line_completion_carefully(first_line_node, second_line_node):
     """
@@ -9094,7 +9102,7 @@ def check_first_line_completion_carefully(first_line_node, second_line_node):
             pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_first_line_completion_carefully", exc_info=True)
 
 def switch_to_second_stenosis_line(second_line_node):
     """
@@ -9130,7 +9138,7 @@ def switch_to_second_stenosis_line(second_line_node):
         setup_second_line_completion_observer(second_line_node)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in switch_to_second_stenosis_line", exc_info=True)
 
 def setup_second_line_completion_observer(second_line_node):
     """
@@ -9144,7 +9152,7 @@ def setup_second_line_completion_observer(second_line_node):
         second_line_node.StenosisSequenceObserver = observer_id
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_second_line_completion_observer", exc_info=True)
 
 def check_second_line_completion_carefully(second_line_node):
     """
@@ -9180,7 +9188,7 @@ def check_second_line_completion_carefully(second_line_node):
             pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_second_line_completion_carefully", exc_info=True)
 
 
 
@@ -9199,7 +9207,7 @@ def stop_stenosis_measurement_tool():
             selectionNode.SetActivePlaceNodeID(None)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_stenosis_measurement_tool", exc_info=True)
 
 def disable_all_placement_tools():
     """
@@ -9226,7 +9234,7 @@ def disable_all_placement_tools():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in disable_all_placement_tools", exc_info=True)
 
 def save_scene_location_to_user_home(scene_path):
     """
@@ -9253,10 +9261,10 @@ def save_scene_location_to_user_home(scene_path):
         with open(location_file, "a", encoding="utf-8") as f:
             f.write(entry)
             
-        print(f"Scene location saved to: {location_file}")
+        logger.info(f"Scene location saved to: {location_file}")
         
     except Exception as e:
-        print(f"Could not save scene location to user home: {str(e)}")
+        logger.info(f"Could not save scene location to user home: {str(e)}")
 
 def show_saved_scene_locations():
     """
@@ -9271,27 +9279,27 @@ def show_saved_scene_locations():
         location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
         
         if not os.path.exists(location_file):
-            print("No saved scene locations found.")
-            print(f"Location file would be: {location_file}")
+            logger.info("No saved scene locations found.")
+            logger.info(f"Location file would be: {location_file}")
             return
         
-        print(f"Saved scene locations from: {location_file}")
-        print("=" * 60)
+        logger.info(f"Saved scene locations from: {location_file}")
+        logger.info("=" * 60)
         
         with open(location_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
             
         if not lines:
-            print("No scene locations recorded yet.")
+            logger.info("No scene locations recorded yet.")
         else:
             for i, line in enumerate(lines, 1):
-                print(f"{i:2d}. {line.strip()}")
+                logger.info(f"{i:2d}. {line.strip()}")
                 
-        print("=" * 60)
-        print(f"Total scenes recorded: {len(lines)}")
+        logger.info("=" * 60)
+        logger.info(f"Total scenes recorded: {len(lines)}")
         
     except Exception as e:
-        print(f"Could not read scene locations: {str(e)}")
+        logger.info(f"Could not read scene locations: {str(e)}")
 
 def clear_saved_scene_locations():
     """
@@ -9307,12 +9315,12 @@ def clear_saved_scene_locations():
         
         if os.path.exists(location_file):
             os.remove(location_file)
-            print(f"Cleared scene location history: {location_file}")
+            logger.info(f"Cleared scene location history: {location_file}")
         else:
-            print("No scene location history file found to clear.")
+            logger.info("No scene location history file found to clear.")
             
     except Exception as e:
-        print(f"Could not clear scene location history: {str(e)}")
+        logger.info(f"Could not clear scene location history: {str(e)}")
 
 def get_current_scene_location():
     """
@@ -9326,14 +9334,14 @@ def get_current_scene_location():
             # Convert file:// URL to local path if needed
             if scene_path.startswith("file://"):
                 scene_path = scene_path[7:]  # Remove "file://" prefix
-            print(f"Current scene location: {scene_path}")
+            logger.info(f"Current scene location: {scene_path}")
             return scene_path
         else:
-            print("Current scene has not been saved yet (no file location).")
+            logger.info("Current scene has not been saved yet (no file location).")
             return None
             
     except Exception as e:
-        print(f"Could not get current scene location: {str(e)}")
+        logger.info(f"Could not get current scene location: {str(e)}")
         return None
 
 def setup_scene_save_observer():
@@ -9350,10 +9358,10 @@ def setup_scene_save_observer():
         observer_tag = slicer.mrmlScene.AddObserver(slicer.mrmlScene.EndSaveEvent, on_scene_saved)
         slicer.modules.SceneSaveObserverTag = observer_tag
         
-        print("Scene save observer has been set up - all scene saves will now be tracked.")
+        logger.info("Scene save observer has been set up - all scene saves will now be tracked.")
         
     except Exception as e:
-        print(f"Could not set up scene save observer: {str(e)}")
+        logger.info(f"Could not set up scene save observer: {str(e)}")
 
 def on_scene_saved(caller, event):
     """
@@ -9364,7 +9372,7 @@ def on_scene_saved(caller, event):
         qt.QTimer.singleShot(100, lambda: track_scene_save_location())
         
     except Exception as e:
-        print(f"Error in scene save callback: {str(e)}")
+        logger.info(f"Error in scene save callback: {str(e)}")
 
 def track_scene_save_location():
     """
@@ -9382,12 +9390,12 @@ def track_scene_save_location():
             if scene_path and scene_path.strip():
                 save_scene_location_to_user_home(scene_path)
             else:
-                print("Scene save detected but no valid file path found")
+                logger.info("Scene save detected but no valid file path found")
         else:
-            print("Scene save detected but no URL available")
+            logger.info("Scene save detected but no URL available")
             
     except Exception as e:
-        print(f"Could not track scene save location: {str(e)}")
+        logger.info(f"Could not track scene save location: {str(e)}")
 
 def remove_scene_save_observer():
     """
@@ -9398,12 +9406,12 @@ def remove_scene_save_observer():
         if hasattr(slicer.modules, 'SceneSaveObserverTag') and slicer.modules.SceneSaveObserverTag:
             slicer.mrmlScene.RemoveObserver(slicer.modules.SceneSaveObserverTag)
             slicer.modules.SceneSaveObserverTag = None
-            print("Scene save observer has been removed.")
+            logger.info("Scene save observer has been removed.")
         else:
-            print("No scene save observer was active.")
+            logger.info("No scene save observer was active.")
             
     except Exception as e:
-        print(f"Could not remove scene save observer: {str(e)}")
+        logger.info(f"Could not remove scene save observer: {str(e)}")
 
 def enable_scene_save_tracking():
     """
@@ -9412,14 +9420,14 @@ def enable_scene_save_tracking():
     """
     try:
         setup_scene_save_observer()
-        print("Scene save tracking is now enabled.")
-        print("All scene saves will be automatically logged to:")
+        logger.info("Scene save tracking is now enabled.")
+        logger.info("All scene saves will be automatically logged to:")
         import os
         home_dir = os.path.expanduser("~")
         location_file = os.path.join(home_dir, "slicer_scene_locations.txt")
-        print(f"  {location_file}")
+        logger.info(f"  {location_file}")
     except Exception as e:
-        print(f"Could not enable scene save tracking: {str(e)}")
+        logger.info(f"Could not enable scene save tracking: {str(e)}")
 
 def disable_scene_save_tracking():
     """
@@ -9428,9 +9436,9 @@ def disable_scene_save_tracking():
     """
     try:
         remove_scene_save_observer()
-        print("Scene save tracking is now disabled.")
+        logger.info("Scene save tracking is now disabled.")
     except Exception as e:
-        print(f"Could not disable scene save tracking: {str(e)}")
+        logger.info(f"Could not disable scene save tracking: {str(e)}")
 
 def setup_storage_nodes_for_consistent_saving():
     """
@@ -9456,7 +9464,7 @@ def setup_storage_nodes_for_consistent_saving():
             # Use CT_Series.nrrd as the filename regardless of volume name
             if not os.path.basename(current_filename).startswith("CT_Series"):
                 storage_node.SetFileName("CT_Series.nrrd")
-                print(f"Set volume '{current_name}' filename to: CT_Series.nrrd")
+                logger.info(f"Set volume '{current_name}' filename to: CT_Series.nrrd")
         
         # Get all storable nodes and ensure they have proper storage nodes
         all_nodes = []
@@ -9488,11 +9496,11 @@ def setup_storage_nodes_for_consistent_saving():
                         node.SetAndObserveStorageNodeID(storage_node.GetID())
                         nodes_prepared += 1
         
-        print(f"Prepared {nodes_prepared} nodes for saving")
+        logger.info(f"Prepared {nodes_prepared} nodes for saving")
         return True
         
     except Exception as e:
-        print(f"Error setting up storage nodes: {str(e)}")
+        logger.info(f"Error setting up storage nodes: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -9544,12 +9552,12 @@ def show_pre_save_info():
         if info_parts:
             info_message = "The save dialog will open with ALL scene data selected for saving:\n\n" + "\n".join(info_parts)
             info_message += "\n\nAll files will be saved to the same directory for easy organization."
-            print("=== SAVE INFORMATION ===")
-            print(info_message)
-            print("========================")
+            logger.info("=== SAVE INFORMATION ===")
+            logger.info(info_message)
+            logger.info("========================")
         
     except Exception as e:
-        print(f"Could not show pre-save info: {str(e)}")
+        logger.info(f"Could not show pre-save info: {str(e)}")
 
 def open_save_dialog_with_all_selected():
     """
@@ -9565,17 +9573,17 @@ def open_save_dialog_with_all_selected():
                 # Find the save dialog window
                 for widget in qt.QApplication.allWidgets():
                     if hasattr(widget, 'selectAll') and widget.windowTitle() and 'save' in widget.windowTitle().lower():
-                        print("Found save dialog, attempting to select all items...")
+                        logger.info("Found save dialog, attempting to select all items...")
                         widget.selectAll()
                         break
                     # Also try to find qSlicerSaveDataDialog specifically
                     elif widget.__class__.__name__ == 'qSlicerSaveDataDialog':
-                        print("Found qSlicerSaveDataDialog, attempting to select all items...")
+                        logger.info("Found qSlicerSaveDataDialog, attempting to select all items...")
                         if hasattr(widget, 'selectAll'):
                             widget.selectAll()
                         break
             except Exception as select_error:
-                print(f"Could not auto-select all items in save dialog: {str(select_error)}")
+                logger.info(f"Could not auto-select all items in save dialog: {str(select_error)}")
         
         # Schedule the selection after a short delay to allow dialog to fully open
         timer = qt.QTimer()
@@ -9591,7 +9599,7 @@ def open_save_dialog_with_all_selected():
         return success
         
     except Exception as e:
-        print(f"Error opening save dialog with auto-select: {str(e)}")
+        logger.info(f"Error opening save dialog with auto-select: {str(e)}")
         # Fallback to standard dialog
         try:
             return slicer.app.ioManager().openSaveDataDialog()
@@ -9622,44 +9630,44 @@ def custom_save_all_scene_data():
                     scene_path = scene_path[7:]  # Remove "file://" prefix
                     
                 scene_dir = os.path.dirname(scene_path)
-                print(f"Scene saved to directory: {scene_dir}")
+                logger.info(f"Scene saved to directory: {scene_dir}")
                 
                 # List all files saved in the directory
                 try:
                     files_in_dir = os.listdir(scene_dir)
                     scene_files = [f for f in files_in_dir if not f.startswith('.')]
-                    print(f"Files saved in scene directory: {scene_files}")
+                    logger.info(f"Files saved in scene directory: {scene_files}")
                     
                     # Check if CT_Series.nrrd exists
                     ct_series_files = [f for f in scene_files if f.startswith("CT_Series") and f.endswith('.nrrd')]
                     if ct_series_files:
-                        print(f"✓ CT_Series volume saved as: {ct_series_files[0]}")
+                        logger.info(f"✓ CT_Series volume saved as: {ct_series_files[0]}")
                     else:
                         # Try to find any .nrrd file that might be the CT volume
                         nrrd_files = [f for f in scene_files if f.endswith('.nrrd')]
                         if nrrd_files:
-                            print(f"Found .nrrd files: {nrrd_files}")
+                            logger.info(f"Found .nrrd files: {nrrd_files}")
                             # If there's exactly one .nrrd file, it's likely the CT volume
                             if len(nrrd_files) == 1:
                                 old_path = os.path.join(scene_dir, nrrd_files[0])
                                 new_path = os.path.join(scene_dir, "CT_Series.nrrd")
                                 try:
                                     os.rename(old_path, new_path)
-                                    print(f"Renamed {nrrd_files[0]} to CT_Series.nrrd")
+                                    logger.info(f"Renamed {nrrd_files[0]} to CT_Series.nrrd")
                                 except Exception as rename_error:
-                                    print(f"Could not rename {nrrd_files[0]} to CT_Series.nrrd: {str(rename_error)}")
+                                    logger.info(f"Could not rename {nrrd_files[0]} to CT_Series.nrrd: {str(rename_error)}")
                         else:
-                            print("Warning: No .nrrd files found in save directory")
+                            logger.info("Warning: No .nrrd files found in save directory")
                             
                 except Exception as dir_error:
-                    print(f"Could not list directory contents: {str(dir_error)}")
+                    logger.info(f"Could not list directory contents: {str(dir_error)}")
             
             return True
         else:
             return False
             
     except Exception as e:
-        print(f"Error in custom save function: {str(e)}")
+        logger.info(f"Error in custom save function: {str(e)}")
         import traceback
         traceback.print_exc()
         # Fallback to standard save dialog
@@ -9674,27 +9682,27 @@ def test_custom_save_functionality():
     Usage: test_custom_save_functionality()
     """
     try:
-        print("Testing custom save functionality...")
+        logger.info("Testing custom save functionality...")
         
         # Show what's in the scene
         show_pre_save_info()
         
         # Test storage node setup
         setup_result = setup_storage_nodes_for_consistent_saving()
-        print(f"Storage nodes setup result: {setup_result}")
+        logger.info(f"Storage nodes setup result: {setup_result}")
         
         # Test finding working volume
         working_vol = find_working_volume()
         if working_vol:
-            print(f"Working volume found: {working_vol.GetName()}")
+            logger.info(f"Working volume found: {working_vol.GetName()}")
         else:
-            print("No working volume found")
+            logger.info("No working volume found")
         
-        print("Custom save functionality test completed.")
+        logger.info("Custom save functionality test completed.")
         return True
         
     except Exception as e:
-        print(f"Error testing custom save functionality: {str(e)}")
+        logger.info(f"Error testing custom save functionality: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -9705,11 +9713,11 @@ def manual_export_with_ct_series():
     Usage: manual_export_with_ct_series()
     """
     try:
-        print("Starting manual export with CT_Series handling...")
+        logger.info("Starting manual export with CT_Series handling...")
         result = custom_save_all_scene_data()
         return result
     except Exception as e:
-        print(f"Error in manual export: {str(e)}")
+        logger.info(f"Error in manual export: {str(e)}")
         return False
 
 def check_ct_series_setup():
@@ -9718,30 +9726,30 @@ def check_ct_series_setup():
     Usage: check_ct_series_setup()
     """
     try:
-        print("=== CT_Series Setup Check ===")
+        logger.info("=== CT_Series Setup Check ===")
         
         # Find working volume
         working_vol = find_working_volume()
         if not working_vol:
             return False
         
-        print(f"Working volume: {working_vol.GetName()}")
+        logger.info(f"Working volume: {working_vol.GetName()}")
         
         # Note: Volume name is preserved, but will be saved as CT_Series.nrrd
-        print(f"✓ Volume '{working_vol.GetName()}' will be saved as CT_Series.nrrd")
+        logger.info(f"✓ Volume '{working_vol.GetName()}' will be saved as CT_Series.nrrd")
         
         # Check storage node
         storage_node = working_vol.GetStorageNode()
         if storage_node:
             filename = storage_node.GetFileName()
-            print(f"✓ Storage node exists with filename: {filename}")
+            logger.info(f"✓ Storage node exists with filename: {filename}")
             
             if filename and os.path.basename(filename).startswith("CT_Series"):
-                print("✓ Storage filename is properly set for CT_Series")
+                logger.info("✓ Storage filename is properly set for CT_Series")
             else:
-                print("⚠ Storage filename should be set to CT_Series.nrrd")
+                logger.info("⚠ Storage filename should be set to CT_Series.nrrd")
         else:
-            print("⚠ No storage node found - will be created during save")
+            logger.info("⚠ No storage node found - will be created during save")
         
         # Count all saveable nodes
         all_volumes = slicer.util.getNodesByClass('vtkMRMLScalarVolumeNode')
@@ -9750,17 +9758,17 @@ def check_ct_series_setup():
         all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
         
         total_nodes = len(all_volumes) + len(all_segs) + len(all_markups) + len(all_models)
-        print(f"Total saveable nodes in scene: {total_nodes}")
-        print(f"  - Volumes: {len(all_volumes)}")
-        print(f"  - Segmentations: {len(all_segs)}")
-        print(f"  - Markups: {len(all_markups)}")
-        print(f"  - Models: {len(all_models)}")
+        logger.info(f"Total saveable nodes in scene: {total_nodes}")
+        logger.info(f"  - Volumes: {len(all_volumes)}")
+        logger.info(f"  - Segmentations: {len(all_segs)}")
+        logger.info(f"  - Markups: {len(all_markups)}")
+        logger.info(f"  - Models: {len(all_models)}")
         
-        print("==============================")
+        logger.info("==============================")
         return True
         
     except Exception as e:
-        print(f"Error checking CT_Series setup: {str(e)}")
+        logger.info(f"Error checking CT_Series setup: {str(e)}")
         return False
 
 def close_slicer_after_export():
@@ -9778,29 +9786,29 @@ def export_project_and_continue():
     Save the Slicer project using custom save functionality and continue to workflow2.py
     """
     try:
-        print("[DEBUG] === Starting export_project_and_continue ===")
+        logger.info("[DEBUG] === Starting export_project_and_continue ===")
         
         # Check current F-1 points before any cleanup
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
         for node in fiducial_nodes:
             if node.GetName() == "F-1":
-                print(f"[DEBUG] F-1 node before cleanup: {node.GetNumberOfControlPoints()} points")
+                logger.info(f"[DEBUG] F-1 node before cleanup: {node.GetNumberOfControlPoints()} points")
                 for i in range(node.GetNumberOfControlPoints()):
                     label = node.GetNthControlPointLabel(i)
-                    print(f"  Point {i}: {label}")
+                    logger.info(f"  Point {i}: {label}")
                 break
         
         # Clean up any orphaned start markers before export
         cleanup_result = cleanup_orphaned_start_markers()
-        print(f"[DEBUG] Cleanup orphaned markers result: {cleanup_result}")
+        logger.info(f"[DEBUG] Cleanup orphaned markers result: {cleanup_result}")
         
         # Check F-1 points after cleanup
         for node in fiducial_nodes:
             if node.GetName() == "F-1":
-                print(f"[DEBUG] F-1 node after cleanup: {node.GetNumberOfControlPoints()} points")
+                logger.info(f"[DEBUG] F-1 node after cleanup: {node.GetNumberOfControlPoints()} points")
                 for i in range(node.GetNumberOfControlPoints()):
                     label = node.GetNthControlPointLabel(i)
-                    print(f"  Point {i}: {label}")
+                    logger.info(f"  Point {i}: {label}")
                 break
         
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
@@ -9855,9 +9863,9 @@ def export_project_and_continue():
                         scene_path = scene_path[7:]  # Remove "file://" prefix
                     save_scene_location_to_user_home(scene_path)
                 else:
-                    print("Warning: Could not determine scene save location")
+                    logger.info("Warning: Could not determine scene save location")
             except Exception as e:
-                print(f"Error saving scene location: {str(e)}")
+                logger.info(f"Error saving scene location: {str(e)}")
             
             # Deselect placement tools and return to normal interaction mode
             pass
@@ -9920,7 +9928,7 @@ def cleanup_all_workflow_ui():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_all_workflow_ui", exc_info=True)
 
 
 def show_centerline_completion_dialog(centerline_model=None, centerline_curve=None):
@@ -10130,7 +10138,7 @@ def on_retry_centerline(dialog):
         
         setup_centerline_completion_monitor()
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_retry_centerline", exc_info=True)
 
         
 
@@ -10149,7 +10157,7 @@ def on_continue_to_cpr(dialog, centerline_model=None, centerline_curve=None):
         
         draw_circles_on_centerline()
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_continue_to_cpr", exc_info=True)
 
 
 def on_add_more_centerlines(dialog):
@@ -10170,7 +10178,7 @@ def on_add_more_centerlines(dialog):
         # Create a new centerline extraction setup for additional centerlines
         create_additional_centerline_setup()
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_add_more_centerlines", exc_info=True)
         
 
 def on_verify_edit_centerline(dialog, centerline_model=None, centerline_curve=None):
@@ -10569,7 +10577,7 @@ def on_extract_new_centerline_from_edit(dock_widget, original_curve):
         setup_centerline_completion_monitor()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_extract_new_centerline_from_edit", exc_info=True)
 
 
 def on_add_additional_centerline_from_edit(dock_widget, original_curve):
@@ -10605,7 +10613,7 @@ def on_add_additional_centerline_from_edit(dock_widget, original_curve):
         setup_centerline_completion_monitor()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_add_additional_centerline_from_edit", exc_info=True)
 
 
 def on_continue_to_cpr_from_edit(dock_widget, centerline_model, centerline_curve):
@@ -10626,7 +10634,7 @@ def on_continue_to_cpr_from_edit(dock_widget, centerline_model, centerline_curve
         draw_circles_on_centerline()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_continue_to_cpr_from_edit", exc_info=True)
 
 
 def on_reset_centerline_to_original(centerline_curve):
@@ -10660,7 +10668,7 @@ def on_reset_centerline_to_original(centerline_curve):
             )
     
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_reset_centerline_to_original", exc_info=True)
 
 
 def backup_centerline_points(centerline_curve):
@@ -10688,7 +10696,7 @@ def backup_centerline_points(centerline_curve):
         pass  # Backup created successfully
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in backup_centerline_points", exc_info=True)
 
 
 def save_edited_centerline_as_final(centerline_curve):
@@ -10735,7 +10743,7 @@ def save_edited_centerline_as_final(centerline_curve):
         pass  # Centerline saved successfully
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in save_edited_centerline_as_final", exc_info=True)
 
 
 def cleanup_centerline_edit_dialog():
@@ -10752,7 +10760,7 @@ def cleanup_centerline_edit_dialog():
                 dock_widget.setParent(None)
             delattr(slicer.modules, 'CenterlineEditDialog')
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_centerline_edit_dialog", exc_info=True)
 
 
 def on_reset_centerline_to_original_in_edit(centerline_curve, info_label):
@@ -10809,7 +10817,7 @@ def on_reset_centerline_to_original_in_edit(centerline_curve, info_label):
             )
     
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_reset_centerline_to_original_in_edit", exc_info=True)
 
 
 def on_close_centerline_editor(dock_widget, centerline_curve):
@@ -10826,7 +10834,7 @@ def on_close_centerline_editor(dock_widget, centerline_curve):
         slicer.util.infoDisplay("Centerline editor closed. Returned to 3D view. You can now continue with your workflow.")
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in on_close_centerline_editor", exc_info=True)
 
 
 
@@ -10858,7 +10866,7 @@ def disable_centerline_editing(centerline_curve):
         switch_to_3d_fullscreen()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in disable_centerline_editing", exc_info=True)
 
 
 def switch_to_crosssectional_fullscreen():
@@ -10952,7 +10960,7 @@ def restore_original_layout():
             delattr(slicer.modules, 'CenterlineEditingOriginalLayout')
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in restore_original_layout", exc_info=True)
 
 
 def debug_centerline_editing():
@@ -10960,31 +10968,31 @@ def debug_centerline_editing():
     Debug function to test centerline editing - run this in Slicer console
     """
     try:
-        print("DEBUG: Starting centerline editing debug...")
+        logger.info("DEBUG: Starting centerline editing debug...")
         
         # Check for centerlines
         all_curves = find_all_centerline_curves()
-        print(f"DEBUG: Found {len(all_curves)} centerline curves")
+        logger.info(f"DEBUG: Found {len(all_curves)} centerline curves")
         
         for i, curve in enumerate(all_curves):
             if curve:
-                print(f"  Curve {i}: {curve.GetName()}, Points: {curve.GetNumberOfControlPoints()}")
+                logger.info(f"  Curve {i}: {curve.GetName()}, Points: {curve.GetNumberOfControlPoints()}")
             else:
-                print(f"  Curve {i}: None")
+                logger.info(f"  Curve {i}: None")
         
         if not all_curves:
-            print("DEBUG: No centerline curves found in scene")
+            logger.info("DEBUG: No centerline curves found in scene")
             return False
         
         # Try to open editing dialog with the first curve
         curve = all_curves[0]
-        print(f"DEBUG: Attempting to open editing dialog with curve: {curve.GetName()}")
+        logger.info(f"DEBUG: Attempting to open editing dialog with curve: {curve.GetName()}")
         
         show_centerline_editing_dialog(None, curve)
         return True
         
     except Exception as e:
-        print(f"DEBUG: Error in debug_centerline_editing: {str(e)}")
+        logger.info(f"DEBUG: Error in debug_centerline_editing: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -11046,7 +11054,7 @@ def reset_crop_module_safely():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in reset_crop_module_safely", exc_info=True)
 
 
 def restart_cropping_workflow_safely():
@@ -11091,7 +11099,7 @@ def restart_cropping_workflow_safely():
         try:
             start_with_volume_crop()
         except:
-            pass
+            logger.debug("Suppressed exception in restart_cropping_workflow_safely", exc_info=True)
 
 
 # Removed show_restart_completion_message function - no longer needed
@@ -11129,7 +11137,7 @@ def store_existing_centerlines():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in store_existing_centerlines", exc_info=True)
 
 
 def clear_workflow_for_cropping_restart():
@@ -11165,7 +11173,7 @@ def clear_workflow_for_cropping_restart():
                 slicer.mrmlScene.RemoveNode(volume)
                 slicer.app.processEvents()  # Process events after each removal
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in clear_workflow_for_cropping_restart", exc_info=True)
         
         # Safely clear existing ROI nodes
         roi_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsROINode')
@@ -11174,7 +11182,7 @@ def clear_workflow_for_cropping_restart():
                 slicer.mrmlScene.RemoveNode(roi)
                 slicer.app.processEvents()
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in clear_workflow_for_cropping_restart", exc_info=True)
         
         # Safely clear segmentation nodes (user will need to re-segment after cropping)
         segmentation_nodes = slicer.util.getNodesByClass('vtkMRMLSegmentationNode')
@@ -11183,7 +11191,7 @@ def clear_workflow_for_cropping_restart():
                 slicer.mrmlScene.RemoveNode(seg)
                 slicer.app.processEvents()
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in clear_workflow_for_cropping_restart", exc_info=True)
         
         # Safely clear endpoint markups but preserve centerlines
         fiducial_nodes = slicer.util.getNodesByClass('vtkMRMLMarkupsFiducialNode')
@@ -11194,7 +11202,7 @@ def clear_workflow_for_cropping_restart():
                     slicer.mrmlScene.RemoveNode(fid)
                     slicer.app.processEvents()
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in clear_workflow_for_cropping_restart", exc_info=True)
         
         # Store reference to original volume for workflow
         if original_volume:
@@ -11202,7 +11210,7 @@ def clear_workflow_for_cropping_restart():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in clear_workflow_for_cropping_restart", exc_info=True)
         # Don't let this stop the restart process - continue anyway
 
 
@@ -11225,7 +11233,7 @@ def restart_cropping_preserving_centerlines():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in restart_cropping_preserving_centerlines", exc_info=True)
 
 
 def restore_centerline_visibility():
@@ -11261,7 +11269,7 @@ def restore_centerline_visibility():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in restore_centerline_visibility", exc_info=True)
 
 
 def setup_post_crop_centerline_restoration():
@@ -11274,7 +11282,7 @@ def setup_post_crop_centerline_restoration():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_post_crop_centerline_restoration", exc_info=True)
 
 
 def create_additional_centerline_setup():
@@ -11403,7 +11411,7 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
                                 segment_set = True
                                 break
                             except Exception as e:
-                                pass
+                                logger.debug("Suppressed exception in setup_centerline_for_additional_extraction", exc_info=True)
                 
         # Create and set up new endpoint fiducial list for point placement
         try:
@@ -11456,7 +11464,7 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
                     getattr(centerline_module.ui, create_new_attr).setChecked(True)
                     
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in setup_centerline_for_additional_extraction", exc_info=True)
                 
         # Set output nodes for the new centerline
         try:
@@ -11477,7 +11485,7 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
                 pass
                 
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in setup_centerline_for_additional_extraction", exc_info=True)
         
         # Force GUI update and give time for widgets to initialize
         slicer.app.processEvents()
@@ -11501,7 +11509,7 @@ def setup_centerline_for_additional_extraction(centerline_module, new_model, new
         add_large_centerline_apply_button()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_centerline_for_additional_extraction", exc_info=True)
 
 def clear_centerline_endpoints():
     """
@@ -11525,7 +11533,7 @@ def clear_centerline_endpoints():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in clear_centerline_endpoints", exc_info=True)
 
 def setup_apply_button_monitoring():
     """
@@ -11563,7 +11571,7 @@ def setup_apply_button_monitoring():
         
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in setup_apply_button_monitoring", exc_info=True)
 
 def check_for_apply_button_click():
     """
@@ -11640,7 +11648,7 @@ def check_for_apply_button_click():
                     return
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in check_for_apply_button_click", exc_info=True)
 
 def stop_apply_button_monitoring():
     """
@@ -11662,7 +11670,7 @@ def stop_apply_button_monitoring():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_apply_button_monitoring", exc_info=True)
 
 def stop_all_centerline_monitoring():
     """
@@ -11678,7 +11686,7 @@ def stop_all_centerline_monitoring():
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in stop_all_centerline_monitoring", exc_info=True)
 
 def cleanup_centerline_monitoring_button():
     """
@@ -11694,7 +11702,7 @@ def cleanup_centerline_monitoring_button():
                 pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_centerline_monitoring_button", exc_info=True)
 
 def clear_existing_centerlines():
     """
@@ -11731,7 +11739,7 @@ def clear_existing_centerlines():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in clear_existing_centerlines", exc_info=True)
 
 def remove_transforms_from_point_lists():
     """
@@ -11999,7 +12007,7 @@ def draw_circles_on_centerline():
         try:
             centerline_model = slicer.util.getNode('Centerline model')
         except:
-            pass
+            logger.debug("Suppressed exception in draw_circles_on_centerline", exc_info=True)
         
         if not centerline_model:
             all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
@@ -12350,7 +12358,7 @@ def draw_circle_for_single_point(point_index):
         try:
             centerline_model = slicer.util.getNode('Centerline model')
         except:
-            pass
+            logger.debug("Suppressed exception in draw_circle_for_single_point", exc_info=True)
         
         if not centerline_model:
             all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
@@ -12424,7 +12432,7 @@ def draw_circle_for_single_point(point_index):
         try:
             existing_circle = slicer.util.getNode(circle_name)
         except:
-            pass
+            logger.debug("Suppressed exception in draw_circle_for_single_point", exc_info=True)
         
         # Remove existing circle if it exists
         if existing_circle:
@@ -12471,7 +12479,7 @@ def draw_circle_for_single_point(point_index):
                     display_node.SetGlyphScale(0.1)  # Make points very small instead of invisible
 
             except Exception as hide_error:
-                pass
+                logger.debug("Suppressed exception in draw_circle_for_single_point", exc_info=True)
         
         # Update circle dropdown after creating a circle
         if success:
@@ -12532,7 +12540,7 @@ def draw_circle_for_branch_point(branch_node, point_index):
             try:
                 centerline_model = slicer.util.getNode('Centerline model')
             except:
-                pass
+                logger.debug("Suppressed exception in draw_circle_for_branch_point", exc_info=True)
             if not centerline_model:
                 all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
                 for model in all_models:
@@ -12581,7 +12589,7 @@ def draw_circle_for_branch_point(branch_node, point_index):
         try:
             existing_circle = slicer.util.getNode(circle_name)
         except:
-            pass
+            logger.debug("Suppressed exception in draw_circle_for_branch_point", exc_info=True)
         if existing_circle:
             slicer.mrmlScene.RemoveNode(existing_circle)
 
@@ -12620,7 +12628,7 @@ def draw_circle_for_branch_point(branch_node, point_index):
                 if bdn:
                     bdn.SetPointLabelsVisibility(False)
             except Exception:
-                pass
+                logger.debug("Suppressed exception in draw_circle_for_branch_point", exc_info=True)
             
             pass  # Created circle for {expected_label}
 
@@ -12654,7 +12662,7 @@ def draw_circle_for_post_branch_point(post_branch_node, point_index):
             try:
                 centerline_model = slicer.util.getNode('Centerline model')
             except:
-                pass
+                logger.debug("Suppressed exception in draw_circle_for_post_branch_point", exc_info=True)
             if not centerline_model:
                 all_models = slicer.util.getNodesByClass('vtkMRMLModelNode')
                 for model in all_models:
@@ -12696,7 +12704,7 @@ def draw_circle_for_post_branch_point(post_branch_node, point_index):
         try:
             existing_circle = slicer.util.getNode(circle_name)
         except:
-            pass
+            logger.debug("Suppressed exception in draw_circle_for_post_branch_point", exc_info=True)
         if existing_circle:
             slicer.mrmlScene.RemoveNode(existing_circle)
 
@@ -12735,7 +12743,7 @@ def draw_circle_for_post_branch_point(post_branch_node, point_index):
                 if bdn:
                     bdn.SetPointLabelsVisibility(False)
             except Exception:
-                pass
+                logger.debug("Suppressed exception in draw_circle_for_post_branch_point", exc_info=True)
             
             pass  # Created circle for {expected_label}
 
@@ -12884,7 +12892,7 @@ def clear_existing_tubes_and_centerlines():
             slicer.mrmlScene.RemoveNode(node)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in clear_existing_tubes_and_centerlines", exc_info=True)
 
 def create_tube_from_curve(centerline_curve, pair_number):
     """
@@ -13009,7 +13017,7 @@ def add_cropped_volume_to_3d_scene():
                     volumeRenderingLogic.ApplyVolumeRenderingDisplayPreset(displayNode, presetName)
                     pass
                 except:
-                    pass
+                    logger.debug("Suppressed exception in add_cropped_volume_to_3d_scene", exc_info=True)
             
             volumeProperty = displayNode.GetVolumePropertyNode().GetVolumeProperty()
             if volumeProperty:
@@ -13034,7 +13042,7 @@ def add_cropped_volume_to_3d_scene():
             pass
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in add_cropped_volume_to_3d_scene", exc_info=True)
 
 def show_segment_statistics(stenosis_segmentation):
     """
@@ -13096,7 +13104,7 @@ def show_segment_statistics(stenosis_segmentation):
                         pass
                         volume_set = True
                 except:
-                    pass
+                    logger.debug("Suppressed exception in show_segment_statistics", exc_info=True)
             
             if not volume_set:
                 pass
@@ -13140,21 +13148,21 @@ def hide_crop_volume_ui_elements():
                 button.setVisible(False)
                 elements_hidden += 1
         except Exception:
-            pass
+            logger.debug("Suppressed exception in hide_crop_volume_ui_elements", exc_info=True)
         try:
             push_buttons = crop_widget.findChildren(qt.QPushButton)
             for button in push_buttons:
                 button.setVisible(False)
                 elements_hidden += 1
         except Exception:
-            pass
+            logger.debug("Suppressed exception in hide_crop_volume_ui_elements", exc_info=True)
         try:
             labels = crop_widget.findChildren(qt.QLabel)
             for label in labels:
                 label.setVisible(False)
                 elements_hidden += 1
         except Exception:
-            pass
+            logger.debug("Suppressed exception in hide_crop_volume_ui_elements", exc_info=True)
 
         try:
             input_widgets = crop_widget.findChildren(qt.QLineEdit)
@@ -13166,7 +13174,7 @@ def hide_crop_volume_ui_elements():
                 widget.setVisible(False)
                 elements_hidden += 1
         except Exception:
-            pass
+            logger.debug("Suppressed exception in hide_crop_volume_ui_elements", exc_info=True)
 
         try:
             layouts = crop_widget.findChildren(qt.QHBoxLayout)
@@ -13178,7 +13186,7 @@ def hide_crop_volume_ui_elements():
                     parent_widget.setVisible(False)
                     elements_hidden += 1
         except Exception:
-            pass
+            logger.debug("Suppressed exception in hide_crop_volume_ui_elements", exc_info=True)
 
         try:
             all_children = crop_widget.findChildren(qt.QWidget)
@@ -13187,7 +13195,7 @@ def hide_crop_volume_ui_elements():
                     child.setVisible(False)
                     elements_hidden += 1
         except Exception:
-            pass
+            logger.debug("Suppressed exception in hide_crop_volume_ui_elements", exc_info=True)
         
         return True
         
@@ -13254,7 +13262,7 @@ def hide_extract_centerline_ui_elements():
                     elements_hidden += 1
                     pass
             except Exception as e:
-                pass
+                logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Handle the outputs section - make sure it's visible but collapsed
         try:
@@ -13283,13 +13291,13 @@ def hide_extract_centerline_ui_elements():
                         collapsed_successfully = True
                         pass
                     except:
-                        pass
+                        logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
                 
                 if not collapsed_successfully:
                     pass
                     
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Double-check advanced section is completely hidden
         try:
@@ -13300,7 +13308,7 @@ def hide_extract_centerline_ui_elements():
                 elements_hidden += 1
                 pass
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Also hide the form layout rows containing parameter set elements (row 0)
         try:
@@ -13319,7 +13327,7 @@ def hide_extract_centerline_ui_elements():
                         field_item.widget().hide()
                         elements_hidden += 1
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Additional comprehensive search for elements to hide
         try:
@@ -13333,7 +13341,7 @@ def hide_extract_centerline_ui_elements():
                         elements_hidden += 1
                         pass
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Ensure the inputs collapsible button is visible and expanded
         try:
@@ -13347,7 +13355,7 @@ def hide_extract_centerline_ui_elements():
                     button.collapsed = False
                 pass
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Double-check that advanced section is completely hidden (but keep Apply button visible)
         try:
@@ -13362,7 +13370,7 @@ def hide_extract_centerline_ui_elements():
             # Note: Apply button is intentionally left visible and functional
                     
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Force a GUI update and try alternative collapse approach
         slicer.app.processEvents()
@@ -13395,7 +13403,7 @@ def hide_extract_centerline_ui_elements():
                         pass
                         
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # Force a GUI update
         slicer.app.processEvents()
@@ -13423,7 +13431,7 @@ def hide_extract_centerline_ui_elements():
                             widget.setEnabled(False)
                         pass
                     except Exception as e:
-                        pass
+                        logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
                 
                 # Note: Apply button widgets are intentionally left visible and functional
             
@@ -13445,12 +13453,12 @@ def hide_extract_centerline_ui_elements():
                             button.setEnabled(False)
                         pass
                     except Exception as e:
-                        pass
+                        logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
             
             # Note: Apply button widgets are intentionally left visible and functional
                     
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hide_extract_centerline_ui_elements", exc_info=True)
         
         # One more GUI update
         slicer.app.processEvents()
@@ -13606,7 +13614,7 @@ def start_with_segment_editor_scissors():
                 slicer.modules.WorkflowUndoShortcut = undo_shortcut
                 slicer.modules.WorkflowRedoShortcut = redo_shortcut
                 
-                print("Installed global Ctrl+Z and Ctrl+Y shortcuts")
+                logger.info("Installed global Ctrl+Z and Ctrl+Y shortcuts")
             
             # Method 2: Also try to install shortcuts directly on the segment editor widget
             if segmentEditorWidget:
@@ -13620,10 +13628,10 @@ def start_with_segment_editor_scissors():
                 slicer.modules.WorkflowWidgetUndoShortcut = widget_undo_shortcut
                 slicer.modules.WorkflowWidgetRedoShortcut = widget_redo_shortcut
                 
-                print("Installed widget-specific Ctrl+Z and Ctrl+Y shortcuts")
+                logger.info("Installed widget-specific Ctrl+Z and Ctrl+Y shortcuts")
                 
         except Exception as shortcut_error:
-            print(f"Warning: Could not install keyboard shortcuts: {shortcut_error}")
+            logger.info(f"Warning: Could not install keyboard shortcuts: {shortcut_error}")
         
         # Configure segment editor for better undo support
         try:
@@ -13636,9 +13644,9 @@ def start_with_segment_editor_scissors():
             slicer.mrmlScene.SetUndoOn()
             slicer.mrmlScene.SetMaximumNumberOfUndoLevels(20)
             
-            print("Configured undo system with 20 levels for both segmentation and scene")
+            logger.info("Configured undo system with 20 levels for both segmentation and scene")
         except Exception as undo_config_error:
-            print(f"Warning: Could not configure undo system: {undo_config_error}")
+            logger.info(f"Warning: Could not configure undo system: {undo_config_error}")
         
         # Store references for scissors tool control
         slicer.modules.WorkflowSegmentEditorNode = segmentEditorNode
@@ -13668,28 +13676,28 @@ def handle_keyboard_undo(segmentEditorWidget=None):
             # First try the segment editor's built-in undo
             if hasattr(segmentEditorWidget, 'undo'):
                 segmentEditorWidget.undo()
-                print("Executed keyboard undo via segment editor")
+                logger.info("Executed keyboard undo via segment editor")
                 return True
             elif hasattr(segmentEditorWidget, 'undoEnabled') and segmentEditorWidget.undoEnabled:
                 # Alternative method to trigger undo
                 segmentEditorWidget.undoEnabled = True
                 if hasattr(segmentEditorWidget, 'undo'):
                     segmentEditorWidget.undo()
-                    print("Executed keyboard undo via alternative method")
+                    logger.info("Executed keyboard undo via alternative method")
                     return True
         
         # Fallback to scene undo system
-        print("Falling back to scene undo system for keyboard shortcut")
+        logger.info("Falling back to scene undo system for keyboard shortcut")
         if slicer.mrmlScene.GetUndoFlag() and slicer.mrmlScene.GetNumberOfUndoLevels() > 0:
             slicer.mrmlScene.Undo()
             slicer.app.processEvents()  # Refresh views
             return True
         else:
-            print("No undo levels available")
+            logger.info("No undo levels available")
             return False
         
     except Exception as e:
-        print(f"Error in keyboard undo handler: {e}")
+        logger.info(f"Error in keyboard undo handler: {e}")
         return False
 
 def handle_keyboard_redo(segmentEditorWidget=None):
@@ -13705,7 +13713,7 @@ def handle_keyboard_redo(segmentEditorWidget=None):
             # Try the segment editor's built-in redo
             if hasattr(segmentEditorWidget, 'redo'):
                 segmentEditorWidget.redo()
-                print("Executed keyboard redo via segment editor")
+                logger.info("Executed keyboard redo via segment editor")
                 return True
         
         # If no segment editor redo available, inform user
@@ -13715,7 +13723,7 @@ def handle_keyboard_redo(segmentEditorWidget=None):
         return False
         
     except Exception as e:
-        print(f"Error in keyboard redo handler: {e}")
+        logger.info(f"Error in keyboard redo handler: {e}")
         return False
 
 def test_keyboard_undo_functionality():
@@ -13723,55 +13731,55 @@ def test_keyboard_undo_functionality():
     Test function to verify that Ctrl+Z keyboard shortcut is working properly
     """
     try:
-        print("=== Testing Keyboard Undo Functionality ===")
+        logger.info("=== Testing Keyboard Undo Functionality ===")
         
         # Check if shortcuts are installed
         if hasattr(slicer.modules, 'WorkflowUndoShortcut'):
             shortcut = slicer.modules.WorkflowUndoShortcut
-            print(f"✓ Ctrl+Z shortcut found: {shortcut}")
-            print(f"  Key sequence: {shortcut.key().toString()}")
+            logger.info(f"✓ Ctrl+Z shortcut found: {shortcut}")
+            logger.info(f"  Key sequence: {shortcut.key().toString()}")
         else:
-            print("✗ No Ctrl+Z shortcut found")
+            logger.info("✗ No Ctrl+Z shortcut found")
         
         if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
             shortcut = slicer.modules.WorkflowRedoShortcut
-            print(f"✓ Ctrl+Y shortcut found: {shortcut}")
-            print(f"  Key sequence: {shortcut.key().toString()}")
+            logger.info(f"✓ Ctrl+Y shortcut found: {shortcut}")
+            logger.info(f"  Key sequence: {shortcut.key().toString()}")
         else:
-            print("✗ No Ctrl+Y shortcut found")
+            logger.info("✗ No Ctrl+Y shortcut found")
         
         # Check widget shortcuts
         if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
             shortcut = slicer.modules.WorkflowWidgetUndoShortcut
-            print(f"✓ Widget Ctrl+Z shortcut found: {shortcut}")
+            logger.info(f"✓ Widget Ctrl+Z shortcut found: {shortcut}")
         else:
-            print("✗ No widget Ctrl+Z shortcut found")
+            logger.info("✗ No widget Ctrl+Z shortcut found")
         
         if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
             shortcut = slicer.modules.WorkflowWidgetRedoShortcut
-            print(f"✓ Widget Ctrl+Y shortcut found: {shortcut}")
+            logger.info(f"✓ Widget Ctrl+Y shortcut found: {shortcut}")
         else:
-            print("✗ No widget Ctrl+Y shortcut found")
+            logger.info("✗ No widget Ctrl+Y shortcut found")
         
         # Check segment editor widget
         if hasattr(slicer.modules, 'WorkflowSegmentEditorWidget'):
             widget = slicer.modules.WorkflowSegmentEditorWidget
-            print(f"✓ Segment editor widget found: {type(widget)}")
+            logger.info(f"✓ Segment editor widget found: {type(widget)}")
             
             if hasattr(widget, 'undoEnabled'):
-                print(f"  Undo enabled: {widget.undoEnabled}")
+                logger.info(f"  Undo enabled: {widget.undoEnabled}")
             
             if hasattr(widget, 'undo'):
-                print("  ✓ Undo method available")
+                logger.info("  ✓ Undo method available")
             else:
-                print("  ✗ Undo method not available")
+                logger.info("  ✗ Undo method not available")
                 
             if hasattr(widget, 'redo'):
-                print("  ✓ Redo method available")
+                logger.info("  ✓ Redo method available")
             else:
-                print("  ✗ Redo method not available")
+                logger.info("  ✗ Redo method not available")
         else:
-            print("✗ No segment editor widget found")
+            logger.info("✗ No segment editor widget found")
         
         # Check segmentation undo settings
         if hasattr(slicer.modules, 'WorkflowSegmentationNode'):
@@ -13780,23 +13788,23 @@ def test_keyboard_undo_functionality():
                 segmentation = segmentation_node.GetSegmentation()
                 if segmentation and hasattr(segmentation, 'GetMaximumNumberOfUndoStates'):
                     undo_states = segmentation.GetMaximumNumberOfUndoStates()
-                    print(f"✓ Segmentation undo states: {undo_states}")
+                    logger.info(f"✓ Segmentation undo states: {undo_states}")
                 else:
-                    print("✗ Cannot check segmentation undo states")
+                    logger.info("✗ Cannot check segmentation undo states")
         
         # Test manual keyboard undo function
-        print("\n--- Testing Manual Keyboard Undo ---")
+        logger.info("\n--- Testing Manual Keyboard Undo ---")
         result = handle_keyboard_undo()
-        print(f"Manual undo test result: {result}")
+        logger.info(f"Manual undo test result: {result}")
         
-        print("\n=== Keyboard Undo Test Complete ===")
-        print("If Ctrl+Z still doesn't work, try:")
-        print("1. Make sure you're clicking in a slice view first to give it focus")
-        print("2. Try pressing Ctrl+Z while the mouse is over a slice view")
-        print("3. Check that the segment editor widget has focus")
+        logger.info("\n=== Keyboard Undo Test Complete ===")
+        logger.info("If Ctrl+Z still doesn't work, try:")
+        logger.info("1. Make sure you're clicking in a slice view first to give it focus")
+        logger.info("2. Try pressing Ctrl+Z while the mouse is over a slice view")
+        logger.info("3. Check that the segment editor widget has focus")
         
     except Exception as e:
-        print(f"Error during keyboard undo test: {e}")
+        logger.info(f"Error during keyboard undo test: {e}")
         import traceback
         traceback.print_exc()
 
@@ -13806,7 +13814,7 @@ def force_enable_keyboard_undo():
     Call this function if Ctrl+Z is not working
     """
     try:
-        print("Force enabling keyboard undo functionality...")
+        logger.info("Force enabling keyboard undo functionality...")
         
         # Get the segment editor widget
         segmentEditorWidget = None
@@ -13814,7 +13822,7 @@ def force_enable_keyboard_undo():
             segmentEditorWidget = slicer.modules.WorkflowSegmentEditorWidget
         
         if not segmentEditorWidget:
-            print("✗ No segment editor widget found. Please start the scissors tool first.")
+            logger.info("✗ No segment editor widget found. Please start the scissors tool first.")
             return False
         
         # Clear existing shortcuts
@@ -13825,7 +13833,7 @@ def force_enable_keyboard_undo():
                     shortcut.setParent(None)
                     delattr(slicer.modules, shortcut_attr)
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception in force_enable_keyboard_undo", exc_info=True)
         
         # Re-install shortcuts with fresh references
         main_window = slicer.util.mainWindow()
@@ -13839,7 +13847,7 @@ def force_enable_keyboard_undo():
             redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
             slicer.modules.WorkflowRedoShortcut = redo_shortcut
             
-            print("✓ Installed global keyboard shortcuts")
+            logger.info("✓ Installed global keyboard shortcuts")
         
         # Widget shortcuts
         if segmentEditorWidget:
@@ -13851,23 +13859,23 @@ def force_enable_keyboard_undo():
             widget_redo_shortcut.connect('activated()', lambda: handle_keyboard_redo(segmentEditorWidget))
             slicer.modules.WorkflowWidgetRedoShortcut = widget_redo_shortcut
             
-            print("✓ Installed widget-specific keyboard shortcuts")
+            logger.info("✓ Installed widget-specific keyboard shortcuts")
         
         # Try to activate the segment editor widget to give it focus
         if segmentEditorWidget:
             segmentEditorWidget.setFocus()
             segmentEditorWidget.activateWindow()
         
-        print("✓ Keyboard undo functionality has been re-enabled")
-        print("Try pressing Ctrl+Z now. If it still doesn't work, make sure:")
-        print("  1. You have made some changes to the segmentation first")
-        print("  2. The mouse cursor is over a slice view when you press Ctrl+Z")
-        print("  3. You are using the scissors tool from this workflow")
+        logger.info("✓ Keyboard undo functionality has been re-enabled")
+        logger.info("Try pressing Ctrl+Z now. If it still doesn't work, make sure:")
+        logger.info("  1. You have made some changes to the segmentation first")
+        logger.info("  2. The mouse cursor is over a slice view when you press Ctrl+Z")
+        logger.info("  3. You are using the scissors tool from this workflow")
         
         return True
         
     except Exception as e:
-        print(f"Error enabling keyboard undo: {e}")
+        logger.info(f"Error enabling keyboard undo: {e}")
         return False
 
 def show_keyboard_undo_help():
@@ -13875,36 +13883,36 @@ def show_keyboard_undo_help():
     Show help information for using keyboard undo functionality
     """
     try:
-        print("\n" + "="*60)
-        print("           KEYBOARD UNDO FUNCTIONALITY HELP")
-        print("="*60)
-        print("The workflow now supports Ctrl+Z for undo functionality!")
-        print()
-        print("HOW TO USE:")
-        print("1. Use the scissors tool to make segmentation changes")
-        print("2. Press Ctrl+Z to undo the last change")
-        print("3. Press Ctrl+Y to redo (if available)")
-        print()
-        print("TROUBLESHOOTING:")
-        print("If Ctrl+Z doesn't work, try these steps:")
-        print("• Call force_enable_keyboard_undo() to re-enable shortcuts")
-        print("• Make sure you click in a slice view first to give it focus")
-        print("• Ensure you've made at least one change before trying to undo")
-        print("• Try pressing Ctrl+Z while mouse is over a slice view")
-        print()
-        print("TESTING FUNCTIONS:")
-        print("• test_keyboard_undo_functionality() - Run diagnostics")
-        print("• force_enable_keyboard_undo() - Re-enable if not working")
-        print("• handle_keyboard_undo() - Manually trigger undo")
-        print()
-        print("The system uses multiple fallback methods:")
-        print("1. Segment editor built-in undo (preferred)")
-        print("2. Scene-based undo system (fallback)")
-        print("3. Both global and widget-specific shortcuts")
-        print("="*60 + "\n")
+        logger.info("\n" + "="*60)
+        logger.info("           KEYBOARD UNDO FUNCTIONALITY HELP")
+        logger.info("="*60)
+        logger.info("The workflow now supports Ctrl+Z for undo functionality!")
+        logger.info()
+        logger.info("HOW TO USE:")
+        logger.info("1. Use the scissors tool to make segmentation changes")
+        logger.info("2. Press Ctrl+Z to undo the last change")
+        logger.info("3. Press Ctrl+Y to redo (if available)")
+        logger.info()
+        logger.info("TROUBLESHOOTING:")
+        logger.info("If Ctrl+Z doesn't work, try these steps:")
+        logger.info("• Call force_enable_keyboard_undo() to re-enable shortcuts")
+        logger.info("• Make sure you click in a slice view first to give it focus")
+        logger.info("• Ensure you've made at least one change before trying to undo")
+        logger.info("• Try pressing Ctrl+Z while mouse is over a slice view")
+        logger.info()
+        logger.info("TESTING FUNCTIONS:")
+        logger.info("• test_keyboard_undo_functionality() - Run diagnostics")
+        logger.info("• force_enable_keyboard_undo() - Re-enable if not working")
+        logger.info("• handle_keyboard_undo() - Manually trigger undo")
+        logger.info()
+        logger.info("The system uses multiple fallback methods:")
+        logger.info("1. Segment editor built-in undo (preferred)")
+        logger.info("2. Scene-based undo system (fallback)")
+        logger.info("3. Both global and widget-specific shortcuts")
+        logger.info("="*60 + "\n")
         
     except Exception as e:
-        print(f"Error showing help: {e}")
+        logger.info(f"Error showing help: {e}")
 
 def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
     """
@@ -13920,7 +13928,7 @@ def add_buttons_to_crop_module(crop_widget, scissors_button, finish_button):
             try:
                 crop_module = crop_widget.self()
             except Exception:
-                pass
+                logger.debug("Suppressed exception in add_buttons_to_crop_module", exc_info=True)
         
         if not crop_module:
             crop_module = crop_widget
@@ -13997,7 +14005,7 @@ def ensure_crop_button_disabled_if_completed():
             if crop_widget:
                 disable_crop_apply_button(crop_widget)
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in ensure_crop_button_disabled_if_completed", exc_info=True)
 
 def disable_crop_apply_button(crop_widget):
     """
@@ -14119,7 +14127,7 @@ def remove_original_crop_apply_button(crop_widget):
                         removed_count += 1
                         pass
                 except Exception as e:
-                    pass
+                    logger.debug("Suppressed exception in remove_original_crop_apply_button", exc_info=True)
         
         # Method 3: Also look for and hide any other large green buttons that might be apply buttons
         if crop_widget:
@@ -14139,7 +14147,7 @@ def remove_original_crop_apply_button(crop_widget):
                         removed_count += 1
                         pass
                 except Exception as e:
-                    pass
+                    logger.debug("Suppressed exception in remove_original_crop_apply_button", exc_info=True)
         
         if removed_count > 0:
             pass
@@ -14329,7 +14337,7 @@ def create_floating_scissors_widget(scissors_button):
         pass
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in create_floating_scissors_widget", exc_info=True)
 
 def toggle_scissors_tool_programmatic(activated):
     """
@@ -14439,18 +14447,18 @@ def cleanup_scissors_tool_ui():
                 shortcut = slicer.modules.WorkflowUndoShortcut
                 shortcut.setParent(None)
                 del slicer.modules.WorkflowUndoShortcut
-                print("Cleaned up Ctrl+Z shortcut")
+                logger.info("Cleaned up Ctrl+Z shortcut")
             except Exception:
-                pass
+                logger.debug("Suppressed exception in cleanup_scissors_tool_ui", exc_info=True)
         
         if hasattr(slicer.modules, 'WorkflowRedoShortcut'):
             try:
                 shortcut = slicer.modules.WorkflowRedoShortcut
                 shortcut.setParent(None)
                 del slicer.modules.WorkflowRedoShortcut
-                print("Cleaned up Ctrl+Y shortcut")
+                logger.info("Cleaned up Ctrl+Y shortcut")
             except Exception:
-                pass
+                logger.debug("Suppressed exception in cleanup_scissors_tool_ui", exc_info=True)
         
         # Clean up widget-specific shortcuts
         if hasattr(slicer.modules, 'WorkflowWidgetUndoShortcut'):
@@ -14458,18 +14466,18 @@ def cleanup_scissors_tool_ui():
                 shortcut = slicer.modules.WorkflowWidgetUndoShortcut
                 shortcut.setParent(None)
                 del slicer.modules.WorkflowWidgetUndoShortcut
-                print("Cleaned up widget Ctrl+Z shortcut")
+                logger.info("Cleaned up widget Ctrl+Z shortcut")
             except Exception:
-                pass
+                logger.debug("Suppressed exception in cleanup_scissors_tool_ui", exc_info=True)
         
         if hasattr(slicer.modules, 'WorkflowWidgetRedoShortcut'):
             try:
                 shortcut = slicer.modules.WorkflowWidgetRedoShortcut
                 shortcut.setParent(None)
                 del slicer.modules.WorkflowWidgetRedoShortcut
-                print("Cleaned up widget Ctrl+Y shortcut")
+                logger.info("Cleaned up widget Ctrl+Y shortcut")
             except Exception:
-                pass
+                logger.debug("Suppressed exception in cleanup_scissors_tool_ui", exc_info=True)
         
         for attr in ['WorkflowSegmentationNode', 'WorkflowScissorsActive']:
             if hasattr(slicer.modules, attr):
@@ -14478,7 +14486,7 @@ def cleanup_scissors_tool_ui():
         restore_original_crop_apply_button()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_scissors_tool_ui", exc_info=True)
 
 def restore_original_crop_apply_button():
     """
@@ -14502,7 +14510,7 @@ def restore_original_crop_apply_button():
                     button.show()
                 return
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in restore_original_crop_apply_button", exc_info=True)
 
 
 # ===============================================================================
@@ -14597,7 +14605,7 @@ def test_dicom_directory_loading(directory_path):
 
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in test_dicom_directory_loading", exc_info=True)
 
 def debug_dicom_file(file_path):
     """
@@ -14622,10 +14630,10 @@ def debug_dicom_file(file_path):
                     is_dicom = magic == b'DICM'
                 
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in debug_dicom_file", exc_info=True)
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in debug_dicom_file", exc_info=True)
 
 def set_source_path(new_path):
     """
@@ -14646,7 +14654,7 @@ def set_source_path(new_path):
             delattr(slicer.modules, 'SourceSlicerFileProcessed')
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in set_source_path", exc_info=True)
 
 def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
     """
@@ -14728,7 +14736,7 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
                                     slice_thickness = float(ds1.SliceThickness)
                                     
                             except Exception as slice_error:
-                                pass
+                                logger.debug("Suppressed exception in fix_dicom_spacing_and_orientation", exc_info=True)
                         
                         # Apply corrections if we found proper spacing
                         if pixel_spacing:
@@ -14752,12 +14760,12 @@ def fix_dicom_spacing_and_orientation(volume_node, dicom_directory=None):
                                 corrections_applied = True
                         
                     except ImportError:
-                        pass
+                        logger.debug("Suppressed exception in fix_dicom_spacing_and_orientation", exc_info=True)
                     except Exception as dicom_error:
-                        pass
+                        logger.debug("Suppressed exception in fix_dicom_spacing_and_orientation", exc_info=True)
                         
             except Exception as analysis_error:
-                pass
+                logger.debug("Suppressed exception in fix_dicom_spacing_and_orientation", exc_info=True)
         
         # Fallback: Apply reasonable defaults if spacing looks wrong
         if not corrections_applied:
@@ -15421,7 +15429,7 @@ def cleanup_extract_centerline_custom_elements():
         stop_all_centerline_monitoring()
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_extract_centerline_custom_elements", exc_info=True)
 
 
 def cleanup_segment_editor_custom_elements():
@@ -15441,7 +15449,7 @@ def cleanup_segment_editor_custom_elements():
                 delattr(slicer.modules, attr)
                 
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_segment_editor_custom_elements", exc_info=True)
 
 
 
@@ -15460,7 +15468,7 @@ def cleanup_cpr_custom_elements():
                 delattr(slicer.modules, attr)
                 
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_cpr_custom_elements", exc_info=True)
 
 
 def cleanup_global_workflow_state():
@@ -15488,7 +15496,7 @@ def cleanup_global_workflow_state():
                 delattr(slicer.modules, attr)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in cleanup_global_workflow_state", exc_info=True)
 
 
 def restart_cropping_simple():
@@ -15865,7 +15873,7 @@ def execute_initial_custom_crop():
             qt.QTimer.singleShot(500, lambda: continue_workflow_after_custom_crop())
             
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in execute_initial_custom_crop", exc_info=True)
 
 
 def add_scissors_tools_to_initial_interface():
@@ -15969,7 +15977,7 @@ def add_scissors_tools_to_initial_interface():
         crop_widget.setFixedHeight(400)
         
     except Exception as e:
-        pass
+        logger.debug("Suppressed exception in add_scissors_tools_to_initial_interface", exc_info=True)
 
 
 def create_custom_crop_interface():
@@ -16257,7 +16265,7 @@ def execute_custom_crop():
         
             
     except Exception as e:
-        print(f"Error in execute_custom_crop: {e}")
+        logger.info(f"Error in execute_custom_crop: {e}")
 
 
 def continue_workflow_after_custom_crop():
@@ -16275,7 +16283,7 @@ def continue_workflow_after_custom_crop():
         continue_workflow_without_markup()
             
     except Exception as e:
-        print(f"Error in continue_workflow_after_custom_crop: {e}")
+        logger.info(f"Error in continue_workflow_after_custom_crop: {e}")
 
 def update_crop_interface_for_segmentation_phase():
     """
@@ -16366,7 +16374,7 @@ def update_crop_interface_for_segmentation_phase():
         
         
     except Exception as e:
-        print(f"Error in update_crop_interface_for_segmentation_phase: {e}")
+        logger.info(f"Error in update_crop_interface_for_segmentation_phase: {e}")
 
 
 def ensure_crop_roi_exists():
@@ -16433,7 +16441,7 @@ def ensure_crop_roi_exists():
         return roiNode
         
     except Exception as e:
-        print(f"Error in ensure_crop_roi_exists: {e}")
+        logger.info(f"Error in ensure_crop_roi_exists: {e}")
         return None
 
 
@@ -16457,7 +16465,7 @@ def setup_crop_display_layout():
         return success
         
     except Exception as e:
-        print(f"Error in setup_crop_display_layout: {e}")
+        logger.info(f"Error in setup_crop_display_layout: {e}")
         return False
 
 def toggle_scissors_tool(activated=None):
@@ -16515,7 +16523,7 @@ def toggle_scissors_tool(activated=None):
                     if hasattr(button, 'setChecked'):
                         button.setChecked(False)
     except Exception as e:
-        print(f"Error in toggle_scissors_tool: {e}")
+        logger.info(f"Error in toggle_scissors_tool: {e}")
 
 def finish_custom_crop_workflow():
     """
@@ -16527,7 +16535,7 @@ def finish_custom_crop_workflow():
         on_continue_from_scissors()
         
     except Exception as e:
-        print(f"Error in finish_custom_crop_workflow: {e}")
+        logger.info(f"Error in finish_custom_crop_workflow: {e}")
 
 
 def cleanup_custom_crop_interface():
@@ -16547,7 +16555,7 @@ def cleanup_custom_crop_interface():
             if hasattr(slicer.modules, attr_name):
                 delattr(slicer.modules, attr_name)
     except Exception as e:
-        print(f"Error in cleanup_custom_crop_interface: {e}")
+        logger.info(f"Error in cleanup_custom_crop_interface: {e}")
 
 def use_custom_crop_instead_of_module():
     """
@@ -16559,14 +16567,14 @@ def use_custom_crop_instead_of_module():
         try:
             collapse_crop_volume_gui()
         except Exception as e:
-            print(f"Warning: Could not collapse crop volume GUI: {e}")
+            logger.info(f"Warning: Could not collapse crop volume GUI: {e}")
         custom_interface = create_custom_crop_interface()
         if custom_interface:
             return True
         return False
             
     except Exception as e:
-        print(f"Error in use_custom_crop_instead_of_module: {e}")
+        logger.info(f"Error in use_custom_crop_instead_of_module: {e}")
         return False
 
 
@@ -16584,14 +16592,14 @@ def force_custom_crop_interface():
         return success
         
     except Exception as e:
-        print(f"Error in force_custom_crop_interface: {e}")
+        logger.info(f"Error in force_custom_crop_interface: {e}")
         return False
 
 # Initialize scene save observer when module is fully loaded
 try:
     setup_module_observers()
 except Exception as e:
-    print(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
+    logger.info(f"Scene save observer setup failed. You will have to manualy close the program after saving. Error: {e}")
 
 
 def deleteAllPatients():
@@ -16599,46 +16607,46 @@ def deleteAllPatients():
     dicomDatabase = slicer.dicomDatabase
     
     if not dicomDatabase.isOpen:
-        print("DICOM database is not open")
+        logger.info("DICOM database is not open")
         return
     
     # Get all patient IDs
     patients = dicomDatabase.patients()
     
     if len(patients) == 0:
-        print("No patients found in database")
+        logger.info("No patients found in database")
         return
     
-    print(f"Found {len(patients)} patients. Deleting all...")
+    logger.info(f"Found {len(patients)} patients. Deleting all...")
     
     # Delete each patient
     for patientID in patients:
         patientName = dicomDatabase.nameForPatient(patientID)
         dicomDatabase.removePatient(patientID)
-        print(f"Deleted Patient ID: {patientID}, Name: {patientName}")
+        logger.info(f"Deleted Patient ID: {patientID}, Name: {patientName}")
     
-    print("All patients deleted successfully")
+    logger.info("All patients deleted successfully")
 
 
 def onSlicerAboutToQuit():
     """Called when Slicer is about to quit - runs before database closes"""
-    print("Slicer is about to quit - running cleanup...")
+    logger.info("Slicer is about to quit - running cleanup...")
     try:
         deleteAllPatients()
-        print("Cleanup completed successfully")
+        logger.info("Cleanup completed successfully")
     except Exception as e:
-        print(f"Error during cleanup: {e}")
+        logger.info(f"Error during cleanup: {e}")
 
 
 def setup_exit_handler():
     """Set up cleanup using aboutToQuit signal"""
     try:
         slicer.app.connect("aboutToQuit()", onSlicerAboutToQuit)
-        print("Exit handler registered successfully")
-        print("Patient data will be deleted when Slicer exits")
+        logger.info("Exit handler registered successfully")
+        logger.info("Patient data will be deleted when Slicer exits")
         return True
     except Exception as e:
-        print(f"Could not register exit handler: {e}")
+        logger.info(f"Could not register exit handler: {e}")
         return False
 
 setup_exit_handler()
