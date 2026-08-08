@@ -134,22 +134,56 @@ SlicerWorkflowExt/
 ├── DAI_Workflow/                   # Main extension directory
 │   ├── CMakeLists.txt             # Extension build configuration
 │   ├── DAI_Workflow.png           # Extension icon
-│   ├── SourceFileMethod.md        # Auto-loading documentation
-│   ├── ViewConfigurationChanges.md # View management details
 │   └── workflow/                   # Main module directory
 │       ├── CMakeLists.txt         # Module build configuration
-│       ├── workflow.py            # Main module implementation
+│       ├── workflow.py            # Main module implementation (Slicer widget/logic)
 │       ├── Moduals/               # Module components
-│       │   ├── workflow_moduals.py     # Core workflow functions (10,993 lines)
-│       │   └── workflow_test_functions.py # Testing utilities
+│       │   ├── workflow_moduals.py         # Public facade (re-exports the API)
+│       │   ├── _impl/                       # Implementation, split by domain:
+│       │   │   ├── dicom.py                 #   DICOM loading
+│       │   │   ├── centerline.py            #   centerline extraction
+│       │   │   ├── cpr.py                   #   curved planar reconstruction
+│       │   │   ├── segmentation.py          #   thresholding / segment editor
+│       │   │   ├── markup.py                #   points, curves, circles, tubes
+│       │   │   ├── ui.py                     #   views, panels, dialogs, buttons
+│       │   │   ├── volume.py                 #   cropping / ROI / volume prep
+│       │   │   ├── core.py                   #   workflow orchestration + bootstrap
+│       │   │   └── _common.py                #   shared imports + module logger
+│       │   └── workflow_test_functions.py   # In-app console test/debug helpers
 │       ├── Resources/             # UI and icons
-│       │   ├── Icons/
-│       │   │   └── workflow.png   # Module icon
-│       │   └── UI/
-│       │       └── workflow.ui    # User interface layout
-│       └── Testing/               # Test framework
+│       │   ├── Icons/workflow.png
+│       │   └── UI/workflow.ui
+│       └── Testing/               # Slicer ctest scaffolding
+├── tests/                        # Slicer-free import-safety tests (pytest)
+├── pyproject.toml                # ruff + pytest configuration
+├── .github/workflows/ci.yml      # CI: ruff lint + import tests
 ├── start.ps1                     # PowerShell launcher script
 └── README.md                     # This documentation
+```
+
+> **Note on the code layout:** `workflow_moduals.py` was historically a single
+> ~16,600-line module. It is now a thin facade over the `_impl/` package (one
+> module per domain), so `import Moduals.workflow_moduals as workflow_mod` and
+> every `workflow_mod.<function>` call continue to work unchanged.
+
+### Logging & diagnostics
+
+All modules log through a shared `"DAI_Workflow"` logger that routes into
+Slicer's application log. Failures are recorded (with tracebacks) instead of
+being silently swallowed. To surface verbose diagnostics while troubleshooting:
+
+```python
+import logging
+logging.getLogger("DAI_Workflow").setLevel(logging.DEBUG)
+```
+
+### Developer checks
+
+Fast, Slicer-free checks (used by CI) can be run locally:
+
+```bash
+python -m pytest tests/ -q     # import-safety / public-API tests
+ruff check .                   # lint
 ```
 
 ## Advanced Features
@@ -242,7 +276,7 @@ This software is developed for research purposes at the Lawson Research Institut
 
 ---
 
-**Last Updated**: September 2025  
+**Last Updated**: August 2026  
 **Version**: 1.0.0  
 **Clinical Compatibility**: 3D Slicer 5.6.1 - 5.8.1+  
 
