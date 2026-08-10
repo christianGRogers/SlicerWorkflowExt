@@ -1,4 +1,17 @@
+# Build/distribution artifacts
 DAI_Workflow.zip
 DAI_Workflow.b64
-DAI_Workflow/workflow/__pycache__/workflow.cpython-39.pyc
-DAI_Workflow/workflow/Moduals/__pycache__/workflow_moduals.cpython-39.pyc
+build/
+
+# Python bytecode / caches (never commit these)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

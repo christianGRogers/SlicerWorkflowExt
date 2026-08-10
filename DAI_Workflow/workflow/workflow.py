@@ -2,6 +2,8 @@ import logging
 import os
 import Moduals.workflow_moduals as workflow_mod
 
+logger = logging.getLogger("DAI_Workflow")
+
 import slicer
 from slicer.i18n import tr as _
 from slicer.i18n import translate
@@ -12,7 +14,7 @@ try:
     import qt
 except ImportError:
     # For environments where qt is not available
-    pass
+    logger.debug("Suppressed exception in <module>", exc_info=True)
 
 
 #
@@ -104,7 +106,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if moduleManager and hasattr(moduleManager, 'activeModuleChanged'):
                     moduleManager.activeModuleChanged.connect(self.hideDataProbe)
             except:
-                pass
+                logger.debug("Suppressed exception in setupDataProbeAutoHide", exc_info=True)
 
             if hasattr(qt, 'QTimer'):
                 self.dataProbeHideTimer = qt.QTimer()
@@ -113,14 +115,14 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 self.dataProbeHideTimer.start(2000)  # Check every 2 seconds
             
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in setupDataProbeAutoHide", exc_info=True)
 
     def hideDataProbe(self) -> None:
         """Hide the data probe."""
         try:
             slicer.util.setDataProbeVisible(False)
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hideDataProbe", exc_info=True)
     def hideLogo(self) -> None:
         """Hide the Slicer logo."""
         try:
@@ -128,7 +130,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if logoLabel:
                 logoLabel.visible = False
         except Exception as e:
-           pass
+           logger.debug("Suppressed exception in hideLogo", exc_info=True)
 
     def hideHelpAndAcknowledgments(self) -> None:
         """Hide the Help and Acknowledgments section from all modules."""
@@ -161,10 +163,10 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                         if any(keyword in buttonText for keyword in ['help', 'acknowledgment', 'acknowledgement']):
                             button.visible = False
                 except:
-                    pass
+                    logger.debug("Suppressed exception in hideHelpAndAcknowledgments", exc_info=True)
                     
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hideHelpAndAcknowledgments", exc_info=True)
 
     def hideStatusBar(self) -> None:
         """Hide the status bar at the bottom of the screen."""
@@ -176,7 +178,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if statusBar:
                     statusBar.hide()
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in hideStatusBar", exc_info=True)
 
     def showStatusBar(self) -> None:
         """Show the status bar at the bottom of the screen."""
@@ -188,7 +190,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 if statusBar:
                     statusBar.show()
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in showStatusBar", exc_info=True)
 
     def setDarkBackground(self) -> None:
         """Set the 3D view background to dark/black."""
@@ -196,7 +198,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             import Moduals.workflow_moduals as workflow_mod
             workflow_mod.set_3d_view_background_black()
         except Exception as e:
-            pass
+            logger.debug("Suppressed exception in setDarkBackground", exc_info=True)
 
     def enter(self) -> None:
         """Called each time the user opens this module."""
@@ -232,7 +234,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             # Use the panel collapse function from workflow_moduals
             workflow_mod.force_collapse_left_panel_on_startup()
         except Exception as e:
-            print(f"Could not collapse left panel: {e}")
+            logger.error(f"Could not collapse left panel: {e}")
 
     def checkForSourceSlicerFile(self) -> None:
         """Check for source_slicer.txt file in user directory and auto-load DICOM if found."""
@@ -246,7 +248,7 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             user_home = os.path.expanduser("~")
             source_file_path = os.path.join(user_home, "source_slicer.txt")
             
-            print(f"Checking for source file: {source_file_path}")
+            logger.info(f"Checking for source file: {source_file_path}")
             
             if os.path.exists(source_file_path):
                 # Mark as processed to prevent multiple attempts
@@ -257,22 +259,22 @@ class workflowWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                         dicom_path = f.read().strip()
                     
                     if dicom_path and os.path.exists(dicom_path):
-                        print(f"Found DICOM path in source file: {dicom_path}")
+                        logger.info(f"Found DICOM path in source file: {dicom_path}")
                         # Load DICOM automatically using workflow_moduals
                         import Moduals.workflow_moduals as workflow_mod
                         workflow_mod.load_dicom_from_source_file(dicom_path)
                     else:
-                        print(f"Invalid or non-existent DICOM path in source file: {dicom_path}")
+                        logger.error(f"Invalid or non-existent DICOM path in source file: {dicom_path}")
                         
                 except Exception as e:
-                    print(f"Error reading source_slicer.txt: {e}")
+                    logger.error(f"Error reading source_slicer.txt: {e}")
             else:
                 # Mark as processed even if file doesn't exist to prevent repeated checks
                 slicer.modules.SourceSlicerFileProcessed = True
-                print("No source_slicer.txt file found in user directory")
+                logger.warning("No source_slicer.txt file found in user directory")
                 
         except Exception as e:
-            print(f"Error checking for source_slicer.txt: {e}")
+            logger.error(f"Error checking for source_slicer.txt: {e}")
 
     def initializeParameterNode(self) -> None:
         """Ensure parameter node exists and observed."""

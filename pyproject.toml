@@ -1,0 +1,30 @@
+[tool.ruff]
+# 3D Slicer ships Python 3.9; keep the extension compatible.
+target-version = "py39"
+line-length = 120
+extend-exclude = ["**/__pycache__", "build"]
+
+[tool.ruff.lint]
+# Start conservative: correctness-oriented checks that matter for a large,
+# historically un-linted codebase. Style-only rules can be enabled over time.
+select = [
+    "F",    # pyflakes: undefined names, unused imports, f-string issues
+    "E9",   # syntax / runtime errors
+    "B",    # flake8-bugbear: likely bugs (e.g. mutable defaults, except order)
+    "T20",  # flake8-print: flag stray print() -- diagnostics should use logging
+]
+ignore = [
+    "F403",  # `from module import *` -- intentional in the facade / submodules
+    "F405",  # name may be undefined from star import -- ditto
+    "B008",  # function call in default arg -- common Qt pattern
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The facade and package init deliberately re-export via `import *`.
+"DAI_Workflow/workflow/Moduals/workflow_moduals.py" = ["F401"]
+"DAI_Workflow/workflow/Moduals/_impl/__init__.py" = ["F401"]
+"DAI_Workflow/workflow/Moduals/_impl/*.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
